@@ -38,7 +38,7 @@ The interface every node class must implement.
 ```ts
 interface INode {
   description: INodeDescription;
-  execute(ctx: INodeContext, input: unknown): Promise<INodeResult>;
+  execute(ctx: INodeContext, inputs: Record<string, unknown>): Promise<INodeResult>;
 }
 ```
 
@@ -56,9 +56,41 @@ Static metadata about the node. Read at registry build time — never at runtime
 | `name` | `LocalizedString` | Display name |
 | `description` | `LocalizedString?` | Optional longer description |
 | `icon` | `string?` | Icon identifier, e.g. `mdi:cloud-download` |
-| `input` | `IInputPort` | Single input port definition |
+| `inputs` | `Record<string, IInputPort>` | Named input ports. Single-input nodes use the conventional key `'in'` |
 | `outputs` | `IOutputPort[]` | One or more output ports |
 | `config` | `IConfigField[]?` | User-configurable fields |
+
+---
+
+### `IInputPort`
+
+| Field | Type | Description |
+|---|---|---|
+| `dataType` | `DataType` | Expected data type of the incoming value |
+| `required` | `boolean?` | Whether the engine must provide a value for this port |
+| `description` | `LocalizedString?` | Optional description shown in the UI |
+
+**Port naming convention:** single-input nodes use `'in'` as the key in `inputs`. Multi-input nodes (fan-in) choose descriptive names, e.g. `'left'` / `'right'` for a merge node.
+
+```ts
+// Single-input
+inputs: { in: { dataType: 'object', required: true } }
+
+// Fan-in (merge / join)
+inputs: {
+  left:  { dataType: 'object', required: true },
+  right: { dataType: 'object', required: true },
+}
+```
+
+Inside `execute`, port values are accessed by the same key:
+
+```ts
+async execute(ctx, inputs) {
+  const payload = inputs['in'];          // single-input
+  const { left, right } = inputs;        // fan-in
+}
+```
 
 ---
 
@@ -183,7 +215,7 @@ export class MyNode implements INode {
     version: '1.0.0',
     category: 'action' as const,
     name: { en: 'My Node' },
-    input: { dataType: 'object' as const, required: true },
+    inputs: { in: { dataType: 'object' as const, required: true } },
     outputs: [
       { name: 'out', kind: 'default' as const, dataType: 'object' as const },
       { name: 'error', kind: 'error' as const, dataType: 'object' as const },
@@ -198,9 +230,11 @@ export class MyNode implements INode {
     ],
   };
 
-  async execute(ctx: INodeContext, input: unknown): Promise<INodeResult> {
+  async execute(ctx: INodeContext, inputs: Record<string, unknown>): Promise<INodeResult> {
     // Respect cancellation before starting I/O
     if (ctx.signal.aborted) throw ctx.signal.reason;
+
+    const input = inputs['in'];
 
     let token: string;
     try {

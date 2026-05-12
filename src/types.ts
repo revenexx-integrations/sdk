@@ -72,7 +72,7 @@ export interface INodeDescription {
   name: LocalizedString;
   description?: LocalizedString;
   icon?: string;
-  input: IInputPort;
+  inputs: Record<string, IInputPort>;
   outputs: IOutputPort[];
   config?: IConfigField[];
 }
@@ -96,5 +96,5 @@ export interface INodeResult {
 
 export interface INode {
   description: INodeDescription;
-  execute(ctx: INodeContext, input: unknown): Promise<INodeResult>;
+  execute(ctx: INodeContext, inputs: Record<string, unknown>): Promise<INodeResult>;
 }

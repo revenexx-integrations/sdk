@@ -21,6 +21,7 @@ There are no tests or lint scripts defined. Type-check manually with `npx tsc --
   - `INode` — the interface every integration node must implement (`description` + `execute`)
   - `INodeDescription` — static metadata (slug, version, category, ports, config schema)
   - `INodeContext` — runtime context injected into `execute` (signal, logger, secrets)
+  - `INodeDescription.inputs` is `Record<string, IInputPort>` — single-input nodes use the conventional key `'in'`; fan-in nodes (merge, join) declare multiple named keys
   - `INodeResult` — what `execute` must return (output map + optional branch name)
   - Supporting types: `IInputPort`, `IOutputPort`, `IConfigField`, `IConfigOption`, `IConfigValidation`
 
@@ -36,3 +37,4 @@ There are no tests or lint scripts defined. Type-check manually with `npx tsc --
 - `LocalizedString` is `string | Record<string, string>` — all user-visible text fields accept either a plain string or a locale map.
 - `INodeContext.signal` is always provided by the engine; nodes must propagate it to all I/O.
 - Error contract: `throw NodeError` for unexpected errors, `return { branch: '<error-port>' }` for expected routable errors. Never mix both for the same condition.
+- `execute(ctx, inputs)` receives a `Record<string, unknown>` keyed by port name; single-input nodes read `inputs['in']`.
