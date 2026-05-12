@@ -68,6 +68,7 @@ Injected into `execute()` at runtime by the workflow engine.
 
 ```ts
 interface INodeContext {
+  signal: AbortSignal;
   logger: {
     info(message: string, meta?: Record<string, unknown>): void;
     warn(message: string, meta?: Record<string, unknown>): void;
@@ -79,7 +80,8 @@ interface INodeContext {
 }
 ```
 
-`secrets.get(key)` resolves a secret by the key stored in a `secret-ref` config field.
+- `signal` — provided by the engine whenever a workflow run is cancelled or times out. Nodes MUST propagate it to any I/O they perform (`fetch`, database queries, `setTimeout`-based loops). Check `signal.aborted` at the start of long operations and throw an `AbortError` or simply let the downstream I/O reject.
+- `secrets.get(key)` resolves a secret by the key stored in a `secret-ref` config field.
 
 ---
 
@@ -93,6 +95,34 @@ interface INodeResult {
   branch?: string;                   // which output port to route through
 }
 ```
+
+---
+
+### `NodeError`
+
+A typed error class for unexpected or system-level failures inside `execute()`.
+
+```ts
+class NodeError extends Error {
+  readonly code: string;
+  readonly meta?: Record<string, unknown>;
+}
+
+throw new NodeError('AUTH_FAILED', 'Token expired', { userId: '123' });
+```
+
+#### Error-handling contract
+
+There are exactly **two** ways a node may signal an error. Using both for the same condition, or mixing them arbitrarily, is a contract violation.
+
+| Situation | Mechanism |
+|---|---|
+| Unexpected / system error (network down, credentials invalid, bug) | `throw new NodeError(code, message, meta?)` |
+| Expected, routable error (e.g. HTTP 4xx, record not found) | `return { branch: '<error-port>', outputs: { ... } }` via a declared `kind: 'error'` output port |
+
+**Engine behaviour when a `NodeError` is thrown:** the engine catches it, attempts to route through any `kind: 'error'` output port on the node, and if none exists, marks the workflow execution as failed.
+
+**Do not** add an `error` field to `INodeResult.outputs` as a third path — that bypasses engine-level error handling entirely.
 
 ---
 
@@ -145,6 +175,7 @@ name: { en: 'Download', de: 'Herunterladen' }
 
 ```ts
 import type { INode, INodeContext, INodeResult } from '@revenexx/integrations-node-sdk';
+import { NodeError } from '@revenexx/integrations-node-sdk';
 
 export class MyNode implements INode {
   description = {
@@ -168,12 +199,41 @@ export class MyNode implements INode {
   };
 
   async execute(ctx: INodeContext, input: unknown): Promise<INodeResult> {
-    const token = await ctx.secrets.get(/* value of credentials field */ 'my-secret-key');
+    // Respect cancellation before starting I/O
+    if (ctx.signal.aborted) throw ctx.signal.reason;
+
+    let token: string;
+    try {
+      token = await ctx.secrets.get('my-secret-key');
+    } catch {
+      // Unexpected system error — throw NodeError, engine routes to error port
+      throw new NodeError('SECRET_UNAVAILABLE', 'Could not resolve credentials');
+    }
 
     ctx.logger.info('MyNode executing', { input });
 
+    const response = await fetch('https://api.example.com/data', {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: ctx.signal,  // propagate cancellation to fetch
+    });
+
+    if (response.status === 404) {
+      // Expected, routable error — use the error output port
+      return {
+        outputs: { message: 'Resource not found' },
+        branch: 'error',
+      };
+    }
+
+    if (!response.ok) {
+      // Unexpected HTTP error — throw NodeError
+      throw new NodeError('HTTP_ERROR', `Unexpected status ${response.status}`, {
+        status: response.status,
+      });
+    }
+
     return {
-      outputs: { result: { ok: true } },
+      outputs: { result: await response.json() },
       branch: 'out',
     };
   }

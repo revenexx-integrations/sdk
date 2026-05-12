@@ -78,6 +78,7 @@ export interface INodeDescription {
 }
 
 export interface INodeContext {
+  signal: AbortSignal;
   logger: {
     info(message: string, meta?: Record<string, unknown>): void;
     warn(message: string, meta?: Record<string, unknown>): void;
