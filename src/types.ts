@@ -20,12 +20,18 @@ export interface IInputPort {
   description?: LocalizedString;
 }
 
+export interface IOutputField {
+  dataType: DataType;
+  description?: LocalizedString;
+}
+
 export interface IOutputPort {
   kind: OutputKind;
   dataType: DataType;
   name?: string;
   label?: LocalizedString;
   description?: LocalizedString;
+  fields?: Record<string, IOutputField>;
   sourceFromConfig?: string;
   fallback?: {
     name: string;
