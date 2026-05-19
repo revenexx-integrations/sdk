@@ -62,10 +62,10 @@ under `NPM_GH_TOKEN`) must point that scope at
 | `integrations-worker`          | Exact (`"x.y.z"`)      | The runtime install picks up the SDK transitively from the node packages; the worker's own dep is the source of truth for the major version. |
 | `integrations-ui`              | Caret (`"^x.y.z"`)     | UI follows the latest minor automatically; majors are an explicit upgrade.                |
 
-The worker's pin is the hard floor: when the worker is on `^0.4.x`,
-publishing a node package built against `0.5.x` will fail bootstrap
-because `npm install --omit=dev` resolves a single SDK version per
-install root.
+The worker's pin is the hard floor: when the worker pins SDK `0.4.0`
+exactly, publishing a node package built against `0.5.x` will fail
+bootstrap because `npm install --omit=dev` resolves a single SDK
+version per install root.
 
 ## Breaking change checklist
 
