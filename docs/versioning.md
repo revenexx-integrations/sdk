@@ -28,9 +28,12 @@ Notable specifics:
   is a **minor**: existing code is exhaustively-checking and gets a
   compiler error, but only because it newly has to handle the new
   variant. Treat it as additive.
-- Renaming a member of an existing variant is a **major**. There is no
-  "rename with deprecation" path in TypeScript; the old name simply
-  vanishes.
+- Removing a member of an existing variant is a **major**. The rename
+  itself can be staged non-breakingly: add the new member as a
+  **minor**, mark the old member with `@deprecated` so consumers get an
+  IDE warning, and only delete the old member in the next **major**.
+  Skipping the deprecation window and renaming in one step is still a
+  major because the old name vanishes.
 - Tightening the type of an existing field is a **major** even when the
   new type is a subtype of the old one, because consumers that
   produced the wider type stop type-checking.
