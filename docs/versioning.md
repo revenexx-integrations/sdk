@@ -3,12 +3,12 @@
 `@revenexx/integrations-node-sdk` is the shared type surface between
 every actor in the integrations stack:
 
-- [`integrations-nodes-core`](../../integrations-nodes-core/) (and any
-  sibling node packages) implement `INode` from this SDK.
-- [`integrations-worker`](../../integrations-worker/) imports `INode`
-  to invoke node implementations at run time.
-- [`integrations-ui`](../../integrations-ui/) reads `NodeManifestConfigField`
-  (and related types) to render config editors.
+- `integrations-nodes-core` (and any sibling node packages) implement
+  `INode` from this SDK.
+- `integrations-worker` imports `INode` to invoke node implementations
+  at run time.
+- `integrations-ui` reads `NodeManifestConfigField` (and related types)
+  to render config editors.
 
 Because of this fan-out, even a minor type tweak can ripple through
 three independently-deployed components. This document fixes the rules
@@ -94,5 +94,7 @@ stops shifting weekly.
 ## Related documents
 
 - [`overview.md`](overview.md) — the type surface the SDK exposes.
-- [`../../integrations-nodes-core/docs/adding-a-node.md`](../../integrations-nodes-core/docs/adding-a-node.md) — the consumer perspective.
-- [`../../integrations-worker/docs/node-package-resolution.md`](../../integrations-worker/docs/node-package-resolution.md) — how the SDK is resolved at run time.
+- `docs/adding-a-node.md` in the `integrations-nodes-core` repo — the
+  consumer perspective.
+- `docs/node-package-resolution.md` in the `integrations-worker` repo —
+  how the SDK is resolved at run time.
