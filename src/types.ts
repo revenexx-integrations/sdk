@@ -104,3 +104,28 @@ export interface INode {
   description: INodeDescription;
   execute(ctx: INodeContext, inputs: Record<string, unknown>): Promise<INodeResult>;
 }
+
+/**
+ * Optional capability interface for nodes that iterate over a collection.
+ * Implement this alongside {@link INode} to signal to the worker that this
+ * node drives iteration — the worker will call {@link extractItems} instead
+ * of relying on slug-based detection.
+ *
+ * This interface is the designated dispatch point for future child-workflow
+ * execution: once per-iteration isolation is needed, the worker can swap the
+ * inline loop for `executeChild` calls without any changes to the node or SDK.
+ */
+export interface INodeWithIteration {
+  /**
+   * Extracts the array of items to iterate over from the resolved inputs and
+   * config. Must be pure and synchronous — it runs inside a Temporal Activity.
+   */
+  extractItems(inputs: Record<string, unknown>, config: Record<string, unknown>): unknown[];
+}
+
+/**
+ * Type guard that checks whether a node implements {@link INodeWithIteration}.
+ */
+export function isNodeWithIteration(node: INode): node is INode & INodeWithIteration {
+  return typeof (node as INode & Partial<INodeWithIteration>).extractItems === 'function';
+}
