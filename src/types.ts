@@ -62,6 +62,7 @@ export interface IConfigFieldBase {
   default?: unknown;
   placeholder?: LocalizedString;
   expressionAllowed?: boolean;
+  multiline?: boolean;
   validation?: IConfigValidation;
   options?: IConfigOption[];
 }
