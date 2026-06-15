@@ -12,7 +12,7 @@ import type { INode, INodeDescription } from './types.js';
 export const MANIFEST_VERSION = 'v0-draft';
 
 export interface NodeManifest {
-  manifestVersion: string;
+  manifestVersion: typeof MANIFEST_VERSION;
   nodes: INodeDescription[];
 }
 

@@ -13,7 +13,8 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, openAsBlob, readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import * as fs from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -25,6 +26,21 @@ const projectRoot = process.cwd();
 function fail(message: string): never {
   console.error(`Error: ${message}`);
   process.exit(1);
+}
+
+/**
+ * `fs.openAsBlob` (Node 19+) streams the tarball off disk instead of buffering
+ * it in memory. It is accessed via the `fs` namespace and feature-detected
+ * rather than statically imported — a named import of an export that doesn't
+ * exist on older Node throws at module load and would break *every* command,
+ * not just `publish`. Fall back to a `Blob` built from `readFileSync` (the
+ * 50 MB upload cap keeps this bounded) where it is unavailable.
+ */
+async function tarballBlob(path: string): Promise<Blob> {
+  if (typeof fs.openAsBlob === 'function') {
+    return fs.openAsBlob(path, { type: 'application/gzip' });
+  }
+  return new Blob([readFileSync(path)], { type: 'application/gzip' });
 }
 
 // --------------------------------------------------------------- manifest
@@ -144,9 +160,7 @@ async function runPublish(): Promise<void> {
   const tarballPath = resolve(packDir, tarballName);
   console.log(`  produced ${tarballName}`);
 
-  // `openAsBlob` (Node 19+) avoids reading the whole tarball into memory; the
-  // multipart body streams off disk.
-  const fileBlob = await openAsBlob(tarballPath, { type: 'application/gzip' });
+  const fileBlob = await tarballBlob(tarballPath);
   const form = new FormData();
   form.set('tarball', fileBlob, tarballName);
 
