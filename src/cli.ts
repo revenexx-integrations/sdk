@@ -14,7 +14,6 @@
 
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import { existsSync, mkdirSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -40,14 +39,14 @@ async function tarballBlob(path: string): Promise<Blob> {
   if (typeof fs.openAsBlob === 'function') {
     return fs.openAsBlob(path, { type: 'application/gzip' });
   }
-  return new Blob([readFileSync(path)], { type: 'application/gzip' });
+  return new Blob([fs.readFileSync(path)], { type: 'application/gzip' });
 }
 
 // --------------------------------------------------------------- manifest
 
 async function runManifest(): Promise<void> {
   const distEntry = resolve(projectRoot, 'dist', 'index.js');
-  if (!existsSync(distEntry)) {
+  if (!fs.existsSync(distEntry)) {
     fail('dist/index.js is missing. Run the build (tsup) before `rvnxx-nodes manifest`.');
   }
 
@@ -60,8 +59,8 @@ async function runManifest(): Promise<void> {
 
   const outDir = resolve(projectRoot, 'dist');
   const outFile = resolve(outDir, 'manifest.json');
-  mkdirSync(outDir, { recursive: true });
-  writeFileSync(outFile, JSON.stringify(manifest, null, 2), 'utf-8');
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.writeFileSync(outFile, JSON.stringify(manifest, null, 2), 'utf-8');
 
   console.log(`✓ dist/manifest.json — ${manifest.nodes.length} node(s)`);
   for (const m of manifest.nodes) {
@@ -73,8 +72,8 @@ async function runManifest(): Promise<void> {
 
 function loadDotEnv(): void {
   const envPath = resolve(projectRoot, '.env');
-  if (!existsSync(envPath)) return;
-  for (const line of readFileSync(envPath, 'utf-8').split('\n')) {
+  if (!fs.existsSync(envPath)) return;
+  for (const line of fs.readFileSync(envPath, 'utf-8').split('\n')) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
     const eq = trimmed.indexOf('=');
@@ -107,11 +106,11 @@ async function runPublish(): Promise<void> {
   // Without it the upload still works locally but the server rejects the
   // tarball with an opaque 422 — fail fast here with a clear remedy instead.
   const manifestPath = resolve(projectRoot, 'dist', 'manifest.json');
-  if (!existsSync(manifestPath)) {
+  if (!fs.existsSync(manifestPath)) {
     fail('dist/manifest.json is missing. Run `npm run build` before `npm run publish`.');
   }
 
-  const pkg = JSON.parse(readFileSync(resolve(projectRoot, 'package.json'), 'utf-8')) as {
+  const pkg = JSON.parse(fs.readFileSync(resolve(projectRoot, 'package.json'), 'utf-8')) as {
     name: string;
     version: string;
   };
@@ -119,11 +118,15 @@ async function runPublish(): Promise<void> {
   console.log(`Packing ${pkg.name}@${pkg.version}…`);
 
   // Pack into a throwaway directory so the resulting .tgz never pollutes the
-  // repo root. The directory is wiped on process exit regardless of branch.
-  const packDir = mkdtempSync(join(tmpdir(), 'rvnxx-pack-'));
+  // repo root. `exit` covers normal completion and `process.exit` (incl.
+  // `fail`); forwarding SIGINT/SIGTERM to `process.exit` makes Ctrl-C and
+  // termination run the same cleanup instead of leaking the temp dir.
+  const packDir = fs.mkdtempSync(join(tmpdir(), 'rvnxx-pack-'));
   process.on('exit', () => {
-    rmSync(packDir, { recursive: true, force: true });
+    fs.rmSync(packDir, { recursive: true, force: true });
   });
+  process.on('SIGINT', () => process.exit(130));
+  process.on('SIGTERM', () => process.exit(143));
 
   // `npm pack --json` writes the tarball into --pack-destination and prints a
   // JSON array describing the result. Capturing it is more robust than
