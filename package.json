@@ -1,11 +1,14 @@
 {
   "name": "@revenexx/integrations-node-sdk",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "TypeScript interfaces and utilities for Revenexx integration nodes",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "rvnxx-nodes": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -22,6 +25,7 @@
     "dev": "tsup --watch"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0"
   }
