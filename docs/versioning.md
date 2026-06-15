@@ -40,17 +40,41 @@ Notable specifics:
 
 ## Release flow
 
+Versioning and publishing are driven by [Changesets](https://github.com/changesets/changesets);
+you never edit `version` in `package.json` by hand. The publish is triggered by
+a **git tag** (created by `changeset tag`), not by a merge to `main`.
+
+**During development** — for every observable change, record the intended bump:
+
 ```
-1. Edit src/, update version in package.json per SemVer rules above.
-2. npm run build          # tsup → dist/
-3. npm publish            # publishConfig points at https://npm.pkg.github.com
-4. Bump the dependency in every consumer:
-     - integrations-nodes-core/package.json
-     - integrations-worker/package.json
-     - integrations-ui/package.json (if it imports the SDK)
-   Run `npm install` in each consumer to refresh the lockfile.
-5. For each consumer, re-publish (nodes-core) or rebuild (worker, ui).
+npx changeset                       # pick patch/minor/major + a summary line
+git add .changeset/ && git commit   # commit the intent file with your change
 ```
+
+**When you want to cut a release** (locally, on `main`):
+
+```
+1. npx changeset version            # consumes intent files → bumps package.json + CHANGELOG.md
+2. git commit -am "release: version packages"
+3. npx changeset tag                # creates tag @revenexx/integrations-node-sdk@X.Y.Z
+4. git push --follow-tags           # tag push triggers .github/workflows/publish.yml
+```
+
+The tag push runs `.github/workflows/publish.yml`, which does
+`npm ci → npm run build → npm run release` (`changeset publish`) against GitHub
+Packages, authenticated with the workflow's built-in `GITHUB_TOKEN`. `changeset
+publish` is idempotent — it only publishes versions not already in the registry.
+
+Pick the bump in step `npx changeset` per the SemVer table above. After the SDK
+release, bump the dependency in every consumer and re-publish (nodes-core) or
+rebuild (worker, ui):
+
+- `integrations-nodes-core/package.json`
+- `integrations-worker/package.json`
+- `integrations-ui/package.json` (if it imports the SDK)
+
+Run `npm install` in each consumer to refresh the lockfile. This cross-repo
+step is **not** automated by the SDK's publish workflow.
 
 The SDK is published to GitHub Packages under the `@revenexx` scope.
 Every consumer's `.npmrc` (and the spawned worker's runtime `.npmrc`
