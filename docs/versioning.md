@@ -48,21 +48,22 @@ a **git tag** (created by `changeset tag`), not by a merge to `main`.
 
 ```
 npx changeset                       # pick patch/minor/major + a summary line
-git add .changeset/ && git commit   # commit the intent file with your change
+git add -A && git commit            # commit the intent file together with your change
 ```
 
 **When you want to cut a release** (locally, on `main`):
 
 ```
 1. npx changeset version            # consumes intent files → bumps package.json + CHANGELOG.md
-2. git commit -am "release: version packages"
+2. git add -A && git commit -m "release: version packages"  # -A so a first-time CHANGELOG.md is included
 3. npx changeset tag                # creates tag @revenexx/integrations-node-sdk@X.Y.Z
 4. git push --follow-tags           # tag push triggers .github/workflows/publish.yml
 ```
 
 The tag push runs `.github/workflows/publish.yml`, which does
-`npm ci → npm run build → npm run release` (`changeset publish`) against GitHub
-Packages, authenticated with the workflow's built-in `GITHUB_TOKEN`. `changeset
+`npm ci → npm run release` (`changeset publish`) against GitHub Packages,
+authenticated with the workflow's built-in `GITHUB_TOKEN`. The build runs via
+the `prepublishOnly` hook that `npm publish` fires for each package. `changeset
 publish` is idempotent — it only publishes versions not already in the registry.
 
 Pick the bump in step `npx changeset` per the SemVer table above. After the SDK
