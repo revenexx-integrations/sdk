@@ -109,11 +109,15 @@ interface INodeContext {
   secrets: {
     get(key: string): Promise<string>;
   };
+  credentials: {
+    get(credentialsId: string): Promise<Record<string, unknown>>;
+  };
 }
 ```
 
 - `signal` — provided by the engine whenever a workflow run is cancelled or times out. Nodes MUST propagate it to any I/O they perform (`fetch`, database queries, `setTimeout`-based loops). Check `signal.aborted` at the start of long operations and throw an `AbortError` or simply let the downstream I/O reject.
-- `secrets.get(key)` resolves a secret by the key stored in a `secret-ref` config field.
+- `secrets.get(key)` resolves an **opaque** secret string by the key stored in a `secret-ref` config field.
+- `credentials.get(credentialsId)` resolves the **structured** access data of a credential instance referenced by a `credentials-ref` config field (e.g. `{ host, port, user, password }` or `{ accessToken }`). The runtime fulfils it from the credentials broker; for token-based types it always returns a currently-valid token, so call it at execution time rather than caching the result.
 
 ---
 
@@ -185,7 +189,8 @@ Describes a user-configurable input on the node. Rendered as a form field in the
 | `object` | Nested fields (requires `properties`) |
 | `array` | Repeatable field (requires `items`) |
 | `expression` | Expression editor |
-| `secret-ref` | Credential picker — value is resolved via `ctx.secrets.get()` at runtime |
+| `secret-ref` | Secret-key picker — value is an opaque tenant secret key, resolved via `ctx.secrets.get()` at runtime |
+| `credentials-ref` | Credential picker filtered by `credentialType` — value is a credential instance id, resolved via `ctx.credentials.get()` at runtime |
 
 ---
 
@@ -273,6 +278,24 @@ export class MyNode implements INode {
   }
 }
 ```
+
+> **Typed credentials variant.** For a structured, testable connection (SMTP,
+> OAuth, …) declare a `credentials-ref` field instead of `secret-ref` and read
+> it via `ctx.credentials.get()`:
+>
+> ```ts
+> // config:
+> { key: 'credentials', label: { en: 'SMTP' },
+>   type: 'credentials-ref' as const, credentialType: 'rvnxx:smtp', required: true }
+>
+> // execute:
+> const smtp = await ctx.credentials.get(inputs['credentials'] as string);
+> // smtp = { host, port, user?, password?, ... } resolved by the broker
+> ```
+>
+> Credential *types* themselves are authored by extending the SDK base classes
+> (`SimpleValueCredential`, `OAuth2ClientCredentialsCredential`, …) and exported
+> as `CREDENTIALS`; see `integrations/docs/credentials.md`.
 
 Register the node in `integrations-nodes-core/src/index.ts`:
 

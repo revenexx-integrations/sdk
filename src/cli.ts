@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { buildManifest } from './manifest.js';
-import type { INode } from './types.js';
+import type { ICredential, INode } from './types.js';
 
 const projectRoot = process.cwd();
 
@@ -50,21 +50,32 @@ async function runManifest(): Promise<void> {
     fail('dist/index.js is missing. Run the build (tsup) before `rvnxx-nodes manifest`.');
   }
 
-  const mod = (await import(pathToFileURL(distEntry).href)) as { NODES?: unknown };
+  const mod = (await import(pathToFileURL(distEntry).href)) as {
+    NODES?: unknown;
+    CREDENTIALS?: unknown;
+  };
   if (!Array.isArray(mod.NODES)) {
     fail('dist/index.js does not export a `NODES` array. Export `NODES: INode[]` from your package entry.');
   }
+  if (mod.CREDENTIALS !== undefined && !Array.isArray(mod.CREDENTIALS)) {
+    fail('dist/index.js exports `CREDENTIALS` but it is not an array. Export `CREDENTIALS: ICredential[]`.');
+  }
 
-  const manifest = buildManifest(mod.NODES as INode[]);
+  const credentials = (mod.CREDENTIALS as ICredential[] | undefined) ?? [];
+  const manifest = buildManifest(mod.NODES as INode[], credentials);
 
   const outDir = resolve(projectRoot, 'dist');
   const outFile = resolve(outDir, 'manifest.json');
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(outFile, JSON.stringify(manifest, null, 2), 'utf-8');
 
-  console.log(`✓ dist/manifest.json — ${manifest.nodes.length} node(s)`);
+  const credentialCount = manifest.credentials?.length ?? 0;
+  console.log(`✓ dist/manifest.json — ${manifest.nodes.length} node(s), ${credentialCount} credential(s)`);
   for (const m of manifest.nodes) {
-    console.log(`  ${m.slug}@${m.version}`);
+    console.log(`  node       ${m.slug}@${m.version}`);
+  }
+  for (const c of manifest.credentials ?? []) {
+    console.log(`  credential ${c.slug}@${c.version} (${c.authKind})`);
   }
 }
 
