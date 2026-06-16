@@ -96,13 +96,35 @@ export abstract class BaseCredential implements ICredential {
 
     const text = await res.text();
     if (!res.ok) {
-      throw new Error(`token endpoint ${url} -> ${res.status}: ${text.slice(0, 500)}`);
+      // Surface only the standard OAuth error fields (RFC 6749 §5.2), never the
+      // raw body — token endpoints can echo request params or diagnostics that
+      // may contain secrets/PII, which would then leak via logs/error reporting.
+      throw new Error(`token endpoint ${url} -> ${res.status}${formatOAuthError(text)}`);
     }
     try {
       return JSON.parse(text) as OAuthTokenResponse;
     } catch {
       throw new Error(`token endpoint ${url} returned non-JSON body`);
     }
+  }
+}
+
+/**
+ * Extract `{ error, error_description }` (RFC 6749 §5.2) from a token-endpoint
+ * error body for a safe, useful message. Returns an empty string when the body
+ * is not a recognisable OAuth error object — the raw body is never included.
+ */
+function formatOAuthError(body: string): string {
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown; error_description?: unknown };
+    const error = typeof parsed.error === 'string' ? parsed.error : undefined;
+    if (!error) {
+      return '';
+    }
+    const description = typeof parsed.error_description === 'string' ? parsed.error_description : undefined;
+    return `: ${error}${description ? ` (${description})` : ''}`;
+  } catch {
+    return '';
   }
 }
 
@@ -317,11 +339,16 @@ export abstract class OAuth2AuthCodeCredential
   }
 
   async test(_ctx: ICredentialContext, config: Config): Promise<ICredentialTestResult> {
-    // Pre-consent there is no refresh_token to exercise; validate that the
-    // authorize URL is constructable from the supplied config.
+    // Pre-consent there is no refresh_token to exercise, so validate that the
+    // full set of values the code-exchange/refresh will need is present and
+    // well-formed: both endpoints are valid URLs and the client id/secret
+    // resolve. (Subclasses read these from config; a missing required field
+    // throws via requireString, which we surface as ok:false.)
     try {
       new URL(this.authorizeUrl(config));
+      new URL(this.tokenUrl(config));
       this.clientId(config);
+      this.clientSecret(config);
       return { ok: true, message: 'Configuration valid — complete the OAuth consent to finish setup.' };
     } catch (err) {
       return { ok: false, message: err instanceof Error ? err.message : String(err) };

@@ -198,3 +198,56 @@ test('OAuth2AuthCodeCredential.resolve refreshes and persists a rotated token', 
 test('OAuth2AuthCodeCredential.resolve throws when there is no refresh token', async () => {
   await assert.rejects(() => new AuthCodeCredential().resolve(ctx(), {}, null));
 });
+
+// auth-code test() validates the full code-exchange config (incl. clientSecret)
+class StrictAuthCodeCredential extends OAuth2AuthCodeCredential {
+  readonly description = describe('rvnxx:strict-authy', 'oauth2-authcode');
+
+  protected authorizeUrl(_config: Config): string {
+    return 'https://auth.example/authorize';
+  }
+
+  protected tokenUrl(_config: Config): string {
+    return 'https://auth.example/token';
+  }
+
+  protected clientId(config: Config): string {
+    const v = config['clientId'];
+    if (typeof v !== 'string' || v === '') {
+      throw new Error('clientId required');
+    }
+    return v;
+  }
+
+  protected clientSecret(config: Config): string {
+    const v = config['clientSecret'];
+    if (typeof v !== 'string' || v === '') {
+      throw new Error('clientSecret required');
+    }
+    return v;
+  }
+}
+
+test('OAuth2AuthCodeCredential.test fails when clientSecret is missing', async () => {
+  const result = await new StrictAuthCodeCredential().test(ctx(), { clientId: 'id' });
+  assert.equal(result.ok, false);
+  assert.match(String(result.message), /clientSecret/);
+});
+
+test('OAuth2AuthCodeCredential.test passes with a complete config', async () => {
+  const result = await new StrictAuthCodeCredential().test(ctx(), { clientId: 'id', clientSecret: 'sec' });
+  assert.equal(result.ok, true);
+});
+
+test('token-endpoint errors surface OAuth fields but never the raw body', async (t) => {
+  // Body includes a field that must NOT leak into the error message.
+  stubFetch(t, { error: 'invalid_client', error_description: 'bad creds', leaked_secret: 'DO_NOT_LEAK' }, 400);
+
+  await assert.rejects(
+    () => new BusinessCentralCredential().resolve(ctx(), { clientId: 'id', clientSecret: 'sec' }, null),
+    (err: Error) =>
+      err.message.includes('invalid_client') &&
+      err.message.includes('bad creds') &&
+      !err.message.includes('DO_NOT_LEAK'),
+  );
+});
