@@ -73,6 +73,15 @@ async function main(): Promise<void> {
     case 'manifest':
       await runManifest();
       break;
+    case 'publish':
+      console.error(
+        'The `publish` command has been removed. Node packages are no longer ' +
+          'published from the repos themselves — registration happens through the ' +
+          'Revenexx Console/Cockpit. For local development, use ' +
+          '`integrations/scripts/register-nodes-core.sh`, which packs and uploads ' +
+          'the tarball to the admin API.',
+      );
+      process.exit(1);
     default:
       console.error('Usage: rvnxx-nodes <manifest>');
       process.exit(1);
