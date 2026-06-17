@@ -20,26 +20,29 @@ The SDK has **no runtime dependencies** and no logic beyond the manifest helpers
 | `src/errors.ts` | `NodeError` — typed error class for unexpected failures inside `execute` |
 | `src/extract.ts` | `extractManifest` / `extractManifests` — pull `INodeDescription` off node instances without executing them |
 | `src/manifest.ts` | `buildManifest` / `MANIFEST_VERSION` — wrap node descriptions in the `{ manifestVersion, nodes }` envelope the registry expects |
-| `src/cli.ts` | `rvnxx-nodes` CLI (`bin`) — shared build/publish tooling for node packages |
+| `src/cli.ts` | `rvnxx-nodes` CLI (`bin`) — shared manifest tooling for node packages |
 | `src/index.ts` | Barrel re-export |
 
 ## `rvnxx-nodes` CLI
 
 The SDK ships a `bin`, `rvnxx-nodes`, so every node package shares one
-build/publish toolchain instead of copying scripts. It operates on the
+manifest toolchain instead of copying scripts. It operates on the
 current working directory:
 
 | Command | What it does |
 |---|---|
 | `rvnxx-nodes manifest` | Imports the package's built `dist/index.js`, reads its `NODES` export, and writes `dist/manifest.json` (`v0-draft` envelope). Run after `tsup`. |
-| `rvnxx-nodes publish` | Packs the package with `npm pack` and uploads the tarball to the integrations registry (`POST /api/v1/node-packages`). Reads `INTEGRATIONS_URL` / `INTEGRATIONS_TOKEN` / `INTEGRATIONS_INSECURE` (also from `./.env`). |
 
-A consuming package wires these into its own scripts:
+> **No `publish`.** Node packages are not published from the repos themselves —
+> registration goes through the Revenexx Console/Cockpit, and for local
+> development `integrations/scripts/update-dev.sh` uploads the packed tarball to
+> the admin API.
+
+A consuming package wires the manifest step into its build:
 
 ```json
 "scripts": {
-  "build": "tsup && rvnxx-nodes manifest",
-  "publish": "NODE_OPTIONS=--no-warnings rvnxx-nodes publish"
+  "build": "tsup && rvnxx-nodes manifest"
 }
 ```
 
