@@ -68,7 +68,7 @@ export interface IConfigFieldBase {
   options?: IConfigOption[];
   /**
    * Only meaningful when `type === 'credentials-ref'`: the namespaced slug of
-   * the credential type this field requires (e.g. `rvnxx:smtp`). The editor
+   * the credential type this field requires (e.g. `revenexx:smtp`). The editor
    * lists only tenant credential instances of this type; the blob stores the
    * chosen instance UUID.
    */
@@ -188,7 +188,7 @@ export interface ICredentialField {
  * this description.
  */
 export interface ICredentialDescription {
-  /** Stable namespaced identifier `<namespace>:<slug>` (e.g. `rvnxx:smtp`). */
+  /** Stable namespaced identifier `<namespace>:<slug>` (e.g. `revenexx:smtp`). */
   slug: string;
   version: string;
   name: LocalizedString;

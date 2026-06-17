@@ -5,7 +5,7 @@ import type { ICredential, INode } from './types.js';
 
 const fakeNode: INode = {
   description: {
-    slug: 'rvnxx:noop',
+    slug: 'revenexx:noop',
     version: '1.0.0',
     category: 'action',
     name: 'Noop',
@@ -19,7 +19,7 @@ const fakeNode: INode = {
 
 const fakeCredential: ICredential = {
   description: {
-    slug: 'rvnxx:smtp',
+    slug: 'revenexx:smtp',
     version: '1.0.0',
     name: 'SMTP',
     authKind: 'static',
@@ -45,6 +45,6 @@ test('buildManifest includes credential descriptions when provided', () => {
   const manifest = buildManifest([fakeNode], [fakeCredential]);
 
   assert.equal(manifest.credentials?.length, 1);
-  assert.equal(manifest.credentials?.[0]?.slug, 'rvnxx:smtp');
+  assert.equal(manifest.credentials?.[0]?.slug, 'revenexx:smtp');
   assert.equal(manifest.credentials?.[0]?.authKind, 'static');
 });

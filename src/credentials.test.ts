@@ -35,7 +35,7 @@ function stubFetch(t: TestContext, body: Record<string, unknown>, status = 200):
 // ----------------------------------------------------------- SimpleValue
 
 class SmtpCredential extends SimpleValueCredential {
-  readonly description = describe('rvnxx:smtp', 'static', [
+  readonly description = describe('revenexx:smtp', 'static', [
     { key: 'host', label: 'Host', type: 'string', required: true },
     { key: 'port', label: 'Port', type: 'number', required: true },
   ]);
@@ -57,7 +57,7 @@ test('BaseCredential.test fails when a required field is missing', async () => {
 // ----------------------------------------------------------- ApiKey / Basic
 
 class DeeplCredential extends ApiKeyCredential {
-  readonly description = describe('rvnxx:deepl', 'api-key', [
+  readonly description = describe('revenexx:deepl', 'api-key', [
     { key: 'apiKey', label: 'Key', type: 'secret', required: true },
   ]);
 }
@@ -73,7 +73,7 @@ test('ApiKeyCredential.resolve throws when the key is missing', async () => {
 });
 
 class BasicCredential extends BasicAuthCredential {
-  readonly description = describe('rvnxx:basic', 'basic');
+  readonly description = describe('revenexx:basic', 'basic');
 }
 
 test('BasicAuthCredential.resolve returns username/password', async () => {
@@ -85,7 +85,7 @@ test('BasicAuthCredential.resolve returns username/password', async () => {
 // ----------------------------------------------- OAuth2 client-credentials
 
 class BusinessCentralCredential extends OAuth2ClientCredentialsCredential {
-  readonly description = describe('rvnxx:bc', 'oauth2-client-credentials');
+  readonly description = describe('revenexx:bc', 'oauth2-client-credentials');
 
   protected tokenUrl(_config: Config): string {
     return 'https://token.example/token';
@@ -128,7 +128,7 @@ test('OAuth2ClientCredentialsCredential.test returns ok on a successful mint', a
 // ----------------------------------------------------- OAuth2 auth-code
 
 class AuthCodeCredential extends OAuth2AuthCodeCredential {
-  readonly description = describe('rvnxx:authy', 'oauth2-authcode');
+  readonly description = describe('revenexx:authy', 'oauth2-authcode');
 
   protected authorizeUrl(_config: Config): string {
     return 'https://auth.example/authorize';
@@ -201,7 +201,7 @@ test('OAuth2AuthCodeCredential.resolve throws when there is no refresh token', a
 
 // auth-code test() validates the full code-exchange config (incl. clientSecret)
 class StrictAuthCodeCredential extends OAuth2AuthCodeCredential {
-  readonly description = describe('rvnxx:strict-authy', 'oauth2-authcode');
+  readonly description = describe('revenexx:strict-authy', 'oauth2-authcode');
 
   protected authorizeUrl(_config: Config): string {
     return 'https://auth.example/authorize';
