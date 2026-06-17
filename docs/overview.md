@@ -50,7 +50,7 @@ Static metadata about the node. Read at registry build time — never at runtime
 
 | Field | Type | Description |
 |---|---|---|
-| `slug` | `string` | Unique identifier, e.g. `rvnxx:download` |
+| `slug` | `string` | Unique identifier, e.g. `revenexx:download` |
 | `version` | `string` | Semver string |
 | `category` | `NodeCategory` | `trigger \| action \| transform \| control \| io` |
 | `name` | `LocalizedString` | Display name |
@@ -216,7 +216,7 @@ import { NodeError } from '@revenexx/integrations-node-sdk';
 
 export class MyNode implements INode {
   description = {
-    slug: 'rvnxx:my-node',
+    slug: 'revenexx:my-node',
     version: '1.0.0',
     category: 'action' as const,
     name: { en: 'My Node' },
@@ -286,7 +286,7 @@ export class MyNode implements INode {
 > ```ts
 > // config:
 > { key: 'credentials', label: { en: 'SMTP' },
->   type: 'credentials-ref' as const, credentialType: 'rvnxx:smtp', required: true }
+>   type: 'credentials-ref' as const, credentialType: 'revenexx:smtp', required: true }
 >
 > // execute:
 > const smtp = await ctx.credentials.get(inputs['credentials'] as string);
