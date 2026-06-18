@@ -1,0 +1,36 @@
+version: 2
+
+# Anders als integrations-nodes-core konsumiert das SDK keine privaten
+# @revenexx-Pakete (es *ist* dieses Paket) — alle devDependencies kommen aus
+# der public npm-Registry. Daher keine `registries:`-Sektion und kein
+# NPM_GH_TOKEN-Secret nötig.
+
+updates:
+  # npm-Dependencies (aktuell nur devDependencies)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+    open-pull-requests-limit: 5
+    groups:
+      # devDependencies gebündelt
+      dev-dependencies:
+        dependency-type: "development"
+      # Produktiv-Deps: minor/patch zusammen, major bleibt einzeln
+      # (aktuell keine, für Parität mit nodes-core beibehalten)
+      production-minor-patch:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub-Actions aktuell halten (wie im integrations-Repo)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
