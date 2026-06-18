@@ -1,4 +1,4 @@
-site_name: integrations-node-sdk
+site_name: sdk
 site_description: Shared TypeScript contract library for Revenexx integration nodes — defines INode, INodeDescription, INodeContext and all supporting types.
 docs_dir: docs
 
