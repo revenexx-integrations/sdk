@@ -1,0 +1,20 @@
+{
+  "version": "1.0",
+  "project": "integrations-node-sdk",
+  "entities": [
+    {
+      "kind": "Library",
+      "id": "integrations-node-sdk",
+      "name": "Integrations Node SDK",
+      "description": "Shared TypeScript contract library (INode, INodeDescription, INodeContext, …) for Revenexx integration nodes.",
+      "lifecycle": "experimental",
+      "team": "platform",
+      "category": "component",
+      "group": "integrations",
+      "tech": ["typescript", "integrations"],
+      "links": {
+        "github": "https://github.com/revenexx-integrations/sdk"
+      }
+    }
+  ]
+}
