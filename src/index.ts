@@ -1,4 +1,5 @@
 export * from './types.js';
+export * from './localized.js';
 export * from './extract.js';
 export * from './manifest.js';
 export * from './credentials.js';
