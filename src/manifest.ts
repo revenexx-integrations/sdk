@@ -1,5 +1,11 @@
 import { extractCredentialManifests, extractManifests } from './extract.js';
-import type { ICredential, ICredentialDescription, INode, INodeDescription } from './types.js';
+import type {
+  ICredential,
+  ICredentialDescription,
+  INode,
+  INodeDescription,
+  ITemplateDescription,
+} from './types.js';
 
 /**
  * Envelope version expected by the integrations server-side
@@ -19,20 +25,33 @@ export interface NodeManifest {
    * that ship no credentials omit it (older publishers never set it).
    */
   credentials?: ICredentialDescription[];
+  /**
+   * Workflow templates this package publishes. Optional and additive: packages
+   * that ship no templates omit it. Templates are plain data (no executable
+   * code), so they are carried verbatim from the package's `TEMPLATES` export.
+   */
+  templates?: ITemplateDescription[];
 }
 
 /**
  * Builds the manifest envelope from a package's `NODES` (and optional
- * `CREDENTIALS`) exports. The result is what gets written to
+ * `CREDENTIALS` / `TEMPLATES`) exports. The result is what gets written to
  * `dist/manifest.json` and uploaded to the registry inside the tarball.
  */
-export function buildManifest(nodes: INode[], credentials: ICredential[] = []): NodeManifest {
+export function buildManifest(
+  nodes: INode[],
+  credentials: ICredential[] = [],
+  templates: ITemplateDescription[] = [],
+): NodeManifest {
   const manifest: NodeManifest = {
     manifestVersion: MANIFEST_VERSION,
     nodes: extractManifests(nodes),
   };
   if (credentials.length > 0) {
     manifest.credentials = extractCredentialManifests(credentials);
+  }
+  if (templates.length > 0) {
+    manifest.templates = templates;
   }
   return manifest;
 }

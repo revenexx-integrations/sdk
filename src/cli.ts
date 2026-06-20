@@ -19,7 +19,7 @@ import * as fs from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { buildManifest } from './manifest.js';
-import type { ICredential, INode } from './types.js';
+import type { ICredential, INode, ITemplateDescription } from './types.js';
 
 const projectRoot = process.cwd();
 
@@ -39,6 +39,7 @@ async function runManifest(): Promise<void> {
   const mod = (await import(pathToFileURL(distEntry).href)) as {
     NODES?: unknown;
     CREDENTIALS?: unknown;
+    TEMPLATES?: unknown;
   };
   if (!Array.isArray(mod.NODES)) {
     fail('dist/index.js does not export a `NODES` array. Export `NODES: INode[]` from your package entry.');
@@ -46,9 +47,13 @@ async function runManifest(): Promise<void> {
   if (mod.CREDENTIALS !== undefined && !Array.isArray(mod.CREDENTIALS)) {
     fail('dist/index.js exports `CREDENTIALS` but it is not an array. Export `CREDENTIALS: ICredential[]`.');
   }
+  if (mod.TEMPLATES !== undefined && !Array.isArray(mod.TEMPLATES)) {
+    fail('dist/index.js exports `TEMPLATES` but it is not an array. Export `TEMPLATES: ITemplateDescription[]`.');
+  }
 
   const credentials = (mod.CREDENTIALS as ICredential[] | undefined) ?? [];
-  const manifest = buildManifest(mod.NODES as INode[], credentials);
+  const templates = (mod.TEMPLATES as ITemplateDescription[] | undefined) ?? [];
+  const manifest = buildManifest(mod.NODES as INode[], credentials, templates);
 
   const outDir = resolve(projectRoot, 'dist');
   const outFile = resolve(outDir, 'manifest.json');
@@ -56,12 +61,18 @@ async function runManifest(): Promise<void> {
   fs.writeFileSync(outFile, JSON.stringify(manifest, null, 2), 'utf-8');
 
   const credentialCount = manifest.credentials?.length ?? 0;
-  console.log(`✓ dist/manifest.json — ${manifest.nodes.length} node(s), ${credentialCount} credential(s)`);
+  const templateCount = manifest.templates?.length ?? 0;
+  console.log(
+    `✓ dist/manifest.json — ${manifest.nodes.length} node(s), ${credentialCount} credential(s), ${templateCount} template(s)`,
+  );
   for (const m of manifest.nodes) {
     console.log(`  node       ${m.slug}@${m.version}`);
   }
   for (const c of manifest.credentials ?? []) {
     console.log(`  credential ${c.slug}@${c.version} (${c.authKind})`);
+  }
+  for (const t of manifest.templates ?? []) {
+    console.log(`  template   ${t.slug}@${t.version} (${t.level})`);
   }
 }
 
