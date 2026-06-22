@@ -274,3 +274,64 @@ export function isOAuthAuthorizeCredential(
     typeof candidate.exchangeCode === 'function'
   );
 }
+
+// ------------------------------------------------------------------ Templates
+
+/** Difficulty level surfaced in the template gallery. */
+export type TemplateLevel = 'beginner' | 'intermediate' | 'advanced';
+
+/** Trigger kind a template can ship; mirrors the server's `TriggerType`. */
+export type TemplateTriggerType = 'manual' | 'schedule' | 'webhook' | 'event';
+
+/**
+ * A trigger a template instantiates alongside its workflow. The `handle` is a
+ * stable UUID the workflow blob's edges reference via `from.nodeId`. Per-type
+ * `config` shapes: `schedule` → `{ cron, timezone? }`, `webhook` →
+ * `{ method, secretRef?, public? }`, `event` → `{ subject }`, `manual` → none.
+ * The integrations server deep-validates `config` per `type` on publish.
+ */
+export interface ITemplateTrigger {
+  /** Stable UUID the blob's edges reference via `from.nodeId`. */
+  handle: string;
+  type: TemplateTriggerType;
+  name?: string;
+  config?: Record<string, unknown>;
+  active?: boolean;
+}
+
+/**
+ * A workflow template a node package publishes: a ready-made workflow blueprint
+ * the editor offers as a starting point. Unlike {@link INode}/{@link ICredential}
+ * a template carries no executable code — it is plain data, so a package exports
+ * its `ITemplateDescription`s directly (no class wrapper).
+ *
+ * The `definition` is a workflow blob authored against the workflow-blob grammar
+ * named by `blobVersion`; the integrations server validates it on publish.
+ */
+export interface ITemplateDescription {
+  /** Stable namespaced identifier `<namespace>:<slug>` (e.g. `revenexx:slack-to-crm`). */
+  slug: string;
+  version: string;
+  /** Free-form grouping label shown in the gallery (e.g. `sales`). */
+  category: string;
+  level: TemplateLevel;
+  name: LocalizedString;
+  /** One-line summary shown on the template card. */
+  shortDescription?: LocalizedString;
+  /** Long-form description in Markdown. */
+  description?: LocalizedString;
+  icon?: string;
+  /** Free-form industry tags (e.g. `any`, `medical`). */
+  industries?: string[];
+  /** Free-form vendor tags (e.g. `pipedrive`, `slack`). */
+  vendors?: string[];
+  /** Workflow-blob schema version `definition` targets (e.g. `v0-draft`). */
+  blobVersion: string;
+  /** The workflow blob instantiated when a user picks this template. */
+  definition: Record<string, unknown>;
+  /**
+   * Triggers instantiated alongside the workflow (their `handle`s are
+   * referenced by `definition`'s edges). Omit for a manual-only template.
+   */
+  triggers?: ITemplateTrigger[];
+}
