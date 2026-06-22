@@ -7,6 +7,8 @@ Shared TypeScript contract library for Revenexx integration nodes. Defines the i
 - [Architecture](#architecture)
 - [Types](#types)
 - [Writing a Node](#writing-a-node)
+- [Writing a Credential](#writing-a-credential)
+- [Templates & Iteration](#templates--iteration)
 - [Manifest Helpers](#manifest-helpers)
 - [Publishing](#publishing)
 - [Consuming the Package](#consuming-the-package)
@@ -295,7 +297,8 @@ export class MyNode implements INode {
 >
 > Credential *types* themselves are authored by extending the SDK base classes
 > (`SimpleValueCredential`, `OAuth2ClientCredentialsCredential`, …) and exported
-> as `CREDENTIALS`; see `integrations/docs/credentials.md`.
+> as `CREDENTIALS`; see `docs/credentials.md` in the parent `integrations`
+monorepo (not part of this SDK package).
 
 Register the node in `integrations-nodes-core/src/index.ts`:
 
@@ -307,6 +310,107 @@ export const NODES: INode[] = [
   new MyNode(),
 ];
 ```
+
+---
+
+## Writing a Credential
+
+A **credential type** describes a reusable, testable, multi-instance connection
+(SMTP, an API key, an OAuth client, …). A node references it via a
+`credentials-ref` config field; the broker resolves a live access-data blob at
+execution time. Unlike a node, a credential's `test`/`resolve` logic runs in the
+**credentials broker** (a side-container), never in workflow code.
+
+You almost never implement `ICredential` from scratch — extend one of the SDK
+base classes (`src/credentials.ts`), which supply the boilerplate for their
+`authKind`:
+
+| Base class | `authKind` | Use for |
+|---|---|---|
+| `SimpleValueCredential` | `static` | Non-expiring structured connections (SMTP, SFTP). `resolve` passes the config through unchanged. |
+| `ApiKeyCredential` | `api-key` | Single-token systems (e.g. `revenexx:http-bearer`, `revenexx:deepl`). |
+| `BasicAuthCredential` | `basic` | Username/password. |
+| `OAuth2ClientCredentialsCredential` | `oauth2-client-credentials` | Service-to-service OAuth (2-legged); mints/refreshes access tokens. |
+| `OAuth2AuthCodeCredential` | `oauth2-authcode` | Interactive 3-legged OAuth; also implement `ICredentialOAuthAuthorize` (`buildAuthorizeUrl` / `exchangeCode`). |
+| `BaseCredential` | any | Lowest-level base the others extend; use directly only for a bespoke strategy. |
+
+```ts
+import { SimpleValueCredential } from '@revenexx/integrations-node-sdk';
+import type {
+  ICredentialContext,
+  ICredentialDescription,
+  ICredentialTestResult,
+} from '@revenexx/integrations-node-sdk';
+
+export class SmtpCredential extends SimpleValueCredential {
+  readonly description: ICredentialDescription = {
+    slug: 'revenexx:smtp',
+    version: '1.0.0',
+    name: { en: 'SMTP' },
+    authKind: 'static',
+    fields: [
+      { key: 'host', label: { en: 'Host' }, type: 'string', required: true },
+      { key: 'port', label: { en: 'Port' }, type: 'number', required: true },
+      { key: 'user', label: { en: 'User' }, type: 'string' },
+      { key: 'password', label: { en: 'Password' }, type: 'secret' },
+    ],
+  };
+
+  // `resolve` is inherited from SimpleValueCredential (passthrough).
+  async test(_ctx: ICredentialContext, config: Record<string, unknown>): Promise<ICredentialTestResult> {
+    // … attempt a connection with `config`
+    return { ok: true };
+  }
+}
+```
+
+Key contract points:
+
+- `test(ctx, config)` returns `ICredentialTestResult` (`{ ok, message? }`) — it
+  **does not** throw or return `void`. Called on-demand by the broker.
+- `resolve(ctx, config, durableCreds)` returns `ICredentialResolveResult`
+  (`{ credentials, expiresAt? }`). `durableCreds` holds system-managed long-lived
+  secrets (e.g. a rotated `refresh_token`) and is `null` until they exist.
+- `ICredentialField.type` is `'string' | 'number' | 'boolean' | 'select' | 'secret'`;
+  `secret` fields are masked in the UI and never returned in plaintext by the public API.
+- `ctx.persistDurableCreds?(...)` writes rotated durable creds back to storage
+  (absent during pre-save tests where no instance exists yet).
+
+Export credential instances as `CREDENTIALS` so the manifest step picks them up:
+
+```ts
+export const CREDENTIALS: ICredential[] = [new SmtpCredential()];
+```
+
+The end-to-end credentials architecture (broker, storage, token lifecycle) is
+described in `docs/credentials.md` in the parent `integrations` monorepo (not
+part of this SDK package).
+
+---
+
+## Templates & Iteration
+
+**Templates** (`ITemplateDescription`) are ready-made workflow blueprints a node
+package can ship for the editor's template gallery. Unlike `INode`/`ICredential`
+a template carries no executable code — it is plain data, so a package exports
+its `ITemplateDescription`s directly (no class wrapper) under the name the
+manifest tool looks for:
+
+```ts
+export const TEMPLATES: ITemplateDescription[] = [/* … */];
+```
+
+`rvnxx-nodes manifest` folds this optional export into the manifest's
+`templates[]`. The `definition` is a workflow blob authored against the grammar
+named by `blobVersion`; the integrations server validates it on publish.
+Optional `triggers` (`ITemplateTrigger[]`) are instantiated alongside the
+workflow.
+
+**Iteration** — a node that loops over a collection may also implement
+`INodeWithIteration` (`extractItems(inputs, config): unknown[]`, pure and
+synchronous). The worker detects it via the `isNodeWithIteration` type guard and
+calls `extractItems` instead of relying on slug-based detection; it is the
+designated dispatch point for future child-workflow execution.
 
 ---
 
