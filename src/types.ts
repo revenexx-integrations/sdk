@@ -67,12 +67,14 @@ export interface IConfigFieldBase {
   validation?: IConfigValidation;
   options?: IConfigOption[];
   /**
-   * Only meaningful when `type === 'credentials-ref'`: the namespaced slug of
-   * the credential type this field requires (e.g. `revenexx:smtp`). The editor
-   * lists only tenant credential instances of this type; the blob stores the
-   * chosen instance UUID.
+   * Only meaningful when `type === 'credentials-ref'`: the namespaced slug(s) of
+   * the credential type(s) this field accepts (e.g. `revenexx:smtp`). The editor
+   * lists tenant credential instances of these type(s); the blob stores the
+   * chosen instance UUID. Pass a single string when only one type is accepted,
+   * or an array to let the field accept instances of any of several types (e.g.
+   * a node that works with both an OAuth and an API-token credential).
    */
-  credentialType?: string;
+  credentialType?: string | string[];
 }
 
 export interface IConfigField extends IConfigFieldBase {

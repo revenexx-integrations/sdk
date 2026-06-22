@@ -42,11 +42,17 @@ function expiryFromExpiresIn(expiresIn: unknown): string | undefined {
   return new Date(Date.now() + seconds * 1000).toISOString();
 }
 
-interface OAuthTokenResponse {
+export interface OAuthTokenResponse {
   access_token?: string;
   refresh_token?: string;
   expires_in?: number;
   token_type?: string;
+  /**
+   * Provider-specific base URL the access token must target (e.g. Pipedrive
+   * returns the company-scoped `api_domain` on both the initial exchange and
+   * every refresh). Absent for providers that use a single global API host.
+   */
+  api_domain?: string;
   [key: string]: unknown;
 }
 
