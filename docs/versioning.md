@@ -7,7 +7,7 @@ every actor in the integrations stack:
   `INode` from this SDK.
 - `integrations-worker` imports `INode` to invoke node implementations
   at run time.
-- `integrations-ui` reads `NodeManifestConfigField` (and related types)
+- `integrations-ui` reads `IConfigField` (and related types)
   to render config editors.
 
 Because of this fan-out, even a minor type tweak can ripple through
@@ -49,7 +49,7 @@ Notable specifics:
      - integrations-worker/package.json
      - integrations-ui/package.json (if it imports the SDK)
    Run `npm install` in each consumer to refresh the lockfile.
-5. For each consumer, re-publish (nodes-core) or rebuild (worker, ui).
+5. For each consumer, re-register (nodes-core — via the Console / `update-dev.sh`; node packages are not published to npm) or rebuild (worker, ui).
 ```
 
 The SDK is published to GitHub Packages under the `@revenexx` scope.
@@ -76,10 +76,10 @@ When you have to ship a major:
 
 1. Open an issue or RFC describing the breaking change + migration steps.
 2. Bump SDK major and publish.
-3. Bump SDK in `integrations-nodes-core`, adjust every node implementation, publish a new major of nodes-core.
+3. Bump SDK in `integrations-nodes-core`, adjust every node implementation, register a new major of nodes-core (via the Console / `update-dev.sh`).
 4. Bump SDK in `integrations-worker`, adjust any direct uses, rebuild + push the image.
 5. Bump SDK in `integrations-ui` if it consumes the changed types, rebuild + redeploy.
-6. Republish every previously-published third-party node package against the new major; or document the floor for which packages remain supported.
+6. Re-register every previously-registered third-party node package against the new major; or document the floor for which packages remain supported.
 
 There is currently no automated cross-repo CI guard against an SDK
 major being merged without a matching consumer PR — be deliberate

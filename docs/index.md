@@ -16,10 +16,12 @@ The SDK has **no runtime dependencies** and no logic beyond the manifest helpers
 
 | Source file | Purpose |
 |---|---|
-| `src/types.ts` | All interfaces and union types (`INode`, `INodeDescription`, `INodeContext`, `INodeResult`, `IConfigField`, …) |
+| `src/types.ts` | All interfaces and union types: node contract (`INode`, `INodeDescription`, `INodeContext`, `INodeResult`, `IConfigField`, `INodeWithIteration`, …), credential contract (`ICredential`, `ICredentialDescription`, `ICredentialContext`, …) and template contract (`ITemplateDescription`, `ITemplateTrigger`) |
+| `src/credentials.ts` | Abstract credential base classes (`BaseCredential`, `SimpleValueCredential`, `ApiKeyCredential`, `BasicAuthCredential`, `OAuth2ClientCredentialsCredential`, `OAuth2AuthCodeCredential`) — concrete credentials `extends` one of these |
+| `src/localized.ts` | `normalizeLocalized` — reduce a `LocalizedString` to a single plain string |
 | `src/errors.ts` | `NodeError` — typed error class for unexpected failures inside `execute` |
 | `src/extract.ts` | `extractManifest` / `extractManifests` — pull `INodeDescription` off node instances without executing them |
-| `src/manifest.ts` | `buildManifest` / `MANIFEST_VERSION` — wrap node descriptions in the `{ manifestVersion, nodes }` envelope the registry expects |
+| `src/manifest.ts` | `buildManifest` / `MANIFEST_VERSION` — wrap node and credential descriptions in the `{ manifestVersion, nodes, credentials }` envelope the registry expects |
 | `src/cli.ts` | `rvnxx-nodes` CLI (`bin`) — shared manifest tooling for node packages |
 | `src/index.ts` | Barrel re-export |
 
@@ -31,7 +33,7 @@ current working directory:
 
 | Command | What it does |
 |---|---|
-| `rvnxx-nodes manifest` | Imports the package's built `dist/index.js`, reads its `NODES` export, and writes `dist/manifest.json` (`v0-draft` envelope). Run after `tsup`. |
+| `rvnxx-nodes manifest` | Imports the package's built `dist/index.js`, reads its `NODES` (and optional `CREDENTIALS`) export, and writes `dist/manifest.json` (`v0-draft` envelope). Run after `tsup`. |
 
 > **No `publish`.** Node packages are not published from the repos themselves —
 > registration goes through the Revenexx Console/Cockpit, and for local
@@ -47,7 +49,8 @@ A consuming package wires the manifest step into its build:
 ```
 
 The `manifest` command requires the package to export `NODES: INode[]` from
-its entry point.
+its entry point; a `CREDENTIALS: ICredential[]` export is optional and, when
+present, is folded into the manifest's `credentials[]`.
 
 ## Quick links
 
