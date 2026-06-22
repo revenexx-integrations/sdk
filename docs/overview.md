@@ -297,7 +297,8 @@ export class MyNode implements INode {
 >
 > Credential *types* themselves are authored by extending the SDK base classes
 > (`SimpleValueCredential`, `OAuth2ClientCredentialsCredential`, …) and exported
-> as `CREDENTIALS`; see `integrations/docs/credentials.md`.
+> as `CREDENTIALS`; see `docs/credentials.md` in the parent `integrations`
+monorepo (not part of this SDK package).
 
 Register the node in `integrations-nodes-core/src/index.ts`:
 
@@ -382,7 +383,8 @@ export const CREDENTIALS: ICredential[] = [new SmtpCredential()];
 ```
 
 The end-to-end credentials architecture (broker, storage, token lifecycle) is
-described in `integrations/docs/credentials.md`.
+described in `docs/credentials.md` in the parent `integrations` monorepo (not
+part of this SDK package).
 
 ---
 
@@ -391,10 +393,18 @@ described in `integrations/docs/credentials.md`.
 **Templates** (`ITemplateDescription`) are ready-made workflow blueprints a node
 package can ship for the editor's template gallery. Unlike `INode`/`ICredential`
 a template carries no executable code — it is plain data, so a package exports
-its `ITemplateDescription`s directly (no class wrapper). The `definition` is a
-workflow blob authored against the grammar named by `blobVersion`; the
-integrations server validates it on publish. Optional `triggers`
-(`ITemplateTrigger[]`) are instantiated alongside the workflow.
+its `ITemplateDescription`s directly (no class wrapper) under the name the
+manifest tool looks for:
+
+```ts
+export const TEMPLATES: ITemplateDescription[] = [/* … */];
+```
+
+`rvnxx-nodes manifest` folds this optional export into the manifest's
+`templates[]`. The `definition` is a workflow blob authored against the grammar
+named by `blobVersion`; the integrations server validates it on publish.
+Optional `triggers` (`ITemplateTrigger[]`) are instantiated alongside the
+workflow.
 
 **Iteration** — a node that loops over a collection may also implement
 `INodeWithIteration` (`extractItems(inputs, config): unknown[]`, pure and

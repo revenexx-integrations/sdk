@@ -31,17 +31,17 @@ ship unit tests (`src/*.test.ts`) — run them with `npm test`.
   - Template contract: `ITemplateDescription`, `ITemplateTrigger` (plain-data workflow blueprints a package can ship)
   - Supporting types: `IInputPort`, `IOutputPort`, `IConfigField`, `IConfigOption`, `IConfigValidation`
 
-- `src/credentials.ts` — abstract base classes that implement `ICredential` so credential authors only fill in the gaps: `BaseCredential`, `SimpleValueCredential`, `ApiKeyCredential`, `BasicAuthCredential`, `OAuth2ClientCredentialsCredential`, `OAuth2AuthCodeCredential`. Concrete credentials `extends` one of these (e.g. `SmtpCredential extends SimpleValueCredential`).
+- `src/credentials.ts` — abstract base classes that implement `ICredential` so credential authors only fill in the gaps: `BaseCredential`, `SimpleValueCredential`, `ApiKeyCredential`, `BasicAuthCredential`, `OAuth2ClientCredentialsCredential`, `OAuth2AuthCodeCredential`. Concrete credentials `extend` one of these (e.g. `SmtpCredential extends SimpleValueCredential`).
 
 - `src/localized.ts` — `normalizeLocalized` helper that reduces a `LocalizedString` to a single plain string (shared by worker, UI and Laravel rendering).
 
 - `src/errors.ts` — `NodeError` class for unexpected/system-level failures thrown inside `execute`.
 
-- `src/extract.ts` — `extractManifest` / `extractManifests` helpers that pull the `INodeDescription` off one or many `INode` instances (used by the node registry to build manifests without running nodes).
+- `src/extract.ts` — `extractManifest` / `extractManifests` (nodes) and `extractCredentialManifest` / `extractCredentialManifests` (credentials) helpers that pull the descriptions off one or many instances (used by the node registry to build manifests without running nodes).
 
-- `src/manifest.ts` — `buildManifest` / `MANIFEST_VERSION` — wrap node (and credential) descriptions in the `{ manifestVersion, nodes, credentials }` envelope the registry expects.
+- `src/manifest.ts` — `buildManifest` / `MANIFEST_VERSION` — wrap node, credential and template descriptions in the `{ manifestVersion, nodes, credentials, templates? }` envelope the registry expects (`credentials` and `templates` are added only when non-empty).
 
-- `src/cli.ts` — the `rvnxx-nodes` CLI (`bin`); `rvnxx-nodes manifest` imports a package's built `dist/index.js`, reads its `NODES`/`CREDENTIALS` exports and writes `dist/manifest.json`.
+- `src/cli.ts` — the `rvnxx-nodes` CLI (`bin`); `rvnxx-nodes manifest` imports a package's built `dist/index.js`, reads its `NODES` (and optional `CREDENTIALS` / `TEMPLATES`) exports and writes `dist/manifest.json`.
 
 - `src/index.ts` — barrel re-export of all modules.
 
