@@ -127,7 +127,7 @@ publishing. See [`docs/versioning.md`](docs/versioning.md) for the full flow.
 ```bash
 npx changeset          # record the intended bump (patch/minor/major)
 npx changeset version  # bump package.json + CHANGELOG.md
-git commit -am "release: version packages"
+git add -A && git commit -m "release: version packages" # -A also stages a first-time CHANGELOG.md
 npx changeset tag      # tag @revenexx/integrations-node-sdk@X.Y.Z
 git push --follow-tags # tag push triggers the publish workflow
 ```

@@ -438,7 +438,7 @@ flow. In short:
 ```bash
 npx changeset          # record the intended bump (patch/minor/major)
 npx changeset version  # bump package.json + CHANGELOG.md
-git commit -am "release: version packages"
+git add -A && git commit -m "release: version packages" # -A also stages a first-time CHANGELOG.md
 npx changeset tag      # creates tag @revenexx/integrations-node-sdk@X.Y.Z
 git push --follow-tags # tag push runs .github/workflows/publish.yml → npm publish
 ```
