@@ -2,7 +2,20 @@
   "name": "@revenexx/integrations-node-sdk",
   "version": "0.11.0",
   "description": "TypeScript interfaces and utilities for Revenexx integration nodes",
+  "license": "MIT",
+  "author": "revenexx GmbH",
+  "keywords": ["revenexx", "integrations", "nodes", "sdk"],
   "type": "module",
+  "sideEffects": false,
+  "homepage": "https://revenexx.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/revenexx-integrations/sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/revenexx-integrations/sdk/issues",
+    "email": "support@revenexx.com"
+  },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,19 +29,22 @@
       "require": "./dist/index.cjs"
     }
   },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
-  },
   "files": ["dist"],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "release": "changeset publish"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@changesets/cli": "^2.31.0",
+    "@types/node": "^24.0.0",
     "tsup": "^8.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"

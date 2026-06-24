@@ -40,22 +40,103 @@ Notable specifics:
 
 ## Release flow
 
+Versioning and publishing are driven by [Changesets](https://github.com/changesets/changesets);
+you never edit `version` in `package.json` by hand. The publish is triggered by
+a **git tag** (created by `changeset tag`), not by a merge to `main`.
+
+**During development** — for every observable change, record the intended bump:
+
 ```
-1. Edit src/, update version in package.json per SemVer rules above.
-2. npm run build          # tsup → dist/
-3. npm publish            # publishConfig points at https://npm.pkg.github.com
-4. Bump the dependency in every consumer:
-     - integrations-nodes-core/package.json
-     - integrations-worker/package.json
-     - integrations-ui/package.json (if it imports the SDK)
-   Run `npm install` in each consumer to refresh the lockfile.
-5. For each consumer, re-register (nodes-core — via the Console / `update-dev.sh`; node packages are not published to npm) or rebuild (worker, ui).
+npx changeset                       # pick patch/minor/major + a summary line
+git add -A && git commit            # commit the intent file together with your change
 ```
 
-The SDK is published to GitHub Packages under the `@revenexx` scope.
-Every consumer's `.npmrc` (and the spawned worker's runtime `.npmrc`
-under `NPM_GH_TOKEN`) must point that scope at
-`https://npm.pkg.github.com`.
+**When you want to cut a release.** `main` is protected (PR + the `test` check,
+no direct push), so the version bump lands via a PR; the tag is created from
+`main` afterwards:
+
+```
+1. git switch -c release/next
+2. npx changeset version            # consumes intent files → bumps package.json + CHANGELOG.md
+3. git add -A && git commit -m "release: version packages"  # -A so a first-time CHANGELOG.md is included
+4. git push -u origin release/next  # open a PR and merge it into main (CI `test` + 1 approval)
+5. git switch main && git pull      # fast-forward to the merged version commit
+6. npx changeset tag                # creates tag @revenexx/integrations-node-sdk@X.Y.Z (needs admin — see release-tag ruleset)
+7. git push --follow-tags           # tag push triggers .github/workflows/publish.yml
+```
+
+> The tag push is **not** blocked by the `main` branch ruleset (a tag is not a
+> branch); it is gated by the separate release-tag ruleset, which only repository
+> admins may create. The branch protection only affects step 4 — the version
+> commit must go through a PR.
+
+The tag push runs `.github/workflows/publish.yml`, which does
+`npm ci → npm run release` (`changeset publish`) against the public npm registry
+(`registry.npmjs.org`). Authentication is **tokenless** via OIDC trusted
+publishing — npmjs is configured to trust this repo's `publish.yml` workflow, so
+no `NPM_TOKEN` secret is stored (the workflow only needs `id-token: write`). This
+also attaches a provenance attestation automatically. The build runs via the
+`prepublishOnly` hook that `npm publish` fires for each package. The package is
+scoped, so it is published with public access (`access: "public"` in
+`.changeset/config.json`). `changeset publish` is idempotent — it only publishes
+versions not already in the registry.
+
+### Signed release tags
+
+`changeset tag` shells out to `git tag <name> -m <name>` (an **annotated** tag);
+there is no Changesets option to sign it. Since the tag is annotated, git's
+`tag.gpgSign` setting applies — turn it on once and `changeset tag` signs
+automatically (equivalent to your usual `git tag -s -a -m …`):
+
+```bash
+# GPG
+git config user.signingkey <YOUR_KEY_ID>
+git config tag.gpgSign true
+# …or SSH signing (no prompt if the key is loaded in ssh-agent / has no passphrase)
+git config gpg.format ssh
+git config user.signingkey ~/.ssh/id_ed25519.pub
+git config tag.gpgSign true
+```
+
+GPG will ask for your passphrase when the tag is created (once — this repo cuts a
+single tag per release). Cache it via `gpg-agent` (`default-cache-ttl` in
+`~/.gnupg/gpg-agent.conf`) or use SSH signing to avoid the prompt. For GitHub to
+mark the tag **Verified**, register the key as a *Signing Key* under your account.
+Tags are created **locally**, so this config lives on the maintainer's machine —
+not in CI.
+
+Prefer to keep tagging by hand? Skip `changeset tag` and create the tag yourself
+with the trigger's name scheme:
+
+```bash
+V=$(node -p "require('./package.json').version")
+git tag -s -a "@revenexx/integrations-node-sdk@$V" -m "@revenexx/integrations-node-sdk@$V"
+git push --follow-tags
+```
+
+> **Caveat:** `changeset publish` publishes the version recorded in
+> `package.json` at the **tagged commit** — the tag *name* is only the workflow
+> trigger and is **not** validated against `package.json`. A hand-made tag whose
+> version differs from `package.json` therefore still publishes the
+> `package.json` version, not the one in the tag name. The `V=$(node -p …)`
+> snippet above derives the tag from `package.json` precisely to keep them in
+> sync; if you tag by hand, make sure the version matches.
+
+Pick the bump in step `npx changeset` per the SemVer table above. After the SDK
+release, bump the dependency in every consumer and re-publish (nodes-core) or
+rebuild (worker, ui):
+
+- `integrations-nodes-core/package.json`
+- `integrations-worker/package.json`
+- `integrations-ui/package.json` (if it imports the SDK)
+
+Run `npm install` in each consumer to refresh the lockfile. This cross-repo
+step is **not** automated by the SDK's publish workflow.
+
+The SDK is published to the public npm registry (`registry.npmjs.org`) under the
+`@revenexx` scope. Since it lives on the default registry, consumers need no
+`.npmrc` scope mapping or auth token to install it — a plain `npm install
+@revenexx/integrations-node-sdk` resolves it.
 
 ## Consumer pinning strategy
 
