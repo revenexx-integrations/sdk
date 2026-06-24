@@ -117,7 +117,7 @@ interface INodeContext {
 }
 ```
 
-- `signal` — provided by the engine whenever a workflow run is cancelled or times out. Nodes MUST propagate it to any I/O they perform (`fetch`, database queries, `setTimeout`-based loops). Check `signal.aborted` at the start of long operations and throw an `AbortError` or simply let the downstream I/O reject.
+- `signal` — provided by the engine whenever a workflow run is cancelled or times out. Nodes MUST propagate it to any I/O they perform (`fetch`, database queries, `setTimeout`-based loops). Check `signal.aborted` at the start of long operations and throw an `AbortError` or simply let the downstream I/O reject. For HTTP requests, use the [`safeFetch` helper](#safefetch) instead of calling `fetch` directly.
 - `secrets.get(key)` resolves an **opaque** secret string by the key stored in a `secret-ref` config field.
 - `credentials.get(credentialsId)` resolves the **structured** access data of a credential instance referenced by a `credentials-ref` config field (e.g. `{ host, port, user, password }` or `{ accessToken }`). The runtime fulfils it from the credentials broker; for token-based types it always returns a currently-valid token, so call it at execution time rather than caching the result.
 
@@ -161,6 +161,63 @@ There are exactly **two** ways a node may signal an error. Using both for the sa
 **Engine behaviour when a `NodeError` is thrown:** the engine catches it, attempts to route through any `kind: 'error'` output port on the node, and if none exists, marks the workflow execution as failed.
 
 **Do not** add an `error` field to `INodeResult.outputs` as a third path — that bypasses engine-level error handling entirely.
+
+---
+
+### `safeFetch`
+
+A drop-in wrapper around the global `fetch` that adds a **configurable timeout** and optional **retry** support, with correct `ctx.signal` integration.
+
+```ts
+import { safeFetch, DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS } from '@revenexx/integrations-node-sdk';
+
+const response = await safeFetch('https://api.example.com/data', {
+  method: 'GET',
+  signal: ctx.signal,            // workflow cancellation
+  timeoutMs: 15_000,             // per-attempt timeout; capped at MAX_TIMEOUT_MS (120 s)
+  retry: { attempts: 2, delayMs: 1_000 },  // optional: up to 2 retries
+});
+```
+
+**Timeout constants:**
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `DEFAULT_TIMEOUT_MS` | 30 000 ms | Used when `timeoutMs` is omitted |
+| `MAX_TIMEOUT_MS` | 120 000 ms | Hard cap — higher values are silently clamped |
+| `DEFAULT_RETRY_ATTEMPTS` | 0 | No retries by default |
+| `MAX_RETRY_ATTEMPTS` | 5 | Maximum allowed retry count |
+| `DEFAULT_RETRY_DELAY_MS` | 1 000 ms | Default pause between retry attempts |
+
+**Retry semantics:** retries happen only on thrown errors (network failures, timeouts). HTTP error responses are not retried — the node decides what to do with the status code. No retry occurs if `ctx.signal` has been aborted.
+
+**Error thrown on timeout:** `NodeError` with `code: 'TIMEOUT'` and a message that includes the actual effective timeout in milliseconds.
+
+#### Config field factories
+
+Use these to add standardised timeout and retry fields to a node's `description.config`:
+
+```ts
+import { timeoutConfigField, retryConfigFields } from '@revenexx/integrations-node-sdk';
+
+const description: INodeDescription = {
+  // …
+  config: [
+    timeoutConfigField({ default: 15_000 }),   // key: 'timeoutMs'
+    ...retryConfigFields(),                     // keys: 'retryAttempts', 'retryDelayMs'
+  ],
+};
+
+// In execute():
+await safeFetch(url, {
+  signal: ctx.signal,
+  timeoutMs: config.timeoutMs as number,
+  retry: {
+    attempts: config.retryAttempts as number,
+    delayMs: config.retryDelayMs as number,
+  },
+});
+```
 
 ---
 
