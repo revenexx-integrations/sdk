@@ -32,10 +32,25 @@ The required status check `test` is the job name in `.github/workflows/ci.yml`.
    (= Repository admin); if the import rejects it, drop the `bypass_actors` block
    and set the bypass actor in the UI instead.
 
-## Plan limitation
+## Status
 
-This is a **private** repo. On the current GitHub plan, rulesets can be created
-but are **not enforced** (status stays inactive / "evaluate"), and the REST API
-returns `403`. Enforcement requires GitHub **Team/Enterprise** (or making the repo
-public). Keep these files current regardless — they become live the moment the
-plan allows enforcement.
+The repo is **public**, so both rulesets are **active and enforced** (ruleset
+enforcement needs GitHub Team/Enterprise *or* a public repo; going public unlocked
+it). Keep these files in sync with the live rulesets — they remain the source of
+truth and the import sources for the UI.
+
+## Effect on the release flow
+
+Because `main` is protected with **no bypass actors**, the changeset version-bump
+commit cannot be pushed directly to `main` — it lands via a PR (which satisfies the
+`test` check + 1 approval). The release **tag** is created from `main` afterwards;
+the tag push is governed by the separate release-tag ruleset (admins only), not by
+the `main` branch ruleset. See [`versioning.md`](versioning.md) for the exact steps.
+
+## Repository security features
+
+Enabled at the repo level (free for public repos), complementing the rulesets:
+
+- **Secret scanning** + **push protection** — blocks committing/pushing leaked secrets.
+- **Dependabot alerts** + **security updates** — vulnerability alerts and automated
+  fix PRs (version updates are configured separately in [`dependabot.yml`](../.github/dependabot.yml)).
