@@ -40,87 +40,75 @@ Notable specifics:
 
 ## Release flow
 
-Versioning and publishing are driven by [Changesets](https://github.com/changesets/changesets);
-you never edit `version` in `package.json` by hand. The publish is triggered by
-a **git tag** (created by `changeset tag`), not by a merge to `main`.
+Versioning and publishing are driven by [Changesets](https://github.com/changesets/changesets)
+using the **automated** [`changesets/action`](https://github.com/changesets/action)
+flow (`.github/workflows/publish.yml`). You never edit `version` in `package.json`
+by hand and you never create the release tag by hand — the workflow does both.
 
-**During development** — for every observable change, record the intended bump:
-
-```
-npx changeset                       # pick patch/minor/major + a summary line
-git add -A && git commit            # commit the intent file together with your change
-```
-
-**When you want to cut a release.** `main` is protected (PR + the `test` check,
-no direct push), so the version bump lands via a PR; the tag is created from
-`main` afterwards:
+**During development** — every PR records the intended bump as a changeset, and CI
+**enforces** it (the `changeset` required check, see [`branch-protection.md`](branch-protection.md)):
 
 ```
-1. git switch -c release/next
-2. npx changeset version            # consumes intent files → bumps package.json + CHANGELOG.md
-3. git add -A && git commit -m "release: version packages"  # -A so a first-time CHANGELOG.md is included
-4. git push -u origin release/next  # open a PR and merge it into main (CI `test` + 1 approval)
-5. git switch main && git pull      # fast-forward to the merged version commit
-6. npx changeset tag                # creates tag @revenexx/integrations-node-sdk@X.Y.Z (needs admin — see release-tag ruleset)
-7. git push --follow-tags           # tag push triggers .github/workflows/publish.yml
+npx changeset            # pick patch/minor/major + a summary line
+npx changeset --empty    # …or this for a PR that intentionally needs no release
+git add -A && git commit # commit the intent file together with your change
 ```
 
-> The tag push is **not** blocked by the `main` branch ruleset (a tag is not a
-> branch); it is gated by the separate release-tag ruleset, which only repository
-> admins may create. The branch protection only affects step 4 — the version
-> commit must go through a PR.
+The [changeset-bot](https://github.com/apps/changeset-bot) also comments on every
+PR whether a changeset is present (soft reminder on top of the hard check).
 
-The tag push runs `.github/workflows/publish.yml`, which does
-`npm ci → npm run release` (`changeset publish`) against the public npm registry
-(`registry.npmjs.org`). Authentication is **tokenless** via OIDC trusted
-publishing — npmjs is configured to trust this repo's `publish.yml` workflow, so
-no `NPM_TOKEN` secret is stored (the workflow only needs `id-token: write`). This
-also attaches a provenance attestation automatically. The build runs via the
-`prepublishOnly` hook that `npm publish` fires for each package. The package is
-scoped, so it is published with public access (`access: "public"` in
-`.changeset/config.json`). `changeset publish` is idempotent — it only publishes
+**Cutting a release is just merging a PR — no local steps:**
+
+1. Merge feature PRs (each carrying its changeset) into `main`.
+2. On every push to `main`, the workflow runs `changesets/action`. While
+   unreleased changesets exist, it opens/maintains a PR titled
+   **“Version Packages”** that has `changeset version` already applied
+   (`package.json` bump + `CHANGELOG.md`).
+3. When you want to ship, **merge the “Version Packages” PR** (it must pass the
+   `test` + `changeset` checks and 1 approval, like any PR). The workflow runs
+   again, finds no remaining changesets, and runs `changeset publish` →
+   publishes to npm **and** creates+pushes the tag
+   `@revenexx/integrations-node-sdk@X.Y.Z`.
+
+> **Why a GitHub App, not `GITHUB_TOKEN`?** The workflow mints a token from a
+> dedicated **GitHub App** (`secrets.APP_ID` / `APP_PRIVATE_KEY`, via
+> `actions/create-github-app-token`) and runs `changesets/action` with it, because
+> (a) PRs/commits made with the default `GITHUB_TOKEN` do **not** trigger other
+> workflows, so the required `test`/`changeset` checks would never run on the
+> “Version Packages” PR (making it unmergeable); and (b) the App is a bypass actor on
+> the release-tag ruleset, so the action may push the protected tag. The App is also
+> a **distinct identity** (`app[bot]`), so a human maintainer can approve the bot's
+> “Version Packages” PR without the self-approval clash a personal token would cause.
+> See [`branch-protection.md`](branch-protection.md) for the App permissions and
+> ruleset interplay.
+
+Publishing authenticates **tokenless** via OIDC trusted publishing — npmjs is
+configured to trust this repo's `publish.yml` workflow, so no `NPM_TOKEN` is stored
+(the workflow only needs `id-token: write`). This is also why the workflow keeps the
+filename `publish.yml` even though it now opens PRs too: renaming it would break the
+trusted-publisher binding. Publishing attaches a provenance attestation
+automatically. The build runs via the `prepublishOnly` hook that `npm publish`
+fires. The package is scoped, so it publishes with public access (`access: "public"`
+in `.changeset/config.json`). `changeset publish` is idempotent — it only publishes
 versions not already in the registry.
 
-### Signed release tags
+> **Branch protection is not bypassed.** The version bump still reaches `main` only
+> through the (bot-authored) “Version Packages” PR that a human approves and merges
+> — `main.json` has no bypass actor. Only the *tag* push uses the admin bypass.
 
-`changeset tag` shells out to `git tag <name> -m <name>` (an **annotated** tag);
-there is no Changesets option to sign it. Since the tag is annotated, git's
-`tag.gpgSign` setting applies — turn it on once and `changeset tag` signs
-automatically (equivalent to your usual `git tag -s -a -m …`):
+### Release tags are created in CI
 
-```bash
-# GPG
-git config user.signingkey <YOUR_KEY_ID>
-git config tag.gpgSign true
-# …or SSH signing (no prompt if the key is loaded in ssh-agent / has no passphrase)
-git config gpg.format ssh
-git config user.signingkey ~/.ssh/id_ed25519.pub
-git config tag.gpgSign true
-```
-
-GPG will ask for your passphrase when the tag is created (once — this repo cuts a
-single tag per release). Cache it via `gpg-agent` (`default-cache-ttl` in
-`~/.gnupg/gpg-agent.conf`) or use SSH signing to avoid the prompt. For GitHub to
-mark the tag **Verified**, register the key as a *Signing Key* under your account.
-Tags are created **locally**, so this config lives on the maintainer's machine —
-not in CI.
-
-Prefer to keep tagging by hand? Skip `changeset tag` and create the tag yourself
-with the trigger's name scheme:
+`changeset publish` creates the annotated tag in the workflow runner, so the
+maintainer no longer tags locally — and there is no local GPG/SSH signing step.
+If you ever need to publish manually (e.g. CI is down), you can still tag by hand;
+note `changeset publish` publishes the version in `package.json` at the tagged
+commit — the tag *name* is only a label and is not validated against it:
 
 ```bash
 V=$(node -p "require('./package.json').version")
-git tag -s -a "@revenexx/integrations-node-sdk@$V" -m "@revenexx/integrations-node-sdk@$V"
+git tag -a "@revenexx/integrations-node-sdk@$V" -m "@revenexx/integrations-node-sdk@$V"
 git push --follow-tags
 ```
-
-> **Caveat:** `changeset publish` publishes the version recorded in
-> `package.json` at the **tagged commit** — the tag *name* is only the workflow
-> trigger and is **not** validated against `package.json`. A hand-made tag whose
-> version differs from `package.json` therefore still publishes the
-> `package.json` version, not the one in the tag name. The `V=$(node -p …)`
-> snippet above derives the tag from `package.json` precisely to keep them in
-> sync; if you tag by hand, make sure the version matches.
 
 Pick the bump in step `npx changeset` per the SemVer table above. After the SDK
 release, bump the dependency in every consumer and re-publish (nodes-core) or
