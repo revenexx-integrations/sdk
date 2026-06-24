@@ -12,6 +12,7 @@
         "refs/heads/bugfix/*",
         "refs/heads/chore/*",
         "refs/heads/release/*",
+        "refs/heads/changeset-release/*",
         "refs/heads/dependabot/**/*"
       ]
     }
