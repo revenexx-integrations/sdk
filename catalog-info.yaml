@@ -4,8 +4,8 @@ metadata:
   name: integrations-node-sdk
   description: "Shared TypeScript contract library for Revenexx integration nodes — defines INode, INodeDescription, INodeContext, INodeResult and all supporting types."
   annotations:
-    github.com/project-slug: revenexx/integrations-node-sdk
-    backstage.io/techdocs-ref: url:https://github.com/revenexx/integrations-node-sdk/tree/main/
+    github.com/project-slug: revenexx-integrations/sdk
+    backstage.io/techdocs-ref: url:https://github.com/revenexx-integrations/sdk/tree/main/
   tags:
     - typescript
     - integrations

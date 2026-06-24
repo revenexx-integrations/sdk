@@ -16,35 +16,43 @@ The SDK has **no runtime dependencies** and no logic beyond the manifest helpers
 
 | Source file | Purpose |
 |---|---|
-| `src/types.ts` | All interfaces and union types (`INode`, `INodeDescription`, `INodeContext`, `INodeResult`, `IConfigField`, …) |
+| `src/types.ts` | All interfaces and union types: node contract (`INode`, `INodeDescription`, `INodeContext`, `INodeResult`, `IConfigField`, `INodeWithIteration`, …), credential contract (`ICredential`, `ICredentialDescription`, `ICredentialContext`, …) and template contract (`ITemplateDescription`, `ITemplateTrigger`) |
+| `src/credentials.ts` | Abstract credential base classes (`BaseCredential`, `SimpleValueCredential`, `ApiKeyCredential`, `BasicAuthCredential`, `OAuth2ClientCredentialsCredential`, `OAuth2AuthCodeCredential`) — concrete credentials `extend` one of these |
+| `src/localized.ts` | `normalizeLocalized` — reduce a `LocalizedString` to a single plain string |
 | `src/errors.ts` | `NodeError` — typed error class for unexpected failures inside `execute` |
-| `src/extract.ts` | `extractManifest` / `extractManifests` — pull `INodeDescription` off node instances without executing them |
-| `src/manifest.ts` | `buildManifest` / `MANIFEST_VERSION` — wrap node descriptions in the `{ manifestVersion, nodes }` envelope the registry expects |
-| `src/cli.ts` | `rvnxx-nodes` CLI (`bin`) — shared build/publish tooling for node packages |
+| `src/extract.ts` | `extractManifest` / `extractManifests` (nodes) and `extractCredentialManifest` / `extractCredentialManifests` (credentials) — pull descriptions off instances without executing them |
+| `src/manifest.ts` | `buildManifest` / `MANIFEST_VERSION` — wrap node, credential and template descriptions in the `{ manifestVersion, nodes, credentials, templates }` envelope the registry expects |
+| `src/cli.ts` | `rvnxx-nodes` CLI (`bin`) — shared manifest tooling for node packages |
 | `src/index.ts` | Barrel re-export |
 
 ## `rvnxx-nodes` CLI
 
 The SDK ships a `bin`, `rvnxx-nodes`, so every node package shares one
-build/publish toolchain instead of copying scripts. It operates on the
+manifest toolchain instead of copying scripts. It operates on the
 current working directory:
 
 | Command | What it does |
 |---|---|
-| `rvnxx-nodes manifest` | Imports the package's built `dist/index.js`, reads its `NODES` export, and writes `dist/manifest.json` (`v0-draft` envelope). Run after `tsup`. |
-| `rvnxx-nodes publish` | Packs the package with `npm pack` and uploads the tarball to the integrations registry (`POST /api/v1/node-packages`). Reads `INTEGRATIONS_URL` / `INTEGRATIONS_TOKEN` / `INTEGRATIONS_INSECURE` (also from `./.env`). |
+| `rvnxx-nodes manifest` | Imports the package's built `dist/index.js`, reads its `NODES` (and optional `CREDENTIALS` / `TEMPLATES`) exports, and writes `dist/manifest.json` (`v0-draft` envelope). Run after `tsup`. |
 
-A consuming package wires these into its own scripts:
+> **No `publish`.** Node packages are not published from the repos themselves —
+> registration goes through the Revenexx Console/Cockpit, and for local
+> development `integrations/scripts/update-dev.sh` uploads the packed tarball to
+> the admin API.
+
+A consuming package wires the manifest step into its build:
 
 ```json
 "scripts": {
-  "build": "tsup && rvnxx-nodes manifest",
-  "publish": "NODE_OPTIONS=--no-warnings rvnxx-nodes publish"
+  "build": "tsup && rvnxx-nodes manifest"
 }
 ```
 
 The `manifest` command requires the package to export `NODES: INode[]` from
-its entry point.
+its entry point. A `CREDENTIALS: ICredential[]` export is optional and, when
+present, is folded into the manifest's `credentials[]`; likewise an optional
+`TEMPLATES: ITemplateDescription[]` export is carried verbatim into the
+manifest's `templates[]`.
 
 ## Quick links
 
