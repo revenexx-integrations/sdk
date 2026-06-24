@@ -26,7 +26,11 @@ export async function safeFetch(
 ): Promise<Response> {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, signal: ctxSignal, retry, ...fetchOptions } = options;
   const effectiveMs = Math.min(timeoutMs, MAX_TIMEOUT_MS);
-  const maxAttempts = (retry?.attempts ?? 0) + 1;
+  const rawAttempts = retry?.attempts ?? DEFAULT_RETRY_ATTEMPTS;
+  const safeAttempts = Number.isFinite(rawAttempts)
+    ? Math.min(Math.max(0, rawAttempts), MAX_RETRY_ATTEMPTS)
+    : DEFAULT_RETRY_ATTEMPTS;
+  const maxAttempts = safeAttempts + 1;
   const retryDelayMs = retry?.delayMs ?? DEFAULT_RETRY_DELAY_MS;
 
   let lastError: unknown;

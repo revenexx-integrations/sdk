@@ -58,18 +58,47 @@ test('throws NodeError TIMEOUT when fetch takes longer than timeoutMs', () =>
     );
   }));
 
-test('clamps timeoutMs to MAX_TIMEOUT_MS and includes that value in the error', () =>
-  withFetch(delayedFetch(200), async () => {
-    await assert.rejects(
-      () => safeFetch('https://example.com', { timeoutMs: MAX_TIMEOUT_MS + 99_999, signal: (() => { const ac = new AbortController(); setTimeout(() => ac.abort(), 50); return ac.signal; })() }),
-      (err: unknown) => {
-        // Either a NodeError TIMEOUT (if our timeout controller fires before
-        // the ctx signal fires) or an AbortError — we just confirm it throws.
-        assert.ok(err instanceof Error);
-        return true;
-      },
-    );
-  }));
+test('clamps timeoutMs to MAX_TIMEOUT_MS when scheduling the timeout', () => {
+  const capturedDelays: number[] = [];
+  const orig = globalThis.setTimeout;
+  // @ts-expect-error partial overload patch
+  globalThis.setTimeout = (fn: () => void, delay: number) => {
+    capturedDelays.push(delay);
+    return orig(fn, delay);
+  };
+  return withFetch(delayedFetch(0), async () => {
+    try {
+      await safeFetch('https://example.com', { timeoutMs: MAX_TIMEOUT_MS + 99_999 });
+      assert.ok(
+        capturedDelays.includes(MAX_TIMEOUT_MS),
+        `expected ${MAX_TIMEOUT_MS} among captured delays: ${capturedDelays.join(', ')}`,
+      );
+    } finally {
+      globalThis.setTimeout = orig;
+    }
+  });
+});
+
+test('TIMEOUT error message contains the clamped MAX_TIMEOUT_MS value', () => {
+  const orig = globalThis.setTimeout;
+  // @ts-expect-error partial overload patch
+  globalThis.setTimeout = (fn: () => void, _delay: number) => orig(fn, 0);
+  return withFetch(delayedFetch(500), async () => {
+    try {
+      await assert.rejects(
+        () => safeFetch('https://example.com', { timeoutMs: MAX_TIMEOUT_MS + 99_999 }),
+        (err: unknown) => {
+          assert.ok(err instanceof NodeError);
+          assert.equal(err.code, 'TIMEOUT');
+          assert.match(err.message, new RegExp(`${MAX_TIMEOUT_MS}ms`));
+          return true;
+        },
+      );
+    } finally {
+      globalThis.setTimeout = orig;
+    }
+  });
+});
 
 test('propagates AbortError when ctx.signal is already aborted', async () => {
   const ac = new AbortController();
