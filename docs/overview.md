@@ -436,11 +436,15 @@ and triggered by a git tag — see [`versioning.md`](versioning.md) for the full
 flow. In short:
 
 ```bash
-npx changeset          # record the intended bump (patch/minor/major)
-npx changeset version  # bump package.json + CHANGELOG.md
+npx changeset            # record the intended bump (patch/minor/major)
+# main is protected — the version bump lands via a PR:
+git switch -c release/next
+npx changeset version    # bump package.json + CHANGELOG.md
 git add -A && git commit -m "release: version packages" # -A also stages a first-time CHANGELOG.md
-npx changeset tag      # creates tag @revenexx/integrations-node-sdk@X.Y.Z
-git push --follow-tags # tag push runs .github/workflows/publish.yml → npm publish
+git push -u origin release/next   # open a PR → merge into main (CI `test` + 1 approval)
+git switch main && git pull       # fast-forward to the merged version commit
+npx changeset tag        # creates tag @revenexx/integrations-node-sdk@X.Y.Z (needs repo admin)
+git push --follow-tags   # tag push runs .github/workflows/publish.yml → npm publish
 ```
 
 The CI publish authenticates tokenlessly via OIDC trusted publishing (npmjs

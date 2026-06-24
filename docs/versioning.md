@@ -51,14 +51,24 @@ npx changeset                       # pick patch/minor/major + a summary line
 git add -A && git commit            # commit the intent file together with your change
 ```
 
-**When you want to cut a release** (locally, on `main`):
+**When you want to cut a release.** `main` is protected (PR + the `test` check,
+no direct push), so the version bump lands via a PR; the tag is created from
+`main` afterwards:
 
 ```
-1. npx changeset version            # consumes intent files → bumps package.json + CHANGELOG.md
-2. git add -A && git commit -m "release: version packages"  # -A so a first-time CHANGELOG.md is included
-3. npx changeset tag                # creates tag @revenexx/integrations-node-sdk@X.Y.Z
-4. git push --follow-tags           # tag push triggers .github/workflows/publish.yml
+1. git switch -c release/next
+2. npx changeset version            # consumes intent files → bumps package.json + CHANGELOG.md
+3. git add -A && git commit -m "release: version packages"  # -A so a first-time CHANGELOG.md is included
+4. git push -u origin release/next  # open a PR and merge it into main (CI `test` + 1 approval)
+5. git switch main && git pull      # fast-forward to the merged version commit
+6. npx changeset tag                # creates tag @revenexx/integrations-node-sdk@X.Y.Z (needs admin — see release-tag ruleset)
+7. git push --follow-tags           # tag push triggers .github/workflows/publish.yml
 ```
+
+> The tag push is **not** blocked by the `main` branch ruleset (a tag is not a
+> branch); it is gated by the separate release-tag ruleset, which only repository
+> admins may create. The branch protection only affects step 4 — the version
+> commit must go through a PR.
 
 The tag push runs `.github/workflows/publish.yml`, which does
 `npm ci → npm run release` (`changeset publish`) against the public npm registry

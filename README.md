@@ -125,11 +125,15 @@ runs in CI against the public npm registry with tokenless OIDC trusted
 publishing. See [`docs/versioning.md`](docs/versioning.md) for the full flow.
 
 ```bash
-npx changeset          # record the intended bump (patch/minor/major)
-npx changeset version  # bump package.json + CHANGELOG.md
+npx changeset            # record the intended bump (patch/minor/major)
+# cut a release — main is protected, so the version bump lands via a PR:
+git switch -c release/next
+npx changeset version    # bump package.json + CHANGELOG.md
 git add -A && git commit -m "release: version packages" # -A also stages a first-time CHANGELOG.md
-npx changeset tag      # tag @revenexx/integrations-node-sdk@X.Y.Z
-git push --follow-tags # tag push triggers the publish workflow
+git push -u origin release/next   # open a PR → merge into main (CI `test` + 1 approval)
+git switch main && git pull       # fast-forward to the merged version commit
+npx changeset tag        # tag @revenexx/integrations-node-sdk@X.Y.Z (needs repo admin)
+git push --follow-tags   # tag push triggers the publish workflow
 ```
 
 ## License
