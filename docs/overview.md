@@ -430,37 +430,28 @@ const manifests = extractManifests(NODES);
 
 ## Publishing
 
-The package is published to GitHub Packages (`https://npm.pkg.github.com`).
-
-**Prerequisites — one-time setup:**
-
-1. Create a GitHub Classic Personal Access Token with `write:packages` scope.
-2. Add it to `~/.npmrc`:
-   ```
-   //npm.pkg.github.com/:_authToken=ghp_YOUR_TOKEN
-   ```
-
-**Release:**
+The package is published to the public npm registry (`registry.npmjs.org`) under
+the `@revenexx` scope. Releases are driven by [Changesets](https://github.com/changesets/changesets)
+and triggered by a git tag — see [`versioning.md`](versioning.md) for the full
+flow. In short:
 
 ```bash
-# bump version in package.json first
-npm run build
-npm publish
+npx changeset          # record the intended bump (patch/minor/major)
+npx changeset version  # bump package.json + CHANGELOG.md
+git commit -am "release: version packages"
+npx changeset tag      # creates tag @revenexx/integrations-node-sdk@X.Y.Z
+git push --follow-tags # tag push runs .github/workflows/publish.yml → npm publish
 ```
 
-Use `npm publish --dry-run` to verify what will be uploaded without actually publishing.
+The CI publish authenticates with the `NPM_TOKEN` repository secret; nobody
+publishes by hand.
 
 ---
 
 ## Consuming the Package
 
-Add a `.npmrc` to your project so npm knows where to find `@revenexx/` scoped packages:
-
-```
-@revenexx:registry=https://npm.pkg.github.com
-```
-
-Then install normally:
+`@revenexx/integrations-node-sdk` lives on the default public npm registry, so no
+`.npmrc` scope mapping or auth token is needed — just install it:
 
 ```bash
 npm install @revenexx/integrations-node-sdk

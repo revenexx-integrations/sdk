@@ -12,7 +12,6 @@ jobs:
 
     permissions:
       contents: read
-      packages: read
 
     steps:
       - name: Checkout
@@ -23,15 +22,9 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-          # The SDK has no @revenexx runtime deps, but keep the scoped registry
-          # configured for parity with the other repos and in case one is added.
-          registry-url: 'https://npm.pkg.github.com'
-          scope: '@revenexx'
 
       - name: Install dependencies
         run: npm ci
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Typecheck
         run: npm run typecheck

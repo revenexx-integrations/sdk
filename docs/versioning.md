@@ -61,10 +61,13 @@ git add -A && git commit            # commit the intent file together with your 
 ```
 
 The tag push runs `.github/workflows/publish.yml`, which does
-`npm ci → npm run release` (`changeset publish`) against GitHub Packages,
-authenticated with the workflow's built-in `GITHUB_TOKEN`. The build runs via
-the `prepublishOnly` hook that `npm publish` fires for each package. `changeset
-publish` is idempotent — it only publishes versions not already in the registry.
+`npm ci → npm run release` (`changeset publish`) against the public npm registry
+(`registry.npmjs.org`), authenticated with the `NPM_TOKEN` repository secret (an
+npm automation token with publish rights on the `@revenexx` scope). The build
+runs via the `prepublishOnly` hook that `npm publish` fires for each package. The
+package is scoped, so it is published with public access (`access: "public"` in
+`.changeset/config.json`). `changeset publish` is idempotent — it only publishes
+versions not already in the registry.
 
 ### Signed release tags
 
@@ -110,10 +113,10 @@ rebuild (worker, ui):
 Run `npm install` in each consumer to refresh the lockfile. This cross-repo
 step is **not** automated by the SDK's publish workflow.
 
-The SDK is published to GitHub Packages under the `@revenexx` scope.
-Every consumer's `.npmrc` (and the spawned worker's runtime `.npmrc`
-under `NPM_GH_TOKEN`) must point that scope at
-`https://npm.pkg.github.com`.
+The SDK is published to the public npm registry (`registry.npmjs.org`) under the
+`@revenexx` scope. Since it lives on the default registry, consumers need no
+`.npmrc` scope mapping or auth token to install it — a plain `npm install
+@revenexx/integrations-node-sdk` resolves it.
 
 ## Consumer pinning strategy
 
