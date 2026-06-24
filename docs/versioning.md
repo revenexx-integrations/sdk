@@ -62,10 +62,12 @@ git add -A && git commit            # commit the intent file together with your 
 
 The tag push runs `.github/workflows/publish.yml`, which does
 `npm ci → npm run release` (`changeset publish`) against the public npm registry
-(`registry.npmjs.org`), authenticated with the `NPM_TOKEN` repository secret (an
-npm automation token with publish rights on the `@revenexx` scope). The build
-runs via the `prepublishOnly` hook that `npm publish` fires for each package. The
-package is scoped, so it is published with public access (`access: "public"` in
+(`registry.npmjs.org`). Authentication is **tokenless** via OIDC trusted
+publishing — npmjs is configured to trust this repo's `publish.yml` workflow, so
+no `NPM_TOKEN` secret is stored (the workflow only needs `id-token: write`). This
+also attaches a provenance attestation automatically. The build runs via the
+`prepublishOnly` hook that `npm publish` fires for each package. The package is
+scoped, so it is published with public access (`access: "public"` in
 `.changeset/config.json`). `changeset publish` is idempotent — it only publishes
 versions not already in the registry.
 

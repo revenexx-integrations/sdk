@@ -443,7 +443,8 @@ npx changeset tag      # creates tag @revenexx/integrations-node-sdk@X.Y.Z
 git push --follow-tags # tag push runs .github/workflows/publish.yml → npm publish
 ```
 
-The CI publish authenticates with the `NPM_TOKEN` repository secret; nobody
+The CI publish authenticates tokenlessly via OIDC trusted publishing (npmjs
+trusts this repo's `publish.yml` workflow), so no secret is stored; nobody
 publishes by hand.
 
 ---
