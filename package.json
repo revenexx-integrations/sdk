@@ -1,10 +1,15 @@
 {
   "name": "@revenexx/integrations-node-sdk",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "TypeScript interfaces and utilities for Revenexx integration nodes",
   "license": "MIT",
   "author": "revenexx GmbH",
-  "keywords": ["revenexx", "integrations", "nodes", "sdk"],
+  "keywords": [
+    "revenexx",
+    "integrations",
+    "nodes",
+    "sdk"
+  ],
   "type": "module",
   "sideEffects": false,
   "homepage": "https://revenexx.com",
@@ -29,7 +34,9 @@
       "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "publishConfig": {
     "access": "public",
     "provenance": true
