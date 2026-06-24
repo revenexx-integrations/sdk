@@ -7,5 +7,8 @@ export default defineConfig({
   // for the library entry, not dead `dist/cli.d.ts`.
   dts: { entry: ['src/index.ts'] },
   clean: true,
-  sourcemap: true,
+  // No sourcemaps in the published artifact: this is a thin contract/types
+  // library, src/ isn't shipped, and the .d.ts already drives type navigation.
+  // Shipping maps without sources would be pure install weight.
+  sourcemap: false,
 });
