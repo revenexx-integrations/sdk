@@ -13,6 +13,7 @@
     "url": "git+https://github.com/revenexx-integrations/sdk.git"
   },
   "bugs": {
+    "url": "https://github.com/revenexx-integrations/sdk/issues",
     "email": "support@revenexx.com"
   },
   "main": "./dist/index.cjs",

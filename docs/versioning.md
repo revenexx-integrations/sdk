@@ -104,6 +104,14 @@ git tag -s -a "@revenexx/integrations-node-sdk@$V" -m "@revenexx/integrations-no
 git push --follow-tags
 ```
 
+> **Caveat:** `changeset publish` publishes the version recorded in
+> `package.json` at the **tagged commit** — the tag *name* is only the workflow
+> trigger and is **not** validated against `package.json`. A hand-made tag whose
+> version differs from `package.json` therefore still publishes the
+> `package.json` version, not the one in the tag name. The `V=$(node -p …)`
+> snippet above derives the tag from `package.json` precisely to keep them in
+> sync; if you tag by hand, make sure the version matches.
+
 Pick the bump in step `npx changeset` per the SemVer table above. After the SDK
 release, bump the dependency in every consumer and re-publish (nodes-core) or
 rebuild (worker, ui):
