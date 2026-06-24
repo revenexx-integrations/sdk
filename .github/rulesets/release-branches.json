@@ -1,5 +1,5 @@
 {
-  "name": "release branches — admins only",
+  "name": "release & chore branches — admins only",
   "target": "branch",
   "enforcement": "active",
   "bypass_actors": [
@@ -11,7 +11,7 @@
   ],
   "conditions": {
     "ref_name": {
-      "include": ["refs/heads/release/**/*"],
+      "include": ["refs/heads/release/*", "refs/heads/chore/*"],
       "exclude": []
     }
   },

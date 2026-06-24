@@ -7,11 +7,12 @@
     "ref_name": {
       "include": ["~ALL"],
       "exclude": [
-        "refs/heads/feature/**/*",
-        "refs/heads/hotfix/**/*",
-        "refs/heads/bugfix/**/*",
-        "refs/heads/dependabot/**/*",
-        "refs/heads/release/**/*"
+        "refs/heads/feature/*",
+        "refs/heads/hotfix/*",
+        "refs/heads/bugfix/*",
+        "refs/heads/chore/*",
+        "refs/heads/release/*",
+        "refs/heads/dependabot/**/*"
       ]
     }
   },

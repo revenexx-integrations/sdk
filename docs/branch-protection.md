@@ -17,30 +17,36 @@ thereby fire an `npm publish`. The two rulesets close both gaps.
 | --- | --- | --- |
 | [`main.json`](../.github/rulesets/main.json) | default branch (`main`) | PR required (1 approval, dismiss stale, resolve conversations, squash/rebase only), required status check `test` + up-to-date, linear history, no force-push, no deletion |
 | [`release-tags.json`](../.github/rulesets/release-tags.json) | tags `@revenexx/integrations-node-sdk@*` | only **bypass actors** may create/update/delete release tags → protects the publish trigger |
-| [`branch-names.json`](../.github/rulesets/branch-names.json) | all branches **except** the allowed prefixes | restricts branch **creation**: only `feature/`, `hotfix/`, `bugfix/`, `dependabot/` and `release/` branches may be created (no bypass) |
-| [`release-branches.json`](../.github/rulesets/release-branches.json) | branches `release/**` | restricts `release/` branch **creation** to **repository admins** (the stand-in for "org members" — see note) |
+| [`branch-names.json`](../.github/rulesets/branch-names.json) | all branches **except** the allowed prefixes | restricts branch **creation**: only `feature/`, `hotfix/`, `bugfix/`, `chore/`, `release/` (single segment each) and `dependabot/` (any depth) branches may be created (no bypass) |
+| [`release-branches.json`](../.github/rulesets/release-branches.json) | branches `release/*` and `chore/*` | restricts `release/` and `chore/` branch **creation** to **repository admins** (the stand-in for "org members" — see note) |
 
 The required status check `test` is the job name in `.github/workflows/ci.yml`.
 
 ### Branch naming convention
 
-`branch-names.json` enforces that human branches follow `feature/`, `hotfix/` or
-`bugfix/`; `dependabot/` is allowed so Dependabot can open its PRs, and `release/`
-for the release flow. `release-branches.json` then narrows `release/` creation to
-repository admins.
+`branch-names.json` enforces the allowed prefixes. Human branches are **single
+level** — `feature/<desc>`, `hotfix/<desc>`, `bugfix/<desc>`, `chore/<desc>`,
+`release/<desc>` — so `feature/a/b` is rejected. `dependabot/` is allowed at **any
+depth** because Dependabot creates multi-segment branches
+(`dependabot/npm_and_yarn/...`). `release-branches.json` then narrows `release/`
+and `chore/` creation to repository admins; `feature/`, `hotfix/` and `bugfix/`
+are open to any collaborator.
 
 > **"Org members" caveat:** GitHub ruleset bypass actors are *repository roles or
 > teams*, not raw org membership. The org currently has no teams and every
-> collaborator is an admin, so `release/` creation is gated to the **Repository
-> admin** role as the practical equivalent. When non-admin members should also cut
-> releases, create a GitHub team for them and swap it into `release-branches.json`'s
-> `bypass_actors`. On a public repo, non-collaborators cannot create branches in
-> the repo at all (they fork), so the convention only applies to collaborators.
+> collaborator is an admin, so `release/` + `chore/` creation is gated to the
+> **Repository admin** role as the practical equivalent. When non-admin members
+> should also create these, make a GitHub team and swap it into
+> `release-branches.json`'s `bypass_actors`. On a public repo, non-collaborators
+> cannot create branches in the repo at all (they fork), so the convention only
+> applies to collaborators.
 
-> **fnmatch gotcha:** a *trailing* `**` only matches a single path segment, so
-> `refs/heads/feature/**` would miss `feature/a/b`. Use `refs/heads/feature/**/*`
-> to match any depth — this matters for the multi-segment branches Dependabot
-> creates (`dependabot/npm_and_yarn/...`).
+> **fnmatch gotcha:** in ref patterns `*` matches a single path segment and a
+> *trailing* `**` also collapses to one segment — so `refs/heads/feature/*` allows
+> exactly one level (`feature/login`, not `feature/a/b`). To match any depth (as
+> Dependabot needs), the pattern must end in `**/*`, e.g.
+> `refs/heads/dependabot/**/*`. Patterns must be full refs (`refs/heads/…`); the
+> bare `feature/*` form is rejected by the API.
 
 ## How to apply
 
