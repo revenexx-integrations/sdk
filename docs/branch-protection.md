@@ -17,8 +17,30 @@ thereby fire an `npm publish`. The two rulesets close both gaps.
 | --- | --- | --- |
 | [`main.json`](../.github/rulesets/main.json) | default branch (`main`) | PR required (1 approval, dismiss stale, resolve conversations, squash/rebase only), required status check `test` + up-to-date, linear history, no force-push, no deletion |
 | [`release-tags.json`](../.github/rulesets/release-tags.json) | tags `@revenexx/integrations-node-sdk@*` | only **bypass actors** may create/update/delete release tags → protects the publish trigger |
+| [`branch-names.json`](../.github/rulesets/branch-names.json) | all branches **except** the allowed prefixes | restricts branch **creation**: only `feature/`, `hotfix/`, `bugfix/`, `dependabot/` and `release/` branches may be created (no bypass) |
+| [`release-branches.json`](../.github/rulesets/release-branches.json) | branches `release/**` | restricts `release/` branch **creation** to **repository admins** (the stand-in for "org members" — see note) |
 
 The required status check `test` is the job name in `.github/workflows/ci.yml`.
+
+### Branch naming convention
+
+`branch-names.json` enforces that human branches follow `feature/`, `hotfix/` or
+`bugfix/`; `dependabot/` is allowed so Dependabot can open its PRs, and `release/`
+for the release flow. `release-branches.json` then narrows `release/` creation to
+repository admins.
+
+> **"Org members" caveat:** GitHub ruleset bypass actors are *repository roles or
+> teams*, not raw org membership. The org currently has no teams and every
+> collaborator is an admin, so `release/` creation is gated to the **Repository
+> admin** role as the practical equivalent. When non-admin members should also cut
+> releases, create a GitHub team for them and swap it into `release-branches.json`'s
+> `bypass_actors`. On a public repo, non-collaborators cannot create branches in
+> the repo at all (they fork), so the convention only applies to collaborators.
+
+> **fnmatch gotcha:** a *trailing* `**` only matches a single path segment, so
+> `refs/heads/feature/**` would miss `feature/a/b`. Use `refs/heads/feature/**/*`
+> to match any depth — this matters for the multi-segment branches Dependabot
+> creates (`dependabot/npm_and_yarn/...`).
 
 ## How to apply
 
