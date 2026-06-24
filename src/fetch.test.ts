@@ -100,6 +100,83 @@ test('TIMEOUT error message contains the clamped MAX_TIMEOUT_MS value', () => {
   });
 });
 
+test('NaN timeoutMs falls back to DEFAULT_TIMEOUT_MS', () => {
+  const capturedDelays: number[] = [];
+  const orig = globalThis.setTimeout;
+  // @ts-expect-error partial overload patch
+  globalThis.setTimeout = (fn: () => void, delay: number) => {
+    capturedDelays.push(delay);
+    return orig(fn, delay);
+  };
+  return withFetch(delayedFetch(0), async () => {
+    try {
+      await safeFetch('https://example.com', { timeoutMs: NaN });
+      assert.ok(
+        capturedDelays.includes(DEFAULT_TIMEOUT_MS),
+        `expected ${DEFAULT_TIMEOUT_MS} among captured delays: ${capturedDelays.join(', ')}`,
+      );
+    } finally {
+      globalThis.setTimeout = orig;
+    }
+  });
+});
+
+test('negative timeoutMs falls back to DEFAULT_TIMEOUT_MS', () => {
+  const capturedDelays: number[] = [];
+  const orig = globalThis.setTimeout;
+  // @ts-expect-error partial overload patch
+  globalThis.setTimeout = (fn: () => void, delay: number) => {
+    capturedDelays.push(delay);
+    return orig(fn, delay);
+  };
+  return withFetch(delayedFetch(0), async () => {
+    try {
+      await safeFetch('https://example.com', { timeoutMs: -1 });
+      assert.ok(
+        capturedDelays.includes(DEFAULT_TIMEOUT_MS),
+        `expected ${DEFAULT_TIMEOUT_MS} among captured delays: ${capturedDelays.join(', ')}`,
+      );
+    } finally {
+      globalThis.setTimeout = orig;
+    }
+  });
+});
+
+test('ctxSignal reason wins over TIMEOUT when both abort simultaneously', () => {
+  const userAc = new AbortController();
+  const orig = globalThis.setTimeout;
+  // Intercept the per-attempt timer: also abort ctxSignal in the same turn so both
+  // ac.signal and ctxSignal are aborted before the catch block runs.
+  // @ts-expect-error partial overload patch
+  globalThis.setTimeout = (fn: () => void, _delay: number) =>
+    orig(() => { userAc.abort(); fn(); }, 0);
+
+  // Fetch mock that blocks until the signal fires — no internal setTimeout so the
+  // mock above only intercepts safeFetch's per-attempt timer.
+  const blockingFetch: typeof globalThis.fetch = (_url, opts) =>
+    new Promise<Response>((_resolve, reject) => {
+      opts?.signal?.addEventListener('abort', () =>
+        reject(new DOMException('The operation was aborted.', 'AbortError')),
+      );
+    });
+
+  return withFetch(blockingFetch, async () => {
+    try {
+      await assert.rejects(
+        () => safeFetch('https://example.com', { signal: userAc.signal }),
+        (err: unknown) => {
+          // Must be ctxSignal.reason (DOMException AbortError), not NodeError TIMEOUT
+          assert.ok(err instanceof DOMException, `expected DOMException, got ${String(err)}`);
+          assert.equal((err as DOMException).name, 'AbortError');
+          return true;
+        },
+      );
+    } finally {
+      globalThis.setTimeout = orig;
+    }
+  });
+});
+
 test('propagates AbortError when ctx.signal is already aborted', async () => {
   const ac = new AbortController();
   ac.abort();
@@ -186,6 +263,35 @@ test('stops retrying immediately when ctx.signal is aborted between attempts', a
       },
     ),
   );
+});
+
+test('abort during retry delay interrupts the sleep immediately', async () => {
+  const userAc = new AbortController();
+  let calls = 0;
+  const failingFetch: typeof globalThis.fetch = () => {
+    calls++;
+    return Promise.reject(new Error('network error'));
+  };
+
+  // Abort the signal shortly after the first attempt fails, while the 5 s delay is running.
+  const abortTimer = setTimeout(() => userAc.abort(), 30);
+
+  const start = Date.now();
+  await withFetch(failingFetch, async () => {
+    await assert.rejects(
+      () =>
+        safeFetch('https://example.com', {
+          signal: userAc.signal,
+          retry: { attempts: 3, delayMs: 5_000 },
+        }),
+      () => true,
+    );
+  });
+  clearTimeout(abortTimer);
+  const elapsed = Date.now() - start;
+
+  assert.equal(calls, 1);
+  assert.ok(elapsed < 1_000, `expected <1 s but took ${elapsed} ms`);
 });
 
 // ----------------------------------------------------------- config factories

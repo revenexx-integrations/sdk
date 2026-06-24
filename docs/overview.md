@@ -189,7 +189,9 @@ const response = await safeFetch('https://api.example.com/data', {
 | `MAX_RETRY_ATTEMPTS` | 5 | Maximum allowed retry count |
 | `DEFAULT_RETRY_DELAY_MS` | 1 000 ms | Default pause between retry attempts |
 
-**Retry semantics:** retries happen only on thrown errors (network failures, timeouts). HTTP error responses are not retried — the node decides what to do with the status code. No retry occurs if `ctx.signal` has been aborted.
+**Retry semantics:** retries happen only on thrown errors (network failures, timeouts). HTTP error responses are not retried — the node decides what to do with the status code. No retry occurs if `ctx.signal` has been aborted. If `ctx.signal` is aborted during the inter-attempt delay, the sleep is cut short immediately.
+
+> **Idempotency:** `safeFetch` re-issues the full request on each retry. Only use `retry` with idempotent methods (GET, HEAD, OPTIONS, or explicitly idempotent POST/PUT endpoints). Retrying a non-idempotent write (e.g. a plain POST) risks duplicate side effects if the server already processed the first request before the connection failed.
 
 **Error thrown on timeout:** `NodeError` with `code: 'TIMEOUT'` and a message that includes the actual effective timeout in milliseconds.
 

@@ -25,7 +25,10 @@ export async function safeFetch(
   options: SafeFetchOptions = {},
 ): Promise<Response> {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, signal: ctxSignal, retry, ...fetchOptions } = options;
-  const effectiveMs = Math.min(timeoutMs, MAX_TIMEOUT_MS);
+  const effectiveMs =
+    Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? Math.min(timeoutMs, MAX_TIMEOUT_MS)
+      : DEFAULT_TIMEOUT_MS;
   const rawAttempts = retry?.attempts ?? DEFAULT_RETRY_ATTEMPTS;
   const safeAttempts = Number.isFinite(rawAttempts)
     ? Math.min(Math.max(0, rawAttempts), MAX_RETRY_ATTEMPTS)
@@ -44,13 +47,17 @@ export async function safeFetch(
     try {
       return await fetch(url, { ...fetchOptions, signal });
     } catch (err) {
+      if (ctxSignal?.aborted) throw ctxSignal.reason;
       if (ac.signal.aborted) {
         lastError = new NodeError('TIMEOUT', `Request timed out after ${effectiveMs}ms`);
       } else {
         lastError = err;
       }
-      if (attempt < maxAttempts && !ctxSignal?.aborted) {
-        await new Promise<void>((resolve) => setTimeout(resolve, retryDelayMs));
+      if (attempt < maxAttempts) {
+        await new Promise<void>((resolve) => {
+          const t = setTimeout(resolve, retryDelayMs);
+          ctxSignal?.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+        });
       }
     } finally {
       clearTimeout(timer);
