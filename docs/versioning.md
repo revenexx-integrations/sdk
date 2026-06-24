@@ -66,6 +66,39 @@ authenticated with the workflow's built-in `GITHUB_TOKEN`. The build runs via
 the `prepublishOnly` hook that `npm publish` fires for each package. `changeset
 publish` is idempotent — it only publishes versions not already in the registry.
 
+### Signed release tags
+
+`changeset tag` shells out to `git tag <name> -m <name>` (an **annotated** tag);
+there is no Changesets option to sign it. Since the tag is annotated, git's
+`tag.gpgSign` setting applies — turn it on once and `changeset tag` signs
+automatically (equivalent to your usual `git tag -s -a -m …`):
+
+```bash
+# GPG
+git config user.signingkey <YOUR_KEY_ID>
+git config tag.gpgSign true
+# …or SSH signing (no prompt if the key is loaded in ssh-agent / has no passphrase)
+git config gpg.format ssh
+git config user.signingkey ~/.ssh/id_ed25519.pub
+git config tag.gpgSign true
+```
+
+GPG will ask for your passphrase when the tag is created (once — this repo cuts a
+single tag per release). Cache it via `gpg-agent` (`default-cache-ttl` in
+`~/.gnupg/gpg-agent.conf`) or use SSH signing to avoid the prompt. For GitHub to
+mark the tag **Verified**, register the key as a *Signing Key* under your account.
+Tags are created **locally**, so this config lives on the maintainer's machine —
+not in CI.
+
+Prefer to keep tagging by hand? Skip `changeset tag` and create the tag yourself
+with the trigger's name scheme:
+
+```bash
+V=$(node -p "require('./package.json').version")
+git tag -s -a "@revenexx/integrations-node-sdk@$V" -m "@revenexx/integrations-node-sdk@$V"
+git push --follow-tags
+```
+
 Pick the bump in step `npx changeset` per the SemVer table above. After the SDK
 release, bump the dependency in every consumer and re-publish (nodes-core) or
 rebuild (worker, ui):
