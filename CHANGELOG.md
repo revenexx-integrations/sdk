@@ -1,5 +1,11 @@
 # @revenexx/integrations-node-sdk
 
+## 0.12.1
+
+### Patch Changes
+
+- 859f577: docs: correct and expand the node-authoring examples in the README
+
 ## 0.12.0
 
 ### Minor Changes
