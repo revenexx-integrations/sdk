@@ -42,8 +42,8 @@ ESM/CJS output plus `.d.ts` types.
 
 ### Authoring a node
 
-Implement `INode`: a static `description` (the metadata the registry publishes)
-plus an `execute` method. A few conventions the engine relies on:
+Implement `INode`: an instance `description` property (the metadata the registry
+publishes) plus an `execute` method. A few conventions the engine relies on:
 
 - **`slug` is namespaced** — `<namespace>:<slug>`, e.g. `revenexx:text-replace`.
   It is the stable identity of the node across versions; not a dotted path.
@@ -117,7 +117,19 @@ export class ConditionIfNode implements INode {
 
   async execute(ctx: INodeContext, inputs: Record<string, unknown>): Promise<INodeResult> {
     const inputData = inputs['in'];
-    const branch = inputs['field'] === inputs['value'] ? 'true' : 'false';
+    const field = inputs['field'];
+    // `field` is a dot-path selector — resolve it against the input payload,
+    // then compare the resolved value to the configured `value`.
+    const actual =
+      typeof field === 'string'
+        ? field
+            .split('.')
+            .reduce<unknown>(
+              (acc, key) => (acc == null ? undefined : (acc as Record<string, unknown>)[key]),
+              inputData,
+            )
+        : undefined;
+    const branch = actual === inputs['value'] ? 'true' : 'false';
     // The fired port's name is both the outputs key and the branch.
     return { outputs: { [branch]: inputData }, branch };
   }
@@ -191,6 +203,9 @@ export class HttpRequestNode implements INode {
       return { outputs: { response: { status: res.status, body } }, branch: 'response' };
     } catch (err) {
       if (err instanceof NodeError) throw err;
+      // Don't swallow cancellations/timeouts — let aborts propagate so the
+      // workflow can cancel promptly instead of routing to the error port.
+      if (ctx.signal.aborted || (err instanceof Error && err.name === 'AbortError')) throw err;
       return { outputs: { error: { code: 'REQUEST_FAILED', message: String(err) } }, branch: 'error' };
     }
   }
