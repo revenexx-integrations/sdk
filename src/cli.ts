@@ -18,6 +18,7 @@
 import * as fs from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { collectImageSources, copyImages } from './images.js';
 import { buildManifest } from './manifest.js';
 import type { ICredential, INode, ITemplateDescription } from './types.js';
 
@@ -74,6 +75,8 @@ async function runManifest(): Promise<void> {
   for (const t of manifest.templates ?? []) {
     console.log(`  template   ${t.slug}@${t.version} (${t.level})`);
   }
+
+  copyImages(collectImageSources(manifest), outDir, projectRoot);
 }
 
 // ------------------------------------------------------------------- main
