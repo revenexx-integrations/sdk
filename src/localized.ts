@@ -3,7 +3,7 @@ import type { LocalizedString } from './types.js';
 /**
  * Reduce a {@link LocalizedString} to a single plain string.
  *
- * Every consumer (worker, UI, the Laravel side) repeats the same "is it a
+ * Every consumer (the UI, the Laravel side) repeats the same "is it a
  * string or a localized map?" branch to render a name/label; this centralizes
  * it so the rules are defined once:
  *

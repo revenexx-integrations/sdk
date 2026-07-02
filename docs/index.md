@@ -7,10 +7,11 @@ Shared TypeScript contract library for Revenexx integration nodes. Defines the i
 ```
 integrations-node-sdk          (this package — types & helpers only)
   └── integrations-nodes-core  (implements INode, ships dist/manifest.json)
-        └── integrations-worker  (registers nodes, executes workflows)
+        └── integrations-worker  (reads the manifest, executes workflows —
+                                  no SDK dependency, couples via manifestVersion)
 ```
 
-The SDK has **no runtime dependencies** and no logic beyond the manifest helpers. It exists solely to share the contract between node packages and the workflow engine.
+The SDK has **no runtime dependencies** and no logic beyond the manifest helpers. It exists solely to share the contract between node packages and the workflow engine. The worker does not depend on the SDK package — it consumes the published manifest and couples to the SDK only through the manifest schema version (`manifestVersion`).
 
 ## Package contents
 

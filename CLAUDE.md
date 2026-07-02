@@ -33,7 +33,7 @@ ship unit tests (`src/*.test.ts`) — run them with `npm test`.
 
 - `src/credentials.ts` — abstract base classes that implement `ICredential` so credential authors only fill in the gaps: `BaseCredential`, `SimpleValueCredential`, `ApiKeyCredential`, `BasicAuthCredential`, `OAuth2ClientCredentialsCredential`, `OAuth2AuthCodeCredential`. Concrete credentials `extend` one of these (e.g. `SmtpCredential extends SimpleValueCredential`).
 
-- `src/localized.ts` — `normalizeLocalized` helper that reduces a `LocalizedString` to a single plain string (shared by worker, UI and Laravel rendering).
+- `src/localized.ts` — `normalizeLocalized` helper that reduces a `LocalizedString` to a single plain string (shared by the UI and Laravel rendering).
 
 - `src/errors.ts` — `NodeError` class for unexpected/system-level failures thrown inside `execute`.
 

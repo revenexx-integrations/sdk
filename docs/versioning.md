@@ -1,18 +1,24 @@
 # Versioning & Release Policy
 
 `@revenexx/integrations-node-sdk` is the shared type surface between
-every actor in the integrations stack:
+the components in the integrations stack that build against it:
 
 - `integrations-nodes-core` (and any sibling node packages) implement
   `INode` from this SDK.
-- `integrations-worker` imports `INode` to invoke node implementations
-  at run time.
 - `integrations-ui` reads `IConfigField` (and related types)
   to render config editors.
 
-Because of this fan-out, even a minor type tweak can ripple through
-three independently-deployed components. This document fixes the rules
-so that ripple stays manageable.
+`integrations-worker` is **not** an SDK consumer: it never imports the
+SDK and does not depend on the package. It loads registered node
+packages and executes workflows against the manifest they publish, so
+its only coupling to the SDK is the manifest **schema** version
+(`manifestVersion`, see [`overview.md`](overview.md)) — not the SDK's
+TypeScript types or its semver. A type-only change that keeps the
+manifest shape intact never reaches the worker.
+
+Because of this fan-out, even a minor type tweak can ripple through the
+independently-deployed components that build against the SDK. This
+document fixes the rules so that ripple stays manageable.
 
 ## SemVer contract
 
@@ -111,15 +117,16 @@ git push --follow-tags
 ```
 
 Pick the bump in step `npx changeset` per the SemVer table above. After the SDK
-release, bump the dependency in every consumer and re-publish (nodes-core) or
-rebuild (worker, ui):
+release, bump the dependency in every consumer that builds against the SDK and
+re-publish (nodes-core) or rebuild (ui):
 
 - `integrations-nodes-core/package.json`
-- `integrations-worker/package.json`
 - `integrations-ui/package.json` (if it imports the SDK)
 
-Run `npm install` in each consumer to refresh the lockfile. This cross-repo
-step is **not** automated by the SDK's publish workflow.
+Run `npm install` in each to refresh the lockfile. `integrations-worker` has no
+SDK dependency, so it is **not** bumped here — it only needs a coordinated
+change when the manifest schema version (`manifestVersion`) changes. This
+cross-repo step is **not** automated by the SDK's publish workflow.
 
 The SDK is published to the public npm registry (`registry.npmjs.org`) under the
 `@revenexx` scope. Since it lives on the default registry, consumers need no
@@ -130,14 +137,19 @@ The SDK is published to the public npm registry (`registry.npmjs.org`) under the
 
 | Consumer                       | Pin style              | Why                                                                                       |
 | ------------------------------ | ---------------------- | ----------------------------------------------------------------------------------------- |
-| `integrations-nodes-core`      | `peerDependencies` + `devDependencies` caret | Lets the worker pick the resolved version while still building locally. |
-| `integrations-worker`          | Exact (`"x.y.z"`)      | The runtime install picks up the SDK transitively from the node packages; the worker's own dep is the source of truth for the major version. |
+| `integrations-nodes-core`      | `peerDependencies` + `devDependencies` caret | Keeps a single SDK copy per install root while still building locally. |
 | `integrations-ui`              | Caret (`"^x.y.z"`)     | UI follows the latest minor automatically; majors are an explicit upgrade.                |
 
-The worker's pin is the hard floor: when the worker pins SDK `0.4.0`
-exactly, publishing a node package built against `0.5.x` will fail
-bootstrap because `npm install --omit=dev` resolves a single SDK
-version per install root.
+`integrations-worker` has no SDK dependency to pin — it consumes the
+published manifest, so its only coupling to the SDK is the manifest
+`manifestVersion`, a separate version axis from the SDK's semver.
+
+The install root sets the hard floor: when several node packages are
+installed together, `npm install --omit=dev` resolves a single SDK
+version for all of them, so their `peerDependencies` ranges must
+overlap. A package built against `0.5.x` cannot be co-installed with
+one that only accepts `0.4.x` — the floor is the most conservative peer
+range in that root.
 
 ## Breaking change checklist
 
@@ -146,9 +158,13 @@ When you have to ship a major:
 1. Open an issue or RFC describing the breaking change + migration steps.
 2. Bump SDK major and publish.
 3. Bump SDK in `integrations-nodes-core`, adjust every node implementation, register a new major of nodes-core (via the Console / `update-dev.sh`).
-4. Bump SDK in `integrations-worker`, adjust any direct uses, rebuild + push the image.
-5. Bump SDK in `integrations-ui` if it consumes the changed types, rebuild + redeploy.
-6. Re-register every previously-registered third-party node package against the new major; or document the floor for which packages remain supported.
+4. Bump SDK in `integrations-ui` if it consumes the changed types, rebuild + redeploy.
+5. Re-register every previously-registered third-party node package against the new major; or document the floor for which packages remain supported.
+
+`integrations-worker` is deliberately absent from this list: an SDK
+major does not touch it. The worker only needs a coordinated change
+when the manifest **schema** version (`manifestVersion`) changes — a
+separate axis from the SDK's semver.
 
 There is currently no automated cross-repo CI guard against an SDK
 major being merged without a matching consumer PR — be deliberate
@@ -169,4 +185,4 @@ stops shifting weekly.
 - `docs/adding-a-node.md` in the `integrations-nodes-core` repo — the
   consumer perspective.
 - `docs/node-package-resolution.md` in the `integrations-worker` repo —
-  how the SDK is resolved at run time.
+  how registered node packages are resolved and run.
