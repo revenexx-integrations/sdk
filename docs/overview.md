@@ -467,7 +467,7 @@ workflow.
 
 **Iteration** — a node that loops over a collection may also implement
 `INodeWithIteration` (`extractItems(inputs, config): unknown[]`, pure and
-synchronous). The worker detects it via the `isNodeWithIteration` type guard and
+synchronous). The runtime detects it via the `isNodeWithIteration` type guard and
 calls `extractItems` instead of relying on slug-based detection; it is the
 designated dispatch point for future child-workflow execution.
 

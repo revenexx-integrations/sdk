@@ -4,8 +4,8 @@
  *
  * The union `string | string[]` exists so node authors can write the common
  * single-type case as a bare string, but every consumer (the editor that
- * lists tenant credential instances, the worker that resolves the chosen
- * instance, the Laravel side) needs a list to iterate. This centralizes the
+ * lists tenant credential instances, the Laravel side) needs a list to
+ * iterate. This centralizes the
  * "is it a string or an array?" branch — analogous to {@link normalizeLocalized}
  * for `LocalizedString` — so the rules are defined once:
  *

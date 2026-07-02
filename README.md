@@ -11,7 +11,8 @@ packages and the workflow engine that runs them.
 ```
 integrations-node-sdk          ← this package (types & helpers only)
   └── integrations-nodes-core  ← implements INode, ships dist/manifest.json
-        └── integrations-worker ← registers nodes, executes workflows
+        └── integrations-worker ← reads the manifest, executes workflows
+                                   (no SDK dependency — couples via manifestVersion)
 ```
 
 ## Installation
