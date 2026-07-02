@@ -9,6 +9,9 @@ const fakeNode: INode = {
     version: '1.0.0',
     category: 'action',
     name: 'Noop',
+    images: [
+      { src: 'images/noop.png', alt: { en: 'Noop node' }, category: 'screenshot' },
+    ],
     inputs: {},
     outputs: [{ name: 'out', kind: 'default', dataType: 'any' }],
   },
@@ -22,6 +25,7 @@ const fakeCredential: ICredential = {
     slug: 'revenexx:smtp',
     version: '1.0.0',
     name: 'SMTP',
+    images: [{ src: 'images/smtp-logo.svg', alt: 'SMTP logo', category: 'logo' }],
     authKind: 'static',
     fields: [{ key: 'host', label: 'Host', type: 'string', required: true }],
   },
@@ -39,6 +43,9 @@ const fakeTemplate: ITemplateDescription = {
   category: 'sales',
   level: 'beginner',
   name: 'Slack to CRM',
+  images: [
+    { src: 'images/slack-banner.png', alt: 'Slack banner', title: 'Slack → CRM', category: 'banner' },
+  ],
   blobVersion: 'v0-draft',
   definition: { nodeManifestVersion: 'v0-draft', name: 'Slack to CRM', nodes: [], edges: [] },
   triggers: [
@@ -78,4 +85,12 @@ test('buildManifest includes templates verbatim when provided', () => {
   assert.deepEqual(manifest.templates?.[0]?.definition, fakeTemplate.definition);
   assert.equal(manifest.templates?.[0]?.triggers?.[0]?.type, 'event');
   assert.equal(manifest.templates?.[0]?.triggers?.[0]?.config?.subject, 'slack.chat.message.created');
+});
+
+test('buildManifest carries image declarations through untouched', () => {
+  const manifest = buildManifest([fakeNode], [fakeCredential], [fakeTemplate]);
+
+  assert.deepEqual(manifest.nodes[0]?.images, fakeNode.description.images);
+  assert.deepEqual(manifest.credentials?.[0]?.images, fakeCredential.description.images);
+  assert.deepEqual(manifest.templates?.[0]?.images, fakeTemplate.images);
 });
