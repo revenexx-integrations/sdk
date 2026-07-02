@@ -43,20 +43,63 @@ test('copyImages copies declared files into dist preserving the sub-path', () =>
   assert.equal(fs.readFileSync(copied, 'utf-8'), 'PNGDATA');
 });
 
-test('copyImages warns and does not throw when a declared file is missing', () => {
+/**
+ * Run `copyImages` with `console.warn` captured. Uses a rest parameter so the
+ * stub stays assignable to Node's `console.warn(...data: unknown[])` signature.
+ */
+function copyImagesCapturingWarnings(sources: string[], outDir: string, rootDir: string): string[] {
   const warnings: string[] = [];
   const originalWarn = console.warn;
-  console.warn = (msg: string) => {
-    warnings.push(msg);
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map(String).join(' '));
   };
-  const outDir = resolve(root, 'dist');
 
   try {
-    assert.doesNotThrow(() => copyImages(['images/missing.png'], outDir, root));
+    copyImages(sources, outDir, rootDir);
   } finally {
     console.warn = originalWarn;
   }
 
+  return warnings;
+}
+
+test('copyImages warns and does not throw when a declared file is missing', () => {
+  const outDir = resolve(root, 'dist');
+
+  let warnings: string[] = [];
+  assert.doesNotThrow(() => {
+    warnings = copyImagesCapturingWarnings(['images/missing.png'], outDir, root);
+  });
+
   assert.equal(fs.existsSync(resolve(outDir, 'images', 'missing.png')), false);
   assert.ok(warnings.some((w) => w.includes('images/missing.png')));
+});
+
+test('copyImages warns and skips an absolute src instead of escaping dist/', () => {
+  const outDir = resolve(root, 'dist');
+
+  const warnings = copyImagesCapturingWarnings(['/etc/passwd'], outDir, root);
+
+  assert.equal(fs.existsSync(resolve(outDir, 'etc', 'passwd')), false);
+  assert.ok(warnings.some((w) => w.includes('unsafe') && w.includes('/etc/passwd')));
+});
+
+test('copyImages warns and skips a src that escapes the package root via ..', () => {
+  const outDir = resolve(root, 'dist');
+
+  const warnings = copyImagesCapturingWarnings(['../../secret.png'], outDir, root);
+
+  assert.ok(warnings.some((w) => w.includes('unsafe') && w.includes('../../secret.png')));
+});
+
+test('copyImages warns and skips when src points at a directory', () => {
+  fs.mkdirSync(resolve(root, 'images'), { recursive: true });
+  const outDir = resolve(root, 'dist');
+
+  let warnings: string[] = [];
+  assert.doesNotThrow(() => {
+    warnings = copyImagesCapturingWarnings(['images'], outDir, root);
+  });
+
+  assert.ok(warnings.some((w) => w.includes('not a file') && w.includes('images')));
 });
