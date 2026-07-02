@@ -150,12 +150,12 @@ export interface INode {
 
 /**
  * Optional capability interface for nodes that iterate over a collection.
- * Implement this alongside {@link INode} to signal to the worker that this
- * node drives iteration — the worker will call {@link extractItems} instead
+ * Implement this alongside {@link INode} to signal to the runtime that this
+ * node drives iteration — the runtime will call {@link extractItems} instead
  * of relying on slug-based detection.
  *
  * This interface is the designated dispatch point for future child-workflow
- * execution: once per-iteration isolation is needed, the worker can swap the
+ * execution: once per-iteration isolation is needed, the runtime can swap the
  * inline loop for `executeChild` calls without any changes to the node or SDK.
  */
 export interface INodeWithIteration {
