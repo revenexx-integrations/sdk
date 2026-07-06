@@ -13,7 +13,10 @@ export type ConfigType =
   | 'array'
   | 'expression'
   | 'secret-ref'
-  | 'credentials-ref';
+  | 'credentials-ref'
+  // A marker field: the flat set of fields that replaces it is resolved at
+  // author time by the node's `resolveConfigSchema` callback (PO-143).
+  | 'dynamic-schema';
 
 export interface IInputPort {
   dataType: DataType;
@@ -34,6 +37,12 @@ export interface IOutputPort {
   description?: LocalizedString;
   fields?: Record<string, IOutputField>;
   sourceFromConfig?: string;
+  /**
+   * Marks a generic port set resolved at author time by the node's
+   * `resolveOutputs` callback (PO-143) — rather than a static `name` or a
+   * config-driven `sourceFromConfig`. Mutually exclusive with those.
+   */
+  resolveOutputs?: boolean;
   fallback?: {
     name: string;
     label?: LocalizedString;
@@ -66,6 +75,20 @@ export interface IConfigFieldBase {
   multiline?: boolean;
   validation?: IConfigValidation;
   options?: IConfigOption[];
+  /**
+   * When true, this field is resolved at author time by the node instead of
+   * declared statically (PO-143): its `options` come from `loadOptions`, or —
+   * for `type: 'dynamic-schema'` — its whole flat field set comes from
+   * `resolveConfigSchema`. Left unset for ordinary static fields.
+   */
+  dynamic?: boolean;
+  /**
+   * Config keys whose values drive this field's dynamic resolution. The editor
+   * re-resolves when one of them changes. A key listed here is
+   * *dependency-driving* and MUST be a literal (it may not set
+   * `expressionAllowed`), so its value is known at author time.
+   */
+  dependsOn?: string[];
   /**
    * Only meaningful when `type === 'credentials-ref'`: the namespaced slug(s) of
    * the credential type(s) this field accepts (e.g. `revenexx:smtp`). The editor
@@ -121,9 +144,53 @@ export interface INodeResult {
   branch?: string;
 }
 
+/**
+ * Context handed to a node's *author-time* resolvers (`loadOptions`,
+ * `resolveConfigSchema`, `resolveOutputs`). These run in the node-runtime host
+ * (a Node side-container) while a user is editing the workflow — never in
+ * `execute`. The result is snapshotted into the workflow blob at save, so the
+ * runtime never calls these (PO-143).
+ */
+export interface INodeAuthorContext {
+  signal: AbortSignal;
+  logger: {
+    info(message: string, meta?: Record<string, unknown>): void;
+    warn(message: string, meta?: Record<string, unknown>): void;
+    error(message: string, meta?: Record<string, unknown>): void;
+  };
+  /** The user's current partial config values. */
+  config: Record<string, unknown>;
+  /**
+   * Resolved credential material keyed by the `credentials-ref` config field
+   * (e.g. `{ auth: { accessToken } }`) — never a raw secret ref. May be empty
+   * when the resolve needs no credentials.
+   */
+  secrets: Record<string, unknown>;
+  /** Preferred locale for resolved labels, when the caller supplies one. */
+  locale?: string;
+}
+
 export interface INode {
   description: INodeDescription;
   execute(ctx: INodeContext, inputs: Record<string, unknown>): Promise<INodeResult>;
+  /**
+   * Author-time: resolve the options of a `dynamic` field (a live/dependent
+   * dropdown). `fieldKey` is the config key being resolved. Optional — declare
+   * it only for nodes with `dynamic` `select`/`multiselect` fields.
+   */
+  loadOptions?(ctx: INodeAuthorContext, fieldKey: string): Promise<IConfigOption[]>;
+  /**
+   * Author-time: resolve the flat set of typed config fields that replaces a
+   * `type: 'dynamic-schema'` marker (e.g. an API's parameters once app + API
+   * are chosen). Returns fields in the same config-field grammar; the node is
+   * responsible for flattening any nested API shape into flat keys.
+   */
+  resolveConfigSchema?(ctx: INodeAuthorContext): Promise<IConfigField[]>;
+  /**
+   * Author-time: resolve a generic output-port set for an output marked
+   * `resolveOutputs` (e.g. ports derived from a connected resource's schema).
+   */
+  resolveOutputs?(ctx: INodeAuthorContext): Promise<IOutputPort[]>;
 }
 
 /**
