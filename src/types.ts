@@ -39,8 +39,10 @@ export interface IOutputPort {
   sourceFromConfig?: string;
   /**
    * Marks a generic port set resolved at author time by the node's
-   * `resolveOutputs` callback (PO-143) — rather than a static `name` or a
-   * config-driven `sourceFromConfig`. Mutually exclusive with those.
+   * `resolveOutputs` callback (PO-143), rather than a static `name` or a
+   * config-driven `sourceFromConfig`. Set at most one of `name`,
+   * `sourceFromConfig`, `resolveOutputs` — this is a server-validated
+   * constraint on publish, not enforced by this (intentionally flat) type.
    */
   resolveOutputs?: boolean;
   fallback?: {
@@ -76,10 +78,13 @@ export interface IConfigFieldBase {
   validation?: IConfigValidation;
   options?: IConfigOption[];
   /**
-   * When true, this field is resolved at author time by the node instead of
-   * declared statically (PO-143): its `options` come from `loadOptions`, or —
-   * for `type: 'dynamic-schema'` — its whole flat field set comes from
-   * `resolveConfigSchema`. Left unset for ordinary static fields.
+   * When true, a *known* field's `options` are resolved at author time via the
+   * node's `loadOptions` (a live/dependent dropdown) instead of a static
+   * `options[]`. Applies to `select` / `multiselect`; left unset for ordinary
+   * static fields.
+   *
+   * Independent of `type: 'dynamic-schema'`: that field type triggers
+   * `resolveConfigSchema` on its own and does NOT require `dynamic: true`.
    */
   dynamic?: boolean;
   /**
