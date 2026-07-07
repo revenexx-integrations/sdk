@@ -18,6 +18,26 @@ export type ConfigType =
   // author time by the node's `resolveConfigSchema` callback (PO-143).
   | 'dynamic-schema';
 
+/**
+ * Semantic category of an image, driving how the registry/CDN organises and
+ * displays it.
+ */
+export type ImageCategory = 'screenshot' | 'logo' | 'banner' | 'icon' | 'other';
+
+/**
+ * A single image a node, credential type, or template ships alongside its
+ * description (e.g. a screenshot, logo, or banner). The file is bundled into
+ * the package tarball and uploaded to the Revenexx CDN when the package is
+ * published.
+ */
+export interface IImage {
+  /** Path to the image file, relative to the package root (e.g. `images/screenshot.png`). */
+  src: string;
+  alt: LocalizedString;
+  title?: LocalizedString;
+  category: ImageCategory;
+}
+
 export interface IInputPort {
   dataType: DataType;
   required?: boolean;
@@ -117,6 +137,8 @@ export interface INodeDescription {
   name: LocalizedString;
   description?: LocalizedString;
   icon?: string;
+  /** Associated images (screenshots, logos, banners) shipped with the package. */
+  images?: IImage[];
   inputs: Record<string, IInputPort>;
   outputs: IOutputPort[];
   config?: IConfigField[];
@@ -280,6 +302,8 @@ export interface ICredentialDescription {
   name: LocalizedString;
   description?: LocalizedString;
   icon?: string;
+  /** Associated images (screenshots, logos, banners) shipped with the package. */
+  images?: IImage[];
   authKind: CredentialAuthKind;
   fields: ICredentialField[];
 }
@@ -411,6 +435,8 @@ export interface ITemplateDescription {
   industries?: string[];
   /** Free-form vendor tags (e.g. `pipedrive`, `slack`). */
   vendors?: string[];
+  /** Associated images (screenshots, logos, banners) shipped with the package. */
+  images?: IImage[];
   /** Workflow-blob schema version `definition` targets (e.g. `v0-draft`). */
   blobVersion: string;
   /** The workflow blob instantiated when a user picks this template. */
