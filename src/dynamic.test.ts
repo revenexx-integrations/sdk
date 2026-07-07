@@ -8,7 +8,8 @@ function ctx(config: Record<string, unknown> = {}): INodeAuthorContext {
     signal: new AbortController().signal,
     logger: { info() {}, warn() {}, error() {} },
     config,
-    credentials: {},
+    secrets: { get: () => Promise.reject(new Error('unused in this test')) },
+    credentials: { get: () => Promise.reject(new Error('unused in this test')) },
   };
 }
 

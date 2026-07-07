@@ -166,12 +166,23 @@ export interface INodeAuthorContext {
   /** The user's current partial config values. */
   config: Record<string, unknown>;
   /**
-   * Resolved credential material keyed by the `credentials-ref` config field
-   * (e.g. `{ auth: { accessToken } }`) — never a raw secret ref. Named to match
-   * `INodeContext.credentials` (resolved material), *not* `INodeContext.secrets`
-   * (the raw secret-ref getter). May be empty when the resolve needs none.
+   * Lazily resolve a `secret-ref` config field's value (a key in the tenant
+   * secret store → a single string). Mirrors {@link INodeContext.secrets} so a
+   * resolver that authenticates via a secret-ref uses the same call it would in
+   * `execute`. Resolves against the internal secret endpoint; only the keys the
+   * resolver actually asks for are fetched.
    */
-  credentials: Record<string, unknown>;
+  secrets: {
+    get(key: string): Promise<string>;
+  };
+  /**
+   * Lazily resolve a `credentials-ref` instance's access data via the
+   * credentials broker (id → structured material, e.g. `{ accessToken }`).
+   * Mirrors {@link INodeContext.credentials}.
+   */
+  credentials: {
+    get(credentialsId: string): Promise<Record<string, unknown>>;
+  };
   /** Preferred locale for resolved labels, when the caller supplies one. */
   locale?: string;
 }
