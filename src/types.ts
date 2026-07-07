@@ -167,10 +167,11 @@ export interface INodeAuthorContext {
   config: Record<string, unknown>;
   /**
    * Resolved credential material keyed by the `credentials-ref` config field
-   * (e.g. `{ auth: { accessToken } }`) — never a raw secret ref. May be empty
-   * when the resolve needs no credentials.
+   * (e.g. `{ auth: { accessToken } }`) — never a raw secret ref. Named to match
+   * `INodeContext.credentials` (resolved material), *not* `INodeContext.secrets`
+   * (the raw secret-ref getter). May be empty when the resolve needs none.
    */
-  secrets: Record<string, unknown>;
+  credentials: Record<string, unknown>;
   /** Preferred locale for resolved labels, when the caller supplies one. */
   locale?: string;
 }
