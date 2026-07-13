@@ -19,7 +19,7 @@ import * as fs from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { collectImageSources, copyImages } from './images.js';
-import { buildManifest } from './manifest.js';
+import { buildManifest, parsePackageMeta } from './manifest.js';
 import type { ICredential, INode, ITemplateDescription } from './types.js';
 
 const projectRoot = process.cwd();
@@ -27,6 +27,24 @@ const projectRoot = process.cwd();
 function fail(message: string): never {
   console.error(`Error: ${message}`);
   process.exit(1);
+}
+
+/**
+ * Read and parse the package's `package.json`. Returns `{}` when it is missing
+ * or unparseable — its structural validity is enforced by the integrations
+ * server on upload, so tooling stays lenient and lets {@link parsePackageMeta}
+ * coerce the result.
+ */
+function readPackageJson(root: string): unknown {
+  const pkgPath = resolve(root, 'package.json');
+  if (!fs.existsSync(pkgPath)) {
+    return {};
+  }
+  try {
+    return JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+  } catch {
+    return {};
+  }
 }
 
 // --------------------------------------------------------------- manifest
@@ -54,7 +72,20 @@ async function runManifest(): Promise<void> {
 
   const credentials = (mod.CREDENTIALS as ICredential[] | undefined) ?? [];
   const templates = (mod.TEMPLATES as ITemplateDescription[] | undefined) ?? [];
-  const manifest = buildManifest(mod.NODES as INode[], credentials, templates);
+
+  // Carry the package's registry-relevant metadata (name/version/displayName)
+  // into the manifest so the integrations server reads the bundle label from
+  // this SDK-produced artifact rather than reaching into a bespoke package.json
+  // key of its own. Only emit the block when a real package.json name is present.
+  const meta = parsePackageMeta(readPackageJson(projectRoot));
+  const packageMeta = meta.name ? meta : undefined;
+  if (!meta.displayName) {
+    console.warn(
+      '⚠ package.json has no "displayName" — the node palette will fall back to the raw package name.',
+    );
+  }
+
+  const manifest = buildManifest(mod.NODES as INode[], credentials, templates, packageMeta);
 
   const outDir = resolve(projectRoot, 'dist');
   const outFile = resolve(outDir, 'manifest.json');
@@ -63,8 +94,10 @@ async function runManifest(): Promise<void> {
 
   const credentialCount = manifest.credentials?.length ?? 0;
   const templateCount = manifest.templates?.length ?? 0;
+  const bundleLabel = meta.displayName ? `"${meta.displayName}" ` : '';
   console.log(
-    `✓ dist/manifest.json — ${manifest.nodes.length} node(s), ${credentialCount} credential(s), ${templateCount} template(s)`,
+    `✓ dist/manifest.json — package ${bundleLabel}(${meta.name || 'unknown'}), ` +
+      `${manifest.nodes.length} node(s), ${credentialCount} credential(s), ${templateCount} template(s)`,
   );
   for (const m of manifest.nodes) {
     console.log(`  node       ${m.slug}@${m.version}`);

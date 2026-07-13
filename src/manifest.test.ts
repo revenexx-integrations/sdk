@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildManifest, MANIFEST_VERSION } from './manifest.js';
+import { buildManifest, MANIFEST_VERSION, parsePackageMeta } from './manifest.js';
 import type { ICredential, INode, ITemplateDescription } from './types.js';
 
 const fakeNode: INode = {
@@ -85,6 +85,51 @@ test('buildManifest includes templates verbatim when provided', () => {
   assert.deepEqual(manifest.templates?.[0]?.definition, fakeTemplate.definition);
   assert.equal(manifest.templates?.[0]?.triggers?.[0]?.type, 'event');
   assert.equal(manifest.templates?.[0]?.triggers?.[0]?.config?.subject, 'slack.chat.message.created');
+});
+
+test('buildManifest omits the package block when no meta is provided', () => {
+  const manifest = buildManifest([fakeNode]);
+  assert.equal(manifest.package, undefined);
+});
+
+test('buildManifest carries the package meta when provided', () => {
+  const manifest = buildManifest([fakeNode], [], [], {
+    name: '@revenexx/integrations-nodes-core',
+    version: '0.2.0',
+    displayName: 'Core',
+  });
+
+  assert.deepEqual(manifest.package, {
+    name: '@revenexx/integrations-nodes-core',
+    version: '0.2.0',
+    displayName: 'Core',
+  });
+});
+
+test('parsePackageMeta keeps the registry-relevant fields', () => {
+  const meta = parsePackageMeta({
+    name: '@revenexx/integrations-nodes-core',
+    version: '0.2.0',
+    displayName: 'Core',
+    private: true,
+    scripts: {},
+  });
+
+  assert.deepEqual(meta, {
+    name: '@revenexx/integrations-nodes-core',
+    version: '0.2.0',
+    displayName: 'Core',
+  });
+});
+
+test('parsePackageMeta leaves displayName undefined when absent or non-string', () => {
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0' }).displayName, undefined);
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', displayName: 42 }).displayName, undefined);
+});
+
+test('parsePackageMeta coerces malformed input to a safe shape', () => {
+  assert.deepEqual(parsePackageMeta(null), { name: '', version: '', displayName: undefined });
+  assert.deepEqual(parsePackageMeta('nope'), { name: '', version: '', displayName: undefined });
 });
 
 test('buildManifest carries image declarations through untouched', () => {
