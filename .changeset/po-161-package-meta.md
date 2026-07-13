@@ -2,4 +2,4 @@
 "@revenexx/integrations-node-sdk": minor
 ---
 
-Carry the bundle label in the built manifest. `buildManifest` now accepts the package's `displayName` and emits it as a `package: { displayName }` block in `dist/manifest.json`; the CLI reads it from `package.json` and warns when it is absent. `name`/`version` are not duplicated into the manifest — the registry reads those from `package.json` directly. This gives the bundle label a typed SDK contract the registry can read from the manifest (with a `package.json` fallback for older tarballs).
+Read the bundle label from the `package.json` `revenexx` group. `parsePackageMeta` now reads `revenexx.displayName` (a namespaced group, e.g. `{ "revenexx": { "displayName": "Business Central" } }`) instead of a bespoke top-level `displayName` key, and the CLI warns when it is absent. The label is NOT carried in the built manifest — the integrations registry reads it straight from `package.json`, so `buildManifest` no longer accepts a `displayName` argument and never emits a `package` block.

@@ -87,24 +87,16 @@ test('buildManifest includes templates verbatim when provided', () => {
   assert.equal(manifest.templates?.[0]?.triggers?.[0]?.config?.subject, 'slack.chat.message.created');
 });
 
-test('buildManifest omits the package block for missing/blank/whitespace displayName', () => {
-  assert.equal(buildManifest([fakeNode]).package, undefined);
-  assert.equal(buildManifest([fakeNode], [], [], '').package, undefined);
-  assert.equal(buildManifest([fakeNode], [], [], '   ').package, undefined);
-});
-
-test('buildManifest carries only the (trimmed) displayName in the package block', () => {
-  // name/version are deliberately not duplicated — the server reads those from
-  // package.json; only the bundle label needs to travel in the manifest.
-  assert.deepEqual(buildManifest([fakeNode], [], [], 'Core').package, { displayName: 'Core' });
-  assert.deepEqual(buildManifest([fakeNode], [], [], '  Core  ').package, { displayName: 'Core' });
+test('buildManifest never emits a package block', () => {
+  assert.equal('package' in buildManifest([fakeNode]), false);
+  assert.equal('package' in buildManifest([fakeNode], [fakeCredential], [fakeTemplate]), false);
 });
 
 test('parsePackageMeta keeps the registry-relevant fields', () => {
   const meta = parsePackageMeta({
     name: '@revenexx/integrations-nodes-core',
     version: '0.2.0',
-    displayName: 'Core',
+    revenexx: { displayName: 'Core' },
     private: true,
     scripts: {},
   });
@@ -116,18 +108,24 @@ test('parsePackageMeta keeps the registry-relevant fields', () => {
   });
 });
 
-test('parsePackageMeta leaves displayName undefined when absent or non-string', () => {
+test('parsePackageMeta ignores a top-level displayName (label lives under revenexx)', () => {
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', displayName: 'Core' }).displayName, undefined);
+});
+
+test('parsePackageMeta leaves displayName undefined when the revenexx group is absent or non-string', () => {
   assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0' }).displayName, undefined);
-  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', displayName: 42 }).displayName, undefined);
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: {} }).displayName, undefined);
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: 'nope' }).displayName, undefined);
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: { displayName: 42 } }).displayName, undefined);
 });
 
 test('parsePackageMeta normalises blank/whitespace displayName to undefined', () => {
-  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', displayName: '' }).displayName, undefined);
-  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', displayName: '   ' }).displayName, undefined);
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: { displayName: '' } }).displayName, undefined);
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: { displayName: '   ' } }).displayName, undefined);
 });
 
 test('parsePackageMeta trims a surrounding-whitespace displayName', () => {
-  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', displayName: '  Core  ' }).displayName, 'Core');
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: { displayName: '  Core  ' } }).displayName, 'Core');
 });
 
 test('parsePackageMeta trims name/version and blanks whitespace-only ones', () => {

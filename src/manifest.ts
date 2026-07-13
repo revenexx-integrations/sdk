@@ -19,16 +19,6 @@ export const MANIFEST_VERSION = 'v0-draft';
 
 export interface NodeManifest {
   manifestVersion: typeof MANIFEST_VERSION;
-  /**
-   * Package-level metadata carried in the SDK-produced manifest. Currently only
-   * the human-readable bundle `displayName`: the server prefers it here (the
-   * authoritative, versioned artifact) and falls back to the `package.json`
-   * `displayName` for older tarballs built before this block. `name`/`version`
-   * are deliberately NOT carried — the server reads those straight from
-   * `package.json`. Optional and additive: manifests without a `displayName`
-   * omit the block entirely.
-   */
-  package?: { displayName: string };
   nodes: INodeDescription[];
   /**
    * Credential types this package publishes. Optional and additive: packages
@@ -45,11 +35,15 @@ export interface NodeManifest {
 
 /**
  * The registry-relevant fields of a node package's `package.json`, as read by
- * the CLI. `name`/`version` identify the package (the server reads them from
- * `package.json` directly); `displayName` is the human-readable bundle label
- * shown in the editor's node palette (e.g. „Business Central") — the CLI copies
- * only this into the manifest's {@link NodeManifest.package} block, so the label
- * has a typed SDK contract instead of a bespoke, untyped `package.json` key.
+ * the CLI. `name`/`version` identify the package; `displayName` is the
+ * human-readable bundle label shown in the editor's node palette (e.g.
+ * „Business Central"). All three are read straight from `package.json` by the
+ * integrations server on upload — the CLI reads them only to warn about a
+ * missing label and to annotate the manifest log line.
+ *
+ * The label lives under a namespaced `revenexx` group in `package.json`
+ * (`{ "revenexx": { "displayName": "…" } }`), not a bespoke top-level key, so
+ * it can't collide with unrelated tooling that squats on `displayName`.
  */
 export interface NodePackageMeta {
   name: string;
@@ -64,13 +58,17 @@ export interface NodePackageMeta {
  * shape. All three fields are trimmed; a blank or whitespace-only value becomes
  * `''` (`name`/`version`) or `undefined` (`displayName`, matching how the server
  * treats it), so whitespace can't masquerade as a present value in tooling.
+ * The bundle label is read from the `revenexx` group (`revenexx.displayName`).
  * Does not validate that `name`/`version` are present — the integrations server
  * enforces that on upload; this is a typed, lenient read for tooling.
  */
 export function parsePackageMeta(raw: unknown): NodePackageMeta {
   const obj = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
-  const displayName = str(obj.displayName);
+  const revenexx = (
+    obj.revenexx && typeof obj.revenexx === 'object' ? obj.revenexx : {}
+  ) as Record<string, unknown>;
+  const displayName = str(revenexx.displayName);
   return {
     name: str(obj.name),
     version: str(obj.version),
@@ -81,24 +79,19 @@ export function parsePackageMeta(raw: unknown): NodePackageMeta {
 /**
  * Builds the manifest envelope from a package's `NODES` (and optional
  * `CREDENTIALS` / `TEMPLATES`) exports. The result is what gets written to
- * `dist/manifest.json` and uploaded to the registry inside the tarball. Pass the
- * package's `displayName` to carry the bundle label in the `package` block; omit
- * it (or pass a blank/whitespace-only value) to leave the block out.
+ * `dist/manifest.json` and uploaded to the registry inside the tarball. The
+ * bundle label is NOT carried here — the integrations server reads it straight
+ * from `package.json` (`revenexx.displayName`).
  */
 export function buildManifest(
   nodes: INode[],
   credentials: ICredential[] = [],
   templates: ITemplateDescription[] = [],
-  displayName?: string,
 ): NodeManifest {
   const manifest: NodeManifest = {
     manifestVersion: MANIFEST_VERSION,
     nodes: extractManifests(nodes),
   };
-  const label = displayName?.trim();
-  if (label) {
-    manifest.package = { displayName: label };
-  }
   if (credentials.length > 0) {
     manifest.credentials = extractCredentialManifests(credentials);
   }
