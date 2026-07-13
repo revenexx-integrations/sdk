@@ -76,10 +76,14 @@ async function runManifest(): Promise<void> {
   // Carry the package's registry-relevant metadata (name/version/displayName)
   // into the manifest so the integrations server reads the bundle label from
   // this SDK-produced artifact rather than reaching into a bespoke package.json
-  // key of its own. Only emit the block when a real package.json name is present.
+  // key of its own. Only emit the block for a well-formed package.json (both
+  // name and version present); the server requires both on upload anyway.
   const meta = parsePackageMeta(readPackageJson(projectRoot));
-  const packageMeta = meta.name ? meta : undefined;
-  if (!meta.displayName) {
+  const hasPackage = meta.name !== '' && meta.version !== '';
+  const packageMeta = hasPackage ? meta : undefined;
+  // Warn about a missing label only when there IS a package to label — a
+  // missing/unparseable package.json is a separate (bigger) problem.
+  if (hasPackage && !meta.displayName) {
     console.warn(
       '⚠ package.json has no "displayName" — the node palette will fall back to the raw package name.',
     );
@@ -94,9 +98,11 @@ async function runManifest(): Promise<void> {
 
   const credentialCount = manifest.credentials?.length ?? 0;
   const templateCount = manifest.templates?.length ?? 0;
-  const bundleLabel = meta.displayName ? `"${meta.displayName}" ` : '';
+  const bundlePrefix = packageMeta
+    ? `package ${meta.displayName ? `"${meta.displayName}" ` : ''}(${meta.name}), `
+    : '';
   console.log(
-    `✓ dist/manifest.json — package ${bundleLabel}(${meta.name || 'unknown'}), ` +
+    `✓ dist/manifest.json — ${bundlePrefix}` +
       `${manifest.nodes.length} node(s), ${credentialCount} credential(s), ${templateCount} template(s)`,
   );
   for (const m of manifest.nodes) {

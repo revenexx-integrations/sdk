@@ -127,6 +127,15 @@ test('parsePackageMeta leaves displayName undefined when absent or non-string', 
   assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', displayName: 42 }).displayName, undefined);
 });
 
+test('parsePackageMeta normalises blank/whitespace displayName to undefined', () => {
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', displayName: '' }).displayName, undefined);
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', displayName: '   ' }).displayName, undefined);
+});
+
+test('parsePackageMeta trims a surrounding-whitespace displayName', () => {
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', displayName: '  Core  ' }).displayName, 'Core');
+});
+
 test('parsePackageMeta coerces malformed input to a safe shape', () => {
   assert.deepEqual(parsePackageMeta(null), { name: '', version: '', displayName: undefined });
   assert.deepEqual(parsePackageMeta('nope'), { name: '', version: '', displayName: undefined });

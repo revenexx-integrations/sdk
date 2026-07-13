@@ -41,12 +41,14 @@ export interface NodeManifest {
 }
 
 /**
- * The registry-relevant fields of a node package's `package.json`. The
- * integrations server reads these directly from the tarball's `package.json`
- * (not from the built manifest) when registering a package — `name`/`version`
- * identify the package, `displayName` is the human-readable bundle label shown
- * in the editor's node palette (e.g. „Business Central"). This interface gives
- * that otherwise-untyped convention a home in the SDK contract.
+ * The registry-relevant fields of a node package's `package.json`. The CLI
+ * copies these into the built manifest's {@link NodeManifest.package} block, so
+ * the integrations server reads the bundle label from the SDK-produced manifest
+ * (falling back to the tarball's `package.json` for older packages that predate
+ * the block). `name`/`version` identify the package; `displayName` is the
+ * human-readable bundle label shown in the editor's node palette (e.g. „Business
+ * Central"). This interface gives that otherwise-untyped convention a home in
+ * the SDK contract.
  */
 export interface NodePackageMeta {
   name: string;
@@ -58,15 +60,18 @@ export interface NodePackageMeta {
 /**
  * Extracts {@link NodePackageMeta} from parsed `package.json` contents, keeping
  * only the registry-relevant fields and coercing anything malformed to a safe
- * shape. Does not validate that `name`/`version` are present — the integrations
- * server enforces that on upload; this is a typed, lenient read for tooling.
+ * shape. A blank or whitespace-only `displayName` is normalised to `undefined`
+ * (matching how the server treats it), so tooling never emits an empty label.
+ * Does not validate that `name`/`version` are present — the integrations server
+ * enforces that on upload; this is a typed, lenient read for tooling.
  */
 export function parsePackageMeta(raw: unknown): NodePackageMeta {
   const obj = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const displayName = typeof obj.displayName === 'string' ? obj.displayName.trim() : '';
   return {
     name: typeof obj.name === 'string' ? obj.name : '',
     version: typeof obj.version === 'string' ? obj.version : '',
-    displayName: typeof obj.displayName === 'string' ? obj.displayName : undefined,
+    displayName: displayName !== '' ? displayName : undefined,
   };
 }
 
