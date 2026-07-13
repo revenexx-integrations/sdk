@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildManifest, MANIFEST_VERSION } from './manifest.js';
+import { buildManifest, MANIFEST_VERSION, parsePackageMeta } from './manifest.js';
 import type { ICredential, INode, ITemplateDescription } from './types.js';
 
 const fakeNode: INode = {
@@ -85,6 +85,63 @@ test('buildManifest includes templates verbatim when provided', () => {
   assert.deepEqual(manifest.templates?.[0]?.definition, fakeTemplate.definition);
   assert.equal(manifest.templates?.[0]?.triggers?.[0]?.type, 'event');
   assert.equal(manifest.templates?.[0]?.triggers?.[0]?.config?.subject, 'slack.chat.message.created');
+});
+
+test('buildManifest never emits a package block', () => {
+  assert.equal('package' in buildManifest([fakeNode]), false);
+  assert.equal('package' in buildManifest([fakeNode], [fakeCredential], [fakeTemplate]), false);
+});
+
+test('parsePackageMeta keeps the registry-relevant fields', () => {
+  const meta = parsePackageMeta({
+    name: '@revenexx/integrations-nodes-core',
+    version: '0.2.0',
+    revenexx: { displayName: 'Core' },
+    private: true,
+    scripts: {},
+  });
+
+  assert.deepEqual(meta, {
+    name: '@revenexx/integrations-nodes-core',
+    version: '0.2.0',
+    displayName: 'Core',
+  });
+});
+
+test('parsePackageMeta ignores a top-level displayName (label lives under revenexx)', () => {
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', displayName: 'Core' }).displayName, undefined);
+});
+
+test('parsePackageMeta leaves displayName undefined when the revenexx group is absent or non-string', () => {
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0' }).displayName, undefined);
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: {} }).displayName, undefined);
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: 'nope' }).displayName, undefined);
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: { displayName: 42 } }).displayName, undefined);
+});
+
+test('parsePackageMeta normalises blank/whitespace displayName to undefined', () => {
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: { displayName: '' } }).displayName, undefined);
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: { displayName: '   ' } }).displayName, undefined);
+});
+
+test('parsePackageMeta trims a surrounding-whitespace displayName', () => {
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: { displayName: '  Core  ' } }).displayName, 'Core');
+});
+
+test('parsePackageMeta trims name/version and blanks whitespace-only ones', () => {
+  assert.deepEqual(
+    parsePackageMeta({ name: '  @revenexx/x  ', version: ' 1.0.0 ' }),
+    { name: '@revenexx/x', version: '1.0.0', displayName: undefined },
+  );
+  assert.deepEqual(
+    parsePackageMeta({ name: '   ', version: '   ' }),
+    { name: '', version: '', displayName: undefined },
+  );
+});
+
+test('parsePackageMeta coerces malformed input to a safe shape', () => {
+  assert.deepEqual(parsePackageMeta(null), { name: '', version: '', displayName: undefined });
+  assert.deepEqual(parsePackageMeta('nope'), { name: '', version: '', displayName: undefined });
 });
 
 test('buildManifest carries image declarations through untouched', () => {

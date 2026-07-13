@@ -19,7 +19,7 @@ import * as fs from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { collectImageSources, copyImages } from './images.js';
-import { buildManifest } from './manifest.js';
+import { buildManifest, parsePackageMeta } from './manifest.js';
 import type { ICredential, INode, ITemplateDescription } from './types.js';
 
 const projectRoot = process.cwd();
@@ -27,6 +27,24 @@ const projectRoot = process.cwd();
 function fail(message: string): never {
   console.error(`Error: ${message}`);
   process.exit(1);
+}
+
+/**
+ * Read and parse the package's `package.json`. Returns `{}` when it is missing
+ * or unparseable — its structural validity is enforced by the integrations
+ * server on upload, so tooling stays lenient and lets {@link parsePackageMeta}
+ * coerce the result.
+ */
+function readPackageJson(root: string): unknown {
+  const pkgPath = resolve(root, 'package.json');
+  if (!fs.existsSync(pkgPath)) {
+    return {};
+  }
+  try {
+    return JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+  } catch {
+    return {};
+  }
 }
 
 // --------------------------------------------------------------- manifest
@@ -54,6 +72,20 @@ async function runManifest(): Promise<void> {
 
   const credentials = (mod.CREDENTIALS as ICredential[] | undefined) ?? [];
   const templates = (mod.TEMPLATES as ITemplateDescription[] | undefined) ?? [];
+
+  // The bundle label (`revenexx.displayName`) is read straight from
+  // package.json by the integrations server on upload — the CLI reads it only
+  // to warn when it is missing and to annotate the log line below.
+  const meta = parsePackageMeta(readPackageJson(projectRoot));
+  const hasPackage = meta.name !== '' && meta.version !== '';
+  // Warn about a missing label only when there IS a package to label — a
+  // missing/unparseable package.json is a separate (bigger) problem.
+  if (hasPackage && !meta.displayName) {
+    console.warn(
+      '⚠ package.json has no "revenexx.displayName" — the node palette will fall back to the raw package name.',
+    );
+  }
+
   const manifest = buildManifest(mod.NODES as INode[], credentials, templates);
 
   const outDir = resolve(projectRoot, 'dist');
@@ -63,8 +95,12 @@ async function runManifest(): Promise<void> {
 
   const credentialCount = manifest.credentials?.length ?? 0;
   const templateCount = manifest.templates?.length ?? 0;
+  const bundlePrefix = hasPackage
+    ? `package ${meta.displayName ? `"${meta.displayName}" ` : ''}(${meta.name}), `
+    : '';
   console.log(
-    `✓ dist/manifest.json — ${manifest.nodes.length} node(s), ${credentialCount} credential(s), ${templateCount} template(s)`,
+    `✓ dist/manifest.json — ${bundlePrefix}` +
+      `${manifest.nodes.length} node(s), ${credentialCount} credential(s), ${templateCount} template(s)`,
   );
   for (const m of manifest.nodes) {
     console.log(`  node       ${m.slug}@${m.version}`);
