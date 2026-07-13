@@ -82,7 +82,7 @@ async function runManifest(): Promise<void> {
   // missing/unparseable package.json is a separate (bigger) problem.
   if (hasPackage && !meta.displayName) {
     console.warn(
-      '⚠ package.json has no "displayName" — the node palette will fall back to the raw package name.',
+      '⚠ package.json has no "revenexx.displayName" — the node palette will fall back to the raw package name.',
     );
   }
 
