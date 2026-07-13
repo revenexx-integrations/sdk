@@ -20,12 +20,14 @@ export const MANIFEST_VERSION = 'v0-draft';
 export interface NodeManifest {
   manifestVersion: typeof MANIFEST_VERSION;
   /**
-   * The publishing package's registry-relevant metadata (name, version, and the
-   * human-readable bundle label). Optional and additive: older manifests built
-   * before this field omit it, and the integrations server falls back to reading
-   * these from the tarball's `package.json` for such packages.
+   * Package-level metadata the server cannot get from the tarball's
+   * `package.json` on its own. Currently only the human-readable bundle
+   * `displayName`; `name`/`version` are deliberately NOT duplicated here — the
+   * server reads those straight from `package.json`. Optional and additive:
+   * manifests built before this field (or packages without a `displayName`) omit
+   * it, and the server falls back to the `package.json` `displayName`.
    */
-  package?: NodePackageMeta;
+  package?: { displayName: string };
   nodes: INodeDescription[];
   /**
    * Credential types this package publishes. Optional and additive: packages
@@ -41,14 +43,12 @@ export interface NodeManifest {
 }
 
 /**
- * The registry-relevant fields of a node package's `package.json`. The CLI
- * copies these into the built manifest's {@link NodeManifest.package} block, so
- * the integrations server reads the bundle label from the SDK-produced manifest
- * (falling back to the tarball's `package.json` for older packages that predate
- * the block). `name`/`version` identify the package; `displayName` is the
- * human-readable bundle label shown in the editor's node palette (e.g. „Business
- * Central"). This interface gives that otherwise-untyped convention a home in
- * the SDK contract.
+ * The registry-relevant fields of a node package's `package.json`, as read by
+ * the CLI. `name`/`version` identify the package (the server reads them from
+ * `package.json` directly); `displayName` is the human-readable bundle label
+ * shown in the editor's node palette (e.g. „Business Central") — the CLI copies
+ * only this into the manifest's {@link NodeManifest.package} block, so the label
+ * has a typed SDK contract instead of a bespoke, untyped `package.json` key.
  */
 export interface NodePackageMeta {
   name: string;
@@ -78,20 +78,22 @@ export function parsePackageMeta(raw: unknown): NodePackageMeta {
 /**
  * Builds the manifest envelope from a package's `NODES` (and optional
  * `CREDENTIALS` / `TEMPLATES`) exports. The result is what gets written to
- * `dist/manifest.json` and uploaded to the registry inside the tarball.
+ * `dist/manifest.json` and uploaded to the registry inside the tarball. Pass the
+ * package's `displayName` to carry the bundle label in the `package` block; omit
+ * it (or pass an empty value) to leave the block out.
  */
 export function buildManifest(
   nodes: INode[],
   credentials: ICredential[] = [],
   templates: ITemplateDescription[] = [],
-  packageMeta?: NodePackageMeta,
+  displayName?: string,
 ): NodeManifest {
   const manifest: NodeManifest = {
     manifestVersion: MANIFEST_VERSION,
     nodes: extractManifests(nodes),
   };
-  if (packageMeta) {
-    manifest.package = packageMeta;
+  if (displayName) {
+    manifest.package = { displayName };
   }
   if (credentials.length > 0) {
     manifest.credentials = extractCredentialManifests(credentials);

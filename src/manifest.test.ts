@@ -87,23 +87,16 @@ test('buildManifest includes templates verbatim when provided', () => {
   assert.equal(manifest.templates?.[0]?.triggers?.[0]?.config?.subject, 'slack.chat.message.created');
 });
 
-test('buildManifest omits the package block when no meta is provided', () => {
-  const manifest = buildManifest([fakeNode]);
-  assert.equal(manifest.package, undefined);
+test('buildManifest omits the package block when no displayName is provided', () => {
+  assert.equal(buildManifest([fakeNode]).package, undefined);
+  assert.equal(buildManifest([fakeNode], [], [], '').package, undefined);
 });
 
-test('buildManifest carries the package meta when provided', () => {
-  const manifest = buildManifest([fakeNode], [], [], {
-    name: '@revenexx/integrations-nodes-core',
-    version: '0.2.0',
-    displayName: 'Core',
-  });
-
-  assert.deepEqual(manifest.package, {
-    name: '@revenexx/integrations-nodes-core',
-    version: '0.2.0',
-    displayName: 'Core',
-  });
+test('buildManifest carries only the displayName in the package block', () => {
+  // name/version are deliberately not duplicated — the server reads those from
+  // package.json; only the bundle label needs to travel in the manifest.
+  const manifest = buildManifest([fakeNode], [], [], 'Core');
+  assert.deepEqual(manifest.package, { displayName: 'Core' });
 });
 
 test('parsePackageMeta keeps the registry-relevant fields', () => {
