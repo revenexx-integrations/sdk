@@ -20,12 +20,13 @@ export const MANIFEST_VERSION = 'v0-draft';
 export interface NodeManifest {
   manifestVersion: typeof MANIFEST_VERSION;
   /**
-   * Package-level metadata the server cannot get from the tarball's
-   * `package.json` on its own. Currently only the human-readable bundle
-   * `displayName`; `name`/`version` are deliberately NOT duplicated here — the
-   * server reads those straight from `package.json`. Optional and additive:
-   * manifests built before this field (or packages without a `displayName`) omit
-   * it, and the server falls back to the `package.json` `displayName`.
+   * Package-level metadata carried in the SDK-produced manifest. Currently only
+   * the human-readable bundle `displayName`: the server prefers it here (the
+   * authoritative, versioned artifact) and falls back to the `package.json`
+   * `displayName` for older tarballs built before this block. `name`/`version`
+   * are deliberately NOT carried — the server reads those straight from
+   * `package.json`. Optional and additive: manifests without a `displayName`
+   * omit the block entirely.
    */
   package?: { displayName: string };
   nodes: INodeDescription[];
@@ -60,17 +61,19 @@ export interface NodePackageMeta {
 /**
  * Extracts {@link NodePackageMeta} from parsed `package.json` contents, keeping
  * only the registry-relevant fields and coercing anything malformed to a safe
- * shape. A blank or whitespace-only `displayName` is normalised to `undefined`
- * (matching how the server treats it), so tooling never emits an empty label.
+ * shape. All three fields are trimmed; a blank or whitespace-only value becomes
+ * `''` (`name`/`version`) or `undefined` (`displayName`, matching how the server
+ * treats it), so whitespace can't masquerade as a present value in tooling.
  * Does not validate that `name`/`version` are present — the integrations server
  * enforces that on upload; this is a typed, lenient read for tooling.
  */
 export function parsePackageMeta(raw: unknown): NodePackageMeta {
   const obj = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-  const displayName = typeof obj.displayName === 'string' ? obj.displayName.trim() : '';
+  const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+  const displayName = str(obj.displayName);
   return {
-    name: typeof obj.name === 'string' ? obj.name : '',
-    version: typeof obj.version === 'string' ? obj.version : '',
+    name: str(obj.name),
+    version: str(obj.version),
     displayName: displayName !== '' ? displayName : undefined,
   };
 }
@@ -80,7 +83,7 @@ export function parsePackageMeta(raw: unknown): NodePackageMeta {
  * `CREDENTIALS` / `TEMPLATES`) exports. The result is what gets written to
  * `dist/manifest.json` and uploaded to the registry inside the tarball. Pass the
  * package's `displayName` to carry the bundle label in the `package` block; omit
- * it (or pass an empty value) to leave the block out.
+ * it (or pass a blank/whitespace-only value) to leave the block out.
  */
 export function buildManifest(
   nodes: INode[],
@@ -92,8 +95,9 @@ export function buildManifest(
     manifestVersion: MANIFEST_VERSION,
     nodes: extractManifests(nodes),
   };
-  if (displayName) {
-    manifest.package = { displayName };
+  const label = displayName?.trim();
+  if (label) {
+    manifest.package = { displayName: label };
   }
   if (credentials.length > 0) {
     manifest.credentials = extractCredentialManifests(credentials);

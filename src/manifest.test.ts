@@ -87,16 +87,17 @@ test('buildManifest includes templates verbatim when provided', () => {
   assert.equal(manifest.templates?.[0]?.triggers?.[0]?.config?.subject, 'slack.chat.message.created');
 });
 
-test('buildManifest omits the package block when no displayName is provided', () => {
+test('buildManifest omits the package block for missing/blank/whitespace displayName', () => {
   assert.equal(buildManifest([fakeNode]).package, undefined);
   assert.equal(buildManifest([fakeNode], [], [], '').package, undefined);
+  assert.equal(buildManifest([fakeNode], [], [], '   ').package, undefined);
 });
 
-test('buildManifest carries only the displayName in the package block', () => {
+test('buildManifest carries only the (trimmed) displayName in the package block', () => {
   // name/version are deliberately not duplicated — the server reads those from
   // package.json; only the bundle label needs to travel in the manifest.
-  const manifest = buildManifest([fakeNode], [], [], 'Core');
-  assert.deepEqual(manifest.package, { displayName: 'Core' });
+  assert.deepEqual(buildManifest([fakeNode], [], [], 'Core').package, { displayName: 'Core' });
+  assert.deepEqual(buildManifest([fakeNode], [], [], '  Core  ').package, { displayName: 'Core' });
 });
 
 test('parsePackageMeta keeps the registry-relevant fields', () => {
@@ -127,6 +128,17 @@ test('parsePackageMeta normalises blank/whitespace displayName to undefined', ()
 
 test('parsePackageMeta trims a surrounding-whitespace displayName', () => {
   assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', displayName: '  Core  ' }).displayName, 'Core');
+});
+
+test('parsePackageMeta trims name/version and blanks whitespace-only ones', () => {
+  assert.deepEqual(
+    parsePackageMeta({ name: '  @revenexx/x  ', version: ' 1.0.0 ' }),
+    { name: '@revenexx/x', version: '1.0.0', displayName: undefined },
+  );
+  assert.deepEqual(
+    parsePackageMeta({ name: '   ', version: '   ' }),
+    { name: '', version: '', displayName: undefined },
+  );
 });
 
 test('parsePackageMeta coerces malformed input to a safe shape', () => {
