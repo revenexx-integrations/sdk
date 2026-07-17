@@ -15,6 +15,20 @@ export const DEFAULT_RETRY_DELAY_MS = 1_000;
  */
 export const DEFAULT_MAX_RESPONSE_BYTES = 25 * 1024 * 1024; // 25 MiB
 
+/**
+ * Hard upper ceiling for any per-node `maxBytes`. Even a permissive node author
+ * (who calls {@link maxBytesConfigField} without an explicit `max`, or passes a
+ * large `maxBytes` to the `read*` helpers) can never lift the cap above this, so
+ * the shared worker's memory stays bounded. Analogous to {@link MAX_TIMEOUT_MS}.
+ */
+export const MAX_RESPONSE_BYTES = 100 * 1024 * 1024; // 100 MiB
+
+/** Clamp a requested `maxBytes` into `[1, MAX_RESPONSE_BYTES]`. */
+export function clampResponseBytes(maxBytes: number): number {
+  if (!Number.isFinite(maxBytes) || maxBytes < 1) return MAX_RESPONSE_BYTES;
+  return Math.min(maxBytes, MAX_RESPONSE_BYTES);
+}
+
 export interface SafeFetchRetry {
   attempts: number;
   delayMs?: number;
@@ -93,9 +107,12 @@ export async function readArrayBuffer(
   res: Response,
   maxBytes: number = DEFAULT_MAX_RESPONSE_BYTES,
 ): Promise<ArrayBuffer> {
+  // Clamp to the hard ceiling so a permissive caller can't lift the guard above
+  // MAX_RESPONSE_BYTES (mirrors safeFetch's Math.min(timeoutMs, MAX_TIMEOUT_MS)).
+  const cap = clampResponseBytes(maxBytes);
   const declared = Number(res.headers.get('content-length'));
-  if (Number.isFinite(declared) && declared > maxBytes) {
-    throw tooLargeError(res.status, declared, maxBytes);
+  if (Number.isFinite(declared) && declared > cap) {
+    throw tooLargeError(res.status, declared, cap);
   }
 
   const body = res.body;
@@ -103,7 +120,7 @@ export async function readArrayBuffer(
     // No readable stream (e.g. a bodyless response) — fall back to the buffered
     // read, still enforcing the cap after the fact.
     const buf = await res.arrayBuffer();
-    if (buf.byteLength > maxBytes) throw tooLargeError(res.status, buf.byteLength, maxBytes);
+    if (buf.byteLength > cap) throw tooLargeError(res.status, buf.byteLength, cap);
     return buf;
   }
 
@@ -114,13 +131,15 @@ export async function readArrayBuffer(
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      // The cap is checked after each chunk is buffered, so worst-case peak
+      // memory is ≈ cap + one undici chunk (undici bounds its chunk size).
       total += value.byteLength;
-      if (total > maxBytes) {
+      if (total > cap) {
         // Best-effort cancel; swallow any rejection (e.g. an already-errored
         // stream) so the overrun always surfaces as RESPONSE_TOO_LARGE rather
         // than a stream-cancel error.
         await reader.cancel().catch(() => {});
-        throw tooLargeError(res.status, total, maxBytes);
+        throw tooLargeError(res.status, total, cap);
       }
       chunks.push(value);
     }
@@ -150,6 +169,9 @@ export async function readText(
  * Read a response body as JSON when the `Content-Type` is `application/json`,
  * otherwise as text — the content-type sniff previously duplicated across the
  * HTTP/Upload/DeepL node sinks. Capped at `maxBytes` (see {@link readArrayBuffer}).
+ *
+ * A malformed JSON body surfaces as `NodeError('RESPONSE_PARSE_ERROR', …, { status })`
+ * rather than a raw `SyntaxError`, keeping to the SDK error contract.
  */
 export async function readJsonOrText(
   res: Response,
@@ -157,16 +179,25 @@ export async function readJsonOrText(
 ): Promise<unknown> {
   const contentType = res.headers.get('content-type') ?? '';
   const text = await readText(res, maxBytes);
-  return contentType.includes('application/json') ? JSON.parse(text) : text;
+  if (!contentType.includes('application/json')) return text;
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new NodeError(
+      'RESPONSE_PARSE_ERROR',
+      `Invalid JSON response: ${(e as Error).message}`,
+      { status: res.status },
+    );
+  }
 }
 
 export function maxBytesConfigField(opts?: { default?: number; max?: number }): IConfigField {
   return {
     key: 'maxBytes',
-    label: { en: 'Max response size (bytes)', de: 'Max. Antwortgröße (Bytes)' },
+    label: 'Max response size (bytes)',
     type: 'number',
     default: opts?.default ?? DEFAULT_MAX_RESPONSE_BYTES,
-    validation: { min: 1, ...(opts?.max ? { max: opts.max } : {}) },
+    validation: { min: 1, max: Math.min(opts?.max ?? MAX_RESPONSE_BYTES, MAX_RESPONSE_BYTES) },
   };
 }
 

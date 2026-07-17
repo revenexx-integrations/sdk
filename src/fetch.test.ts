@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  clampResponseBytes,
   DEFAULT_MAX_RESPONSE_BYTES,
   DEFAULT_RETRY_ATTEMPTS,
   DEFAULT_RETRY_DELAY_MS,
   DEFAULT_TIMEOUT_MS,
+  MAX_RESPONSE_BYTES,
   MAX_RETRY_ATTEMPTS,
   MAX_TIMEOUT_MS,
   maxBytesConfigField,
@@ -437,6 +439,21 @@ test('readJsonOrText returns raw text for non-JSON content types', async () => {
   assert.equal(await readJsonOrText(res, 100), 'plain body');
 });
 
+test('readJsonOrText throws RESPONSE_PARSE_ERROR on malformed JSON', async () => {
+  const res = new Response('{not valid json', {
+    headers: { 'content-type': 'application/json' },
+  });
+  await assert.rejects(
+    () => readJsonOrText(res, 100),
+    (err: unknown) => {
+      assert.ok(err instanceof NodeError);
+      assert.equal(err.code, 'RESPONSE_PARSE_ERROR');
+      assert.equal(err.meta?.['status'], 200);
+      return true;
+    },
+  );
+});
+
 test('readJsonOrText enforces the cap on JSON bodies too', async () => {
   const big = JSON.stringify({ v: 'x'.repeat(50) });
   const res = new Response(big, { headers: { 'content-type': 'application/json' } });
@@ -459,10 +476,45 @@ test('maxBytesConfigField returns a number field defaulting to the SDK cap', () 
   assert.equal(field.type, 'number');
   assert.equal(field.default, DEFAULT_MAX_RESPONSE_BYTES);
   assert.equal(field.validation?.min, 1);
+  // No explicit max → hard ceiling, so a workflow author can't defeat the guard.
+  assert.equal(field.validation?.max, MAX_RESPONSE_BYTES);
 });
 
 test('maxBytesConfigField accepts custom default and max', () => {
   const field = maxBytesConfigField({ default: 1024, max: 4096 });
   assert.equal(field.default, 1024);
   assert.equal(field.validation?.max, 4096);
+});
+
+test('maxBytesConfigField clamps a custom max above the hard ceiling', () => {
+  const field = maxBytesConfigField({ max: MAX_RESPONSE_BYTES * 4 });
+  assert.equal(field.validation?.max, MAX_RESPONSE_BYTES);
+});
+
+// ------------------------------------------------ size cap: hard ceiling
+
+test('clampResponseBytes bounds a request into [1, MAX_RESPONSE_BYTES]', () => {
+  assert.equal(clampResponseBytes(1024), 1024);
+  assert.equal(clampResponseBytes(MAX_RESPONSE_BYTES), MAX_RESPONSE_BYTES);
+  assert.equal(clampResponseBytes(MAX_RESPONSE_BYTES + 1), MAX_RESPONSE_BYTES);
+  assert.equal(clampResponseBytes(Number.POSITIVE_INFINITY), MAX_RESPONSE_BYTES);
+  assert.equal(clampResponseBytes(0), MAX_RESPONSE_BYTES);
+  assert.equal(clampResponseBytes(-5), MAX_RESPONSE_BYTES);
+  assert.ok(MAX_RESPONSE_BYTES > DEFAULT_MAX_RESPONSE_BYTES);
+});
+
+test('readArrayBuffer clamps maxBytes to the hard ceiling (Content-Length fast-reject)', async () => {
+  // A caller passing a maxBytes above the ceiling must not lift the guard: a
+  // Content-Length just over MAX_RESPONSE_BYTES is still rejected.
+  const fake = {
+    status: 200,
+    headers: new Headers({ 'content-length': String(MAX_RESPONSE_BYTES + 1) }),
+    get body(): ReadableStream<Uint8Array> {
+      throw new Error('body must not be accessed on fast-reject');
+    },
+  } as unknown as Response;
+  await assert.rejects(
+    () => readArrayBuffer(fake, MAX_RESPONSE_BYTES * 10),
+    (err: unknown) => err instanceof NodeError && err.code === 'RESPONSE_TOO_LARGE',
+  );
 });
