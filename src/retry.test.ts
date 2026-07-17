@@ -97,6 +97,52 @@ test('throws the RetryableError after exhausting maxAttempts', async () => {
   assert.equal(calls, 3);
 });
 
+test('on exhaustion the thrown RetryableError preserves retryAfterMs and cause', async () => {
+  const underlying = new Error('429 Too Many Requests');
+  await assert.rejects(
+    () =>
+      withRetry(
+        async () => {
+          throw new RetryableError('rate limited', { retryAfterMs: 3, cause: underlying });
+        },
+        { ...fast, maxAttempts: 2 },
+        { signal: neverAborted() },
+      ),
+    (err: unknown) =>
+      err instanceof RetryableError &&
+      err.message === 'rate limited' &&
+      err.retryAfterMs === 3 &&
+      err.cause === underlying,
+  );
+});
+
+test('logger.warn is called per retry with attempt/maxAttempts/delayMs', async () => {
+  const warnings: Array<{ msg: string; meta?: Record<string, unknown> }> = [];
+  let calls = 0;
+  await withRetry(
+    async () => {
+      calls++;
+      if (calls < 3) throw new RetryableError('transient');
+      return 'done';
+    },
+    { ...fast, maxAttempts: 3 },
+    {
+      signal: neverAborted(),
+      logger: { warn: (msg, meta) => warnings.push({ msg, meta }) },
+    },
+  );
+  assert.equal(warnings.length, 2, 'one warn per retry (two retries before success)');
+  assert.deepEqual(
+    warnings.map((w) => w.meta?.attempt),
+    [1, 2],
+  );
+  for (const w of warnings) {
+    assert.equal(w.meta?.maxAttempts, 3);
+    assert.equal(typeof w.meta?.delayMs, 'number');
+    assert.equal(w.meta?.error, 'transient');
+  }
+});
+
 test('rethrows a non-retryable error immediately without retrying', async () => {
   let calls = 0;
   await assert.rejects(

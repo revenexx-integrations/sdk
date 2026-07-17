@@ -19,14 +19,12 @@
 export class RetryableError extends Error {
   /** Server-dictated delay before the next attempt, e.g. parsed from `Retry-After`. */
   readonly retryAfterMs?: number;
-  /** The underlying error/value that triggered the retry. */
-  readonly cause?: unknown;
 
   constructor(message: string, opts?: { retryAfterMs?: number; cause?: unknown }) {
-    super(message);
+    // ES2022 `Error` carries `cause` natively — no own field needed.
+    super(message, { cause: opts?.cause });
     this.name = 'RetryableError';
     this.retryAfterMs = opts?.retryAfterMs;
-    this.cause = opts?.cause;
   }
 }
 
@@ -131,6 +129,14 @@ export async function withRetry<T>(
       // e.g. from clock-skewed `Retry-After` date parsing). setTimeout would
       // coerce those to a near-zero delay and spin a tight, backoff-defeating
       // loop, so fall back to the computed backoff for anything non-finite/<0.
+      //
+      // A *valid* retryAfterMs is intentionally NOT capped by `maxDelayMs`
+      // (which bounds only the computed backoff): honouring a server-dictated
+      // `Retry-After` is the whole point. An adversarial `Retry-After: 86400`
+      // cannot hang a workflow indefinitely — this primitive runs inside a
+      // single Temporal activity whose StartToClose/ScheduleToClose timeout
+      // bounds the total wait, and the sleep below is abort-aware, so that
+      // timeout's cancellation unblocks it immediately.
       const retryAfter = err.retryAfterMs;
       const rawDelay =
         typeof retryAfter === 'number' && Number.isFinite(retryAfter) && retryAfter >= 0
