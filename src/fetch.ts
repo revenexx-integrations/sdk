@@ -1,8 +1,14 @@
 import { NodeError } from './errors.js';
+import { assertPublicUrl, type LookupFn } from './ssrf.js';
 import type { IConfigField } from './types.js';
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
 export const MAX_TIMEOUT_MS = 120_000;
+
+/** Maximum number of redirect hops `safeFetch` follows before giving up. */
+export const MAX_REDIRECTS = 5;
+
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 export const DEFAULT_RETRY_ATTEMPTS = 0;
 export const MAX_RETRY_ATTEMPTS = 5;
@@ -39,13 +45,104 @@ export interface SafeFetchOptions extends RequestInit {
   /** Pass `ctx.signal` so the workflow engine can cancel the request. */
   signal?: AbortSignal;
   retry?: SafeFetchRetry;
+  /**
+   * Internal test seam: override the DNS resolver the SSRF guard uses for this
+   * call. Production callers leave this unset (real DNS). See {@link assertPublicUrl}.
+   */
+  lookup?: LookupFn;
+}
+
+/**
+ * A single network request bounded by the per-attempt timeout and wired to the
+ * workflow's cancellation signal. Surfaces its own timeout as
+ * `NodeError('TIMEOUT')` and re-throws the caller's abort reason on external
+ * cancellation.
+ */
+async function timedFetch(
+  url: string | URL,
+  fetchOptions: RequestInit,
+  ctxSignal: AbortSignal | undefined,
+  effectiveMs: number,
+): Promise<Response> {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), effectiveMs);
+  const signal = ctxSignal ? AbortSignal.any([ctxSignal, ac.signal]) : ac.signal;
+  try {
+    return await fetch(url, { ...fetchOptions, signal });
+  } catch (err) {
+    if (ctxSignal?.aborted) throw ctxSignal.reason;
+    if (ac.signal.aborted) throw new NodeError('TIMEOUT', `Request timed out after ${effectiveMs}ms`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Perform one request while enforcing the SSRF guard. The initial URL and every
+ * redirect target are checked with {@link assertPublicUrl}; redirects are
+ * followed manually (`redirect: 'manual'`) so a 3xx `Location` pointing at a
+ * private/loopback address is re-checked and rejected rather than transparently
+ * followed by the runtime. `Authorization` is dropped on a cross-origin hop and
+ * the request is downgraded to `GET` per the usual 301/302/303 rules.
+ */
+async function guardedFetch(
+  url: string | URL,
+  fetchOptions: RequestInit,
+  ctxSignal: AbortSignal | undefined,
+  effectiveMs: number,
+  lookup: LookupFn | undefined,
+): Promise<Response> {
+  // The initial request is issued with the caller's URL and init untouched
+  // (only `redirect: 'manual'` is added), so the common no-redirect path stays
+  // byte-for-byte what the caller passed. New URL/Headers objects are built only
+  // when a redirect is actually followed.
+  let currentUrl: string | URL = url;
+  let currentInit: RequestInit = { ...fetchOptions, redirect: 'manual' };
+
+  await assertPublicUrl(currentUrl, { lookup });
+
+  for (let hop = 0; ; hop++) {
+    const res = await timedFetch(currentUrl, currentInit, ctxSignal, effectiveMs);
+
+    const location = res.headers.get('location');
+    if (!REDIRECT_STATUSES.has(res.status) || !location) return res;
+
+    if (hop >= MAX_REDIRECTS) {
+      throw new NodeError('TOO_MANY_REDIRECTS', `Exceeded ${MAX_REDIRECTS} redirects`, { status: res.status });
+    }
+
+    const base = currentUrl instanceof URL ? currentUrl : new URL(currentUrl);
+    const nextUrl = new URL(location, base);
+    await assertPublicUrl(nextUrl, { lookup });
+
+    const headers = new Headers(currentInit.headers ?? undefined);
+    let method = (currentInit.method ?? 'GET').toUpperCase();
+    let body = currentInit.body;
+
+    // 303 always downgrades to GET; 301/302 downgrade a POST. On downgrade the
+    // request body and its framing headers must be dropped.
+    if (res.status === 303 || ((res.status === 301 || res.status === 302) && method === 'POST')) {
+      method = 'GET';
+      body = undefined;
+      headers.delete('content-type');
+      headers.delete('content-length');
+    }
+    // Never leak credentials across an origin boundary on redirect.
+    if (nextUrl.origin !== base.origin) headers.delete('authorization');
+
+    // Release the redirect response's socket before issuing the next hop.
+    await res.body?.cancel().catch(() => {});
+    currentUrl = nextUrl;
+    currentInit = { ...currentInit, method, body, headers, redirect: 'manual' };
+  }
 }
 
 export async function safeFetch(
   url: string | URL,
   options: SafeFetchOptions = {},
 ): Promise<Response> {
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, signal: ctxSignal, retry, ...fetchOptions } = options;
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, signal: ctxSignal, retry, lookup, ...fetchOptions } = options;
   const effectiveMs =
     Number.isFinite(timeoutMs) && timeoutMs > 0
       ? Math.min(timeoutMs, MAX_TIMEOUT_MS)
@@ -61,27 +158,22 @@ export async function safeFetch(
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (ctxSignal?.aborted) throw ctxSignal.reason;
 
-    const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), effectiveMs);
-    const signal = ctxSignal ? AbortSignal.any([ctxSignal, ac.signal]) : ac.signal;
-
     try {
-      return await fetch(url, { ...fetchOptions, signal });
+      return await guardedFetch(url, fetchOptions, ctxSignal, effectiveMs, lookup);
     } catch (err) {
       if (ctxSignal?.aborted) throw ctxSignal.reason;
-      if (ac.signal.aborted) {
-        lastError = new NodeError('TIMEOUT', `Request timed out after ${effectiveMs}ms`);
-      } else {
-        lastError = err;
+      // A blocked address or redirect loop is deterministic — retrying can only
+      // waste time and re-hit the same wall, so surface it immediately.
+      if (err instanceof NodeError && (err.code === 'BLOCKED_ADDRESS' || err.code === 'TOO_MANY_REDIRECTS')) {
+        throw err;
       }
+      lastError = err;
       if (attempt < maxAttempts) {
         await new Promise<void>((resolve) => {
           const t = setTimeout(resolve, retryDelayMs);
           ctxSignal?.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
         });
       }
-    } finally {
-      clearTimeout(timer);
     }
   }
   throw lastError;

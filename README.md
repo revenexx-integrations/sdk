@@ -33,6 +33,8 @@ configuration or auth token needed.
 | `localized` | `normalizeLocalized` — reduce a `LocalizedString` (`string \| Record<string, string>`) to a single plain string. |
 | `credentialType` | `normalizeCredentialType` — normalise a credential-type reference (`string \| string[] \| undefined`) to `string[]`. |
 | `errors` | `NodeError` — typed error class for unexpected/system-level failures thrown inside `execute`. |
+| `fetch` | `safeFetch` and the `read*` body helpers — timeout, retry, response size-cap, unified error form, and an always-on **SSRF guard** (blocks private/loopback/link-local/metadata targets, re-checked on every redirect hop). Prefer it over raw `fetch`. See [`docs/overview.md`](docs/overview.md#safefetch). |
+| `ssrf` | `assertPublicUrl` / `isBlockedAddress` — the SSRF guard that backs `safeFetch`, exported for reuse. Best-effort (a DNS-rebinding TOCTOU gap remains); errors surface as `NodeError('BLOCKED_ADDRESS')`. Set `RVNXX_SSRF_ALLOW_PRIVATE=1` (off by default; local dev only) to reach `localhost`/internal targets while testing — see [`docs/overview.md`](docs/overview.md#ssrf-guard). |
 | `extract` | `extractManifest` / `extractManifests` (nodes) and `extractCredentialManifest` / `extractCredentialManifests` (credentials) — pull descriptions off instances without executing them. |
 | `manifest` | `buildManifest` / `MANIFEST_VERSION` — wrap node, credential and template descriptions in the `{ manifestVersion, nodes, credentials, templates }` envelope the registry expects. |
 
@@ -212,6 +214,11 @@ export class HttpRequestNode implements INode {
   }
 }
 ```
+
+> The example calls `fetch` directly to stay focused on the error contract. In
+> real nodes use [`safeFetch`](docs/overview.md#safefetch) instead — it adds the
+> timeout, retry, size-cap and the SSRF guard (private/loopback/metadata targets
+> are rejected with `NodeError('BLOCKED_ADDRESS')`, re-checked on every redirect).
 
 **Error contract:** `throw NodeError(code, message, meta?)` for unexpected,
 system-level failures; `return { outputs, branch: '<error-port>' }` for

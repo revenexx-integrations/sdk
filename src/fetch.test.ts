@@ -6,6 +6,7 @@ import {
   DEFAULT_RETRY_ATTEMPTS,
   DEFAULT_RETRY_DELAY_MS,
   DEFAULT_TIMEOUT_MS,
+  MAX_REDIRECTS,
   MAX_RESPONSE_BYTES,
   MAX_RETRY_ATTEMPTS,
   MAX_TIMEOUT_MS,
@@ -48,14 +49,14 @@ function withFetch(mock: typeof globalThis.fetch, fn: () => Promise<void>): Prom
 
 test('returns the response when fetch succeeds within the timeout', () =>
   withFetch(delayedFetch(0), async () => {
-    const res = await safeFetch('https://example.com', { timeoutMs: 500 });
+    const res = await safeFetch('https://93.184.216.34', { timeoutMs: 500 });
     assert.equal(res.status, 200);
   }));
 
 test('throws NodeError TIMEOUT when fetch takes longer than timeoutMs', () =>
   withFetch(delayedFetch(200), async () => {
     await assert.rejects(
-      () => safeFetch('https://example.com', { timeoutMs: 30 }),
+      () => safeFetch('https://93.184.216.34', { timeoutMs: 30 }),
       (err: unknown) => {
         assert.ok(err instanceof NodeError);
         assert.equal(err.code, 'TIMEOUT');
@@ -75,7 +76,7 @@ test('clamps timeoutMs to MAX_TIMEOUT_MS when scheduling the timeout', () => {
   };
   return withFetch(delayedFetch(0), async () => {
     try {
-      await safeFetch('https://example.com', { timeoutMs: MAX_TIMEOUT_MS + 99_999 });
+      await safeFetch('https://93.184.216.34', { timeoutMs: MAX_TIMEOUT_MS + 99_999 });
       assert.ok(
         capturedDelays.includes(MAX_TIMEOUT_MS),
         `expected ${MAX_TIMEOUT_MS} among captured delays: ${capturedDelays.join(', ')}`,
@@ -93,7 +94,7 @@ test('TIMEOUT error message contains the clamped MAX_TIMEOUT_MS value', () => {
   return withFetch(delayedFetch(500), async () => {
     try {
       await assert.rejects(
-        () => safeFetch('https://example.com', { timeoutMs: MAX_TIMEOUT_MS + 99_999 }),
+        () => safeFetch('https://93.184.216.34', { timeoutMs: MAX_TIMEOUT_MS + 99_999 }),
         (err: unknown) => {
           assert.ok(err instanceof NodeError);
           assert.equal(err.code, 'TIMEOUT');
@@ -117,7 +118,7 @@ test('NaN timeoutMs falls back to DEFAULT_TIMEOUT_MS', () => {
   };
   return withFetch(delayedFetch(0), async () => {
     try {
-      await safeFetch('https://example.com', { timeoutMs: NaN });
+      await safeFetch('https://93.184.216.34', { timeoutMs: NaN });
       assert.ok(
         capturedDelays.includes(DEFAULT_TIMEOUT_MS),
         `expected ${DEFAULT_TIMEOUT_MS} among captured delays: ${capturedDelays.join(', ')}`,
@@ -138,7 +139,7 @@ test('negative timeoutMs falls back to DEFAULT_TIMEOUT_MS', () => {
   };
   return withFetch(delayedFetch(0), async () => {
     try {
-      await safeFetch('https://example.com', { timeoutMs: -1 });
+      await safeFetch('https://93.184.216.34', { timeoutMs: -1 });
       assert.ok(
         capturedDelays.includes(DEFAULT_TIMEOUT_MS),
         `expected ${DEFAULT_TIMEOUT_MS} among captured delays: ${capturedDelays.join(', ')}`,
@@ -170,7 +171,7 @@ test('ctxSignal reason wins over TIMEOUT when both abort simultaneously', () => 
   return withFetch(blockingFetch, async () => {
     try {
       await assert.rejects(
-        () => safeFetch('https://example.com', { signal: userAc.signal }),
+        () => safeFetch('https://93.184.216.34', { signal: userAc.signal }),
         (err: unknown) => {
           // Must be ctxSignal.reason (DOMException AbortError), not NodeError TIMEOUT
           assert.ok(err instanceof DOMException, `expected DOMException, got ${String(err)}`);
@@ -188,7 +189,7 @@ test('propagates AbortError when ctx.signal is already aborted', async () => {
   const ac = new AbortController();
   ac.abort();
   await assert.rejects(
-    () => safeFetch('https://example.com', { signal: ac.signal }),
+    () => safeFetch('https://93.184.216.34', { signal: ac.signal }),
     (err: unknown) => {
       assert.ok(err instanceof DOMException);
       assert.equal((err as DOMException).name, 'AbortError');
@@ -202,7 +203,7 @@ test('propagates AbortError when ctx.signal is aborted mid-flight', () =>
     const ac = new AbortController();
     setTimeout(() => ac.abort(), 30);
     await assert.rejects(
-      () => safeFetch('https://example.com', { timeoutMs: 5_000, signal: ac.signal }),
+      () => safeFetch('https://93.184.216.34', { timeoutMs: 5_000, signal: ac.signal }),
       (err: unknown) => {
         assert.ok(err instanceof DOMException);
         assert.equal((err as DOMException).name, 'AbortError');
@@ -222,7 +223,7 @@ test('retries on network error and throws after exhausting attempts', async () =
 
   await withFetch(failingFetch, () =>
     assert.rejects(
-      () => safeFetch('https://example.com', { retry: { attempts: 2, delayMs: 0 } }),
+      () => safeFetch('https://93.184.216.34', { retry: { attempts: 2, delayMs: 0 } }),
       (err: unknown) => {
         assert.ok(err instanceof Error);
         assert.equal((err as Error).message, 'Network error');
@@ -242,7 +243,7 @@ test('succeeds on the second attempt', async () => {
   };
 
   await withFetch(flakyFetch, async () => {
-    const res = await safeFetch('https://example.com', { retry: { attempts: 1, delayMs: 0 } });
+    const res = await safeFetch('https://93.184.216.34', { retry: { attempts: 1, delayMs: 0 } });
     assert.equal(res.status, 200);
     assert.equal(calls, 2);
   });
@@ -260,7 +261,7 @@ test('stops retrying immediately when ctx.signal is aborted between attempts', a
   await withFetch(failingFetch, () =>
     assert.rejects(
       () =>
-        safeFetch('https://example.com', {
+        safeFetch('https://93.184.216.34', {
           signal: ac.signal,
           retry: { attempts: 3, delayMs: 0 },
         }),
@@ -287,7 +288,7 @@ test('abort during retry delay interrupts the sleep immediately', async () => {
   await withFetch(failingFetch, async () => {
     await assert.rejects(
       () =>
-        safeFetch('https://example.com', {
+        safeFetch('https://93.184.216.34', {
           signal: userAc.signal,
           retry: { attempts: 3, delayMs: 5_000 },
         }),
@@ -538,4 +539,159 @@ test('readArrayBuffer clamps maxBytes to the hard ceiling (Content-Length fast-r
     () => readArrayBuffer(fake, MAX_RESPONSE_BYTES * 10),
     (err: unknown) => err instanceof NodeError && err.code === 'RESPONSE_TOO_LARGE',
   );
+});
+
+// ------------------------------------------------ SSRF guard + redirects
+
+interface RequestRecord {
+  url: string;
+  method: string;
+  headers: Headers;
+  hasBody: boolean;
+}
+
+// A fetch mock that records each request and replays a scripted list of
+// responses (last entry reused once exhausted). Each response may be a factory
+// so it can react to the recorded request.
+function scriptedFetch(
+  responses: Array<Response | ((req: RequestRecord) => Response)>,
+): { fetch: typeof globalThis.fetch; calls: RequestRecord[] } {
+  const calls: RequestRecord[] = [];
+  let i = 0;
+  const fetchMock: typeof globalThis.fetch = async (input, init) => {
+    const url = input instanceof URL ? input.href : String(input);
+    const rec: RequestRecord = {
+      url,
+      method: (init?.method ?? 'GET').toUpperCase(),
+      headers: new Headers(init?.headers ?? undefined),
+      hasBody: init?.body != null,
+    };
+    calls.push(rec);
+    const entry = responses[Math.min(i, responses.length - 1)]!;
+    i++;
+    return typeof entry === 'function' ? entry(rec) : entry;
+  };
+  return { fetch: fetchMock, calls };
+}
+
+function redirect(status: number, location: string): Response {
+  return new Response(null, { status, headers: { location } });
+}
+
+// A lookup that always resolves to the given literal address(es).
+function lookupTo(...addresses: string[]): (host: string) => Promise<{ address: string; family: number }[]> {
+  return async () => addresses.map((address) => ({ address, family: address.includes(':') ? 6 : 4 }));
+}
+
+test('safeFetch blocks a host that resolves to a private address before any fetch', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withFetch(mock, async () => {
+    await assert.rejects(
+      () => safeFetch('https://intranet.example', { lookup: lookupTo('10.0.0.5') }),
+      (err: unknown) => {
+        assert.ok(err instanceof NodeError);
+        assert.equal(err.code, 'BLOCKED_ADDRESS');
+        assert.equal(err.meta?.['status'], 0);
+        return true;
+      },
+    );
+    assert.equal(calls.length, 0, 'fetch must not be called for a blocked address');
+  });
+});
+
+test('safeFetch allows a host that resolves to a public address', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withFetch(mock, async () => {
+    const res = await safeFetch('https://api.example', { lookup: lookupTo('93.184.216.34') });
+    assert.equal(res.status, 200);
+    assert.equal(calls.length, 1);
+  });
+});
+
+test('safeFetch rejects a redirect to a private target (redirect-bypass guard)', () => {
+  // Public first hop, then a 302 pointing at the cloud metadata endpoint.
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(302, 'http://169.254.169.254/latest/meta-data/'),
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    await assert.rejects(
+      () => safeFetch('https://93.184.216.34/start'),
+      (err: unknown) => {
+        assert.ok(err instanceof NodeError);
+        assert.equal(err.code, 'BLOCKED_ADDRESS');
+        return true;
+      },
+    );
+    assert.equal(calls.length, 1, 'the private redirect target must never be fetched');
+  });
+});
+
+test('safeFetch follows a public redirect and returns the final response', () => {
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(302, 'https://93.184.216.35/next'),
+    new Response('ok', { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    const res = await safeFetch('https://93.184.216.34/start');
+    assert.equal(res.status, 200);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1]?.url, 'https://93.184.216.35/next');
+  });
+});
+
+test('safeFetch throws TOO_MANY_REDIRECTS past MAX_REDIRECTS hops', () => {
+  const { fetch: mock, calls } = scriptedFetch([redirect(302, 'https://93.184.216.34/loop')]);
+  return withFetch(mock, async () => {
+    await assert.rejects(
+      () => safeFetch('https://93.184.216.34/loop'),
+      (err: unknown) => {
+        assert.ok(err instanceof NodeError);
+        assert.equal(err.code, 'TOO_MANY_REDIRECTS');
+        return true;
+      },
+    );
+    assert.equal(calls.length, MAX_REDIRECTS + 1);
+  });
+});
+
+test('safeFetch does not retry a blocked redirect target', () => {
+  const { fetch: mock, calls } = scriptedFetch([redirect(302, 'http://127.0.0.1/')]);
+  return withFetch(mock, async () => {
+    await assert.rejects(
+      () => safeFetch('https://93.184.216.34/start', { retry: { attempts: 3, delayMs: 0 } }),
+      (err: unknown) => err instanceof NodeError && err.code === 'BLOCKED_ADDRESS',
+    );
+    assert.equal(calls.length, 1, 'a deterministic block must not be retried');
+  });
+});
+
+test('safeFetch downgrades POST to GET and drops the body on a 303 redirect', () => {
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(303, 'https://93.184.216.34/result'),
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    await safeFetch('https://93.184.216.34/submit', {
+      method: 'POST',
+      body: JSON.stringify({ a: 1 }),
+      headers: { 'content-type': 'application/json' },
+    });
+    assert.equal(calls[0]?.method, 'POST');
+    assert.equal(calls[0]?.hasBody, true);
+    assert.equal(calls[1]?.method, 'GET');
+    assert.equal(calls[1]?.hasBody, false);
+  });
+});
+
+test('safeFetch strips Authorization on a cross-origin redirect', () => {
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(302, 'https://93.184.216.35/next'),
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    await safeFetch('https://93.184.216.34/start', { headers: { authorization: 'Bearer secret' } });
+    assert.equal(calls[0]?.headers.get('authorization'), 'Bearer secret');
+    assert.equal(calls[1]?.headers.get('authorization'), null, 'auth must not cross the origin boundary');
+  });
 });

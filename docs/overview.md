@@ -195,6 +195,22 @@ const response = await safeFetch('https://api.example.com/data', {
 
 **Error thrown on timeout:** `NodeError` with `code: 'TIMEOUT'` and a message that includes the actual effective timeout in milliseconds.
 
+#### SSRF guard
+
+`safeFetch` refuses to send a request to a private, loopback, link-local or otherwise reserved target — the classic **SSRF** foot-gun where an attacker-controlled URL steers a server-side request at internal infrastructure or the cloud metadata endpoint (`169.254.169.254`). The guard is **always on**; there is no per-node opt-out, because in Integration Studio every legitimate target is a public internet host.
+
+What it does:
+
+- Only `http:`/`https:` URLs are allowed; `localhost` (and `*.localhost`) and empty hosts are rejected outright.
+- A literal-IP host is checked directly; a named host is resolved (`dns.lookup`, all addresses) and rejected if **any** resolved address is private/reserved. Blocked ranges: IPv4 `0/8`, `127/8`, `10/8`, `172.16/12`, `192.168/16`, `169.254/16`; IPv6 `::`, `::1`, `fc00::/7`, `fe80::/10`, and IPv4-mapped/-compatible forms (unwrapped and re-checked).
+- Redirects are followed **manually** (`redirect: 'manual'`, up to `MAX_REDIRECTS` = 5) and the guard re-runs on **every hop**, so a public URL cannot bounce (via a 3xx `Location`) to a private one. `Authorization` is dropped on a cross-origin hop.
+
+**Errors:** a blocked target throws `NodeError('BLOCKED_ADDRESS', …, { status: 0 })`; exceeding the redirect budget throws `NodeError('TOO_MANY_REDIRECTS', …)`. Neither is retried (retrying a deterministic block is pointless). The helpers `assertPublicUrl(url, { lookup })` and `isBlockedAddress(ip)` are exported for reuse.
+
+**Local-development opt-out.** Setting the environment variable `RVNXX_SSRF_ALLOW_PRIVATE` to a truthy value (`1`/`true`/`yes`) relaxes the guard so a developer can point a node at `localhost` or an internal service while testing. It is **off by default**, logs a one-time warning when active, and is set only by the local stack (`integrations/docker-compose.dev.yml`). Production never sets it, so the guard stays fully active there. This is an infrastructure/dev switch — it is **not** exposed as node config and cannot be toggled by a workflow author.
+
+> **Best-effort, not airtight.** Node re-resolves the hostname when it actually opens the socket, so a **DNS-rebinding race (TOCTOU)** remains: an attacker's DNS could answer with a public address during the guard's check and a private one at connect time. A fully robust guard requires a custom **undici dispatcher that inspects the connected socket's IP**, or a **network-level egress policy** on the worker. The in-code guard is the pragmatic central defence until such isolation exists. The `lookup` option on `assertPublicUrl` / `safeFetch` is an internal test seam — production callers leave it unset.
+
 #### Config field factories
 
 Use these to add standardised timeout and retry fields to a node's `description.config`:
