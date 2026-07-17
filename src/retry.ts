@@ -127,7 +127,17 @@ export async function withRetry<T>(
     } catch (err) {
       if (!(err instanceof RetryableError) || attempt >= maxAttempts) throw err;
 
-      const delayMs = err.retryAfterMs ?? backoffDelay(attempt, effective);
+      // A connector may hand us a bogus retryAfterMs (negative, NaN, Infinity —
+      // e.g. from clock-skewed `Retry-After` date parsing). setTimeout would
+      // coerce those to a near-zero delay and spin a tight, backoff-defeating
+      // loop, so fall back to the computed backoff for anything non-finite/<0.
+      const retryAfter = err.retryAfterMs;
+      const rawDelay =
+        typeof retryAfter === 'number' && Number.isFinite(retryAfter) && retryAfter >= 0
+          ? retryAfter
+          : backoffDelay(attempt, effective);
+      // Final guard: a malformed policy could still make backoff non-finite.
+      const delayMs = Number.isFinite(rawDelay) && rawDelay >= 0 ? rawDelay : 0;
       onRetry?.({ attempt, delayMs, error: err });
       logger?.warn('Retrying after retryable error', {
         attempt,

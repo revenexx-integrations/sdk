@@ -126,6 +126,25 @@ test('Retry-After (retryAfterMs) overrides the computed backoff', async () => {
   assert.deepEqual(delays, [7], 'must use retryAfterMs, not the (huge) computed backoff');
 });
 
+test('an invalid retryAfterMs falls back to the computed backoff', async () => {
+  const policy = { baseDelayMs: 10, factor: 2, jitter: false, maxDelayMs: 1_000, maxAttempts: 3 };
+  for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+    const delays: number[] = [];
+    let calls = 0;
+    await withRetry(
+      async () => {
+        calls++;
+        if (calls === 1) throw new RetryableError('rate limited', { retryAfterMs: bad });
+        return 'done';
+      },
+      policy,
+      { signal: neverAborted(), onRetry: (info) => delays.push(info.delayMs) },
+    );
+    // backoffDelay(1) = baseDelayMs * factor^0 = 10, not a setTimeout-coerced ~0.
+    assert.deepEqual(delays, [10], `retryAfterMs=${bad} must fall back to computed backoff`);
+  }
+});
+
 test('does not start a new attempt after the signal is aborted during the wait', async () => {
   const ac = new AbortController();
   let calls = 0;
