@@ -137,6 +137,12 @@ export interface INodeDescription {
   name: LocalizedString;
   description?: LocalizedString;
   icon?: string;
+  /**
+   * Curated node-picker group path, outermost first (max 4 levels), e.g.
+   * `[{ en: 'Business Central' }, { en: 'Sales Orders' }]`. Optional —
+   * pickers without it fall back to package/category grouping.
+   */
+  groups?: LocalizedString[];
   /** Associated images (screenshots, logos, banners) shipped with the package. */
   images?: IImage[];
   inputs: Record<string, IInputPort>;
