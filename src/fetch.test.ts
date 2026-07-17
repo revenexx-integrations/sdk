@@ -1,11 +1,18 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  clampResponseBytes,
+  DEFAULT_MAX_RESPONSE_BYTES,
   DEFAULT_RETRY_ATTEMPTS,
   DEFAULT_RETRY_DELAY_MS,
   DEFAULT_TIMEOUT_MS,
+  MAX_RESPONSE_BYTES,
   MAX_RETRY_ATTEMPTS,
   MAX_TIMEOUT_MS,
+  maxBytesConfigField,
+  readArrayBuffer,
+  readJsonOrText,
+  readText,
   retryConfigFields,
   safeFetch,
   timeoutConfigField,
@@ -328,4 +335,207 @@ test('retryConfigFields accepts custom defaults', () => {
   const [attemptsField, delayField] = retryConfigFields({ defaultAttempts: 3, defaultDelayMs: 2_000 });
   assert.equal(attemptsField?.default, 3);
   assert.equal(delayField?.default, 2_000);
+});
+
+// ------------------------------------------------ size cap: read* helpers
+
+// Build a Response whose body is a stream of the given chunks. Streams carry no
+// intrinsic length, so no Content-Length header is set unless `init` adds one —
+// letting us exercise the streaming-enforcement path independently of the
+// fast-reject path.
+function streamResponse(chunks: Uint8Array[], init?: ResponseInit): Response {
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk);
+      controller.close();
+    },
+  });
+  return new Response(stream, init);
+}
+
+function bytes(n: number): Uint8Array {
+  return new Uint8Array(n).fill(65); // 'A'
+}
+
+test('readArrayBuffer returns the full body when under the cap', async () => {
+  const res = streamResponse([bytes(4), bytes(4)]);
+  const buf = await readArrayBuffer(res, 100);
+  assert.equal(buf.byteLength, 8);
+});
+
+test('readArrayBuffer enforces the cap while streaming (no Content-Length)', async () => {
+  const res = streamResponse([bytes(6), bytes(6)]); // 12 bytes, cap 10
+  await assert.rejects(
+    () => readArrayBuffer(res, 10),
+    (err: unknown) => {
+      assert.ok(err instanceof NodeError);
+      assert.equal(err.code, 'RESPONSE_TOO_LARGE');
+      assert.equal(err.meta?.['status'], 200);
+      return true;
+    },
+  );
+});
+
+test('readArrayBuffer fast-rejects on an oversized Content-Length without touching the body', async () => {
+  // A Response-shaped fake whose `body` getter throws if accessed — proving the
+  // Content-Length fast-reject bails out before any body read. (A real undici
+  // Response eagerly drains a stream body on construction, so a read-side-effect
+  // flag can't observe this.)
+  let bodyAccessed = false;
+  const fake = {
+    status: 200,
+    headers: new Headers({ 'content-length': '1000000' }),
+    get body(): ReadableStream<Uint8Array> {
+      bodyAccessed = true;
+      throw new Error('body must not be accessed on fast-reject');
+    },
+  } as unknown as Response;
+  await assert.rejects(
+    () => readArrayBuffer(fake, 100),
+    (err: unknown) => err instanceof NodeError && err.code === 'RESPONSE_TOO_LARGE',
+  );
+  assert.equal(bodyAccessed, false, 'body must not be accessed when Content-Length already exceeds the cap');
+});
+
+test('readArrayBuffer surfaces RESPONSE_TOO_LARGE even when the stream cancel rejects', async () => {
+  // Underlying cancel() throws → reader.cancel() rejects. The overrun must still
+  // surface as RESPONSE_TOO_LARGE, not the cancellation error.
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes(20));
+      controller.close();
+    },
+    cancel() {
+      throw new Error('cancel failed');
+    },
+  });
+  const fake = { status: 200, headers: new Headers(), body: stream } as unknown as Response;
+  await assert.rejects(
+    () => readArrayBuffer(fake, 10),
+    (err: unknown) => err instanceof NodeError && err.code === 'RESPONSE_TOO_LARGE',
+  );
+});
+
+test('readArrayBuffer accepts a body exactly at the cap', async () => {
+  const res = streamResponse([bytes(10)]);
+  const buf = await readArrayBuffer(res, 10);
+  assert.equal(buf.byteLength, 10);
+});
+
+test('readText decodes the body as UTF-8', async () => {
+  const res = new Response('héllo', { headers: { 'content-type': 'text/plain' } });
+  assert.equal(await readText(res, 100), 'héllo');
+});
+
+test('readJsonOrText parses JSON when Content-Type is application/json', async () => {
+  const res = new Response(JSON.stringify({ a: 1 }), {
+    headers: { 'content-type': 'application/json' },
+  });
+  assert.deepEqual(await readJsonOrText(res, 100), { a: 1 });
+});
+
+test('readJsonOrText returns raw text for non-JSON content types', async () => {
+  const res = new Response('plain body', { headers: { 'content-type': 'text/plain' } });
+  assert.equal(await readJsonOrText(res, 100), 'plain body');
+});
+
+test('readJsonOrText matches Content-Type case-insensitively and ignores parameters', async () => {
+  const res = new Response(JSON.stringify({ a: 1 }), {
+    headers: { 'content-type': 'Application/JSON; charset=utf-8' },
+  });
+  assert.deepEqual(await readJsonOrText(res, 100), { a: 1 });
+});
+
+test('readJsonOrText recognises +json structured-syntax suffixes', async () => {
+  const res = new Response(JSON.stringify({ a: 1 }), {
+    headers: { 'content-type': 'application/vnd.api+json' },
+  });
+  assert.deepEqual(await readJsonOrText(res, 100), { a: 1 });
+});
+
+test('readJsonOrText does not mis-detect application/jsonp as JSON', async () => {
+  const res = new Response('callback({"a":1})', {
+    headers: { 'content-type': 'application/jsonp' },
+  });
+  assert.equal(await readJsonOrText(res, 100), 'callback({"a":1})');
+});
+
+test('readJsonOrText throws RESPONSE_PARSE_ERROR on malformed JSON', async () => {
+  const res = new Response('{not valid json', {
+    headers: { 'content-type': 'application/json' },
+  });
+  await assert.rejects(
+    () => readJsonOrText(res, 100),
+    (err: unknown) => {
+      assert.ok(err instanceof NodeError);
+      assert.equal(err.code, 'RESPONSE_PARSE_ERROR');
+      assert.equal(err.meta?.['status'], 200);
+      return true;
+    },
+  );
+});
+
+test('readJsonOrText enforces the cap on JSON bodies too', async () => {
+  const big = JSON.stringify({ v: 'x'.repeat(50) });
+  const res = new Response(big, { headers: { 'content-type': 'application/json' } });
+  await assert.rejects(
+    () => readJsonOrText(res, 10),
+    (err: unknown) => err instanceof NodeError && err.code === 'RESPONSE_TOO_LARGE',
+  );
+});
+
+test('read* helpers default to DEFAULT_MAX_RESPONSE_BYTES', async () => {
+  const res = new Response('small');
+  const buf = await readArrayBuffer(res);
+  assert.equal(buf.byteLength, 5);
+  assert.ok(DEFAULT_MAX_RESPONSE_BYTES > 1_000_000);
+});
+
+test('maxBytesConfigField returns a number field defaulting to the SDK cap', () => {
+  const field = maxBytesConfigField();
+  assert.equal(field.key, 'maxBytes');
+  assert.equal(field.type, 'number');
+  assert.equal(field.default, DEFAULT_MAX_RESPONSE_BYTES);
+  assert.equal(field.validation?.min, 1);
+  // No explicit max → hard ceiling, so a workflow author can't defeat the guard.
+  assert.equal(field.validation?.max, MAX_RESPONSE_BYTES);
+});
+
+test('maxBytesConfigField accepts custom default and max', () => {
+  const field = maxBytesConfigField({ default: 1024, max: 4096 });
+  assert.equal(field.default, 1024);
+  assert.equal(field.validation?.max, 4096);
+});
+
+test('maxBytesConfigField clamps a custom max above the hard ceiling', () => {
+  const field = maxBytesConfigField({ max: MAX_RESPONSE_BYTES * 4 });
+  assert.equal(field.validation?.max, MAX_RESPONSE_BYTES);
+});
+
+// ------------------------------------------------ size cap: hard ceiling
+
+test('clampResponseBytes bounds a request into [1, MAX_RESPONSE_BYTES]', () => {
+  assert.equal(clampResponseBytes(1024), 1024);
+  assert.equal(clampResponseBytes(MAX_RESPONSE_BYTES), MAX_RESPONSE_BYTES);
+  assert.equal(clampResponseBytes(MAX_RESPONSE_BYTES + 1), MAX_RESPONSE_BYTES);
+  assert.equal(clampResponseBytes(Number.POSITIVE_INFINITY), MAX_RESPONSE_BYTES);
+  assert.equal(clampResponseBytes(0), MAX_RESPONSE_BYTES);
+  assert.equal(clampResponseBytes(-5), MAX_RESPONSE_BYTES);
+  assert.ok(MAX_RESPONSE_BYTES > DEFAULT_MAX_RESPONSE_BYTES);
+});
+
+test('readArrayBuffer clamps maxBytes to the hard ceiling (Content-Length fast-reject)', async () => {
+  // A caller passing a maxBytes above the ceiling must not lift the guard: a
+  // Content-Length just over MAX_RESPONSE_BYTES is still rejected.
+  const fake = {
+    status: 200,
+    headers: new Headers({ 'content-length': String(MAX_RESPONSE_BYTES + 1) }),
+    get body(): ReadableStream<Uint8Array> {
+      throw new Error('body must not be accessed on fast-reject');
+    },
+  } as unknown as Response;
+  await assert.rejects(
+    () => readArrayBuffer(fake, MAX_RESPONSE_BYTES * 10),
+    (err: unknown) => err instanceof NodeError && err.code === 'RESPONSE_TOO_LARGE',
+  );
 });
