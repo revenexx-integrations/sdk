@@ -8,6 +8,27 @@ export const DEFAULT_RETRY_ATTEMPTS = 0;
 export const MAX_RETRY_ATTEMPTS = 5;
 export const DEFAULT_RETRY_DELAY_MS = 1_000;
 
+/**
+ * Default cap for response bodies read via {@link readArrayBuffer} /
+ * {@link readText} / {@link readJsonOrText}. Guards the (shared) worker process
+ * against a single oversized response exhausting its memory.
+ */
+export const DEFAULT_MAX_RESPONSE_BYTES = 25 * 1024 * 1024; // 25 MiB
+
+/**
+ * Hard upper ceiling for any per-node `maxBytes`. Even a permissive node author
+ * (who calls {@link maxBytesConfigField} without an explicit `max`, or passes a
+ * large `maxBytes` to the `read*` helpers) can never lift the cap above this, so
+ * the shared worker's memory stays bounded. Analogous to {@link MAX_TIMEOUT_MS}.
+ */
+export const MAX_RESPONSE_BYTES = 100 * 1024 * 1024; // 100 MiB
+
+/** Clamp a requested `maxBytes` into `[1, MAX_RESPONSE_BYTES]`. */
+export function clampResponseBytes(maxBytes: number): number {
+  if (!Number.isFinite(maxBytes) || maxBytes < 1) return MAX_RESPONSE_BYTES;
+  return Math.min(maxBytes, MAX_RESPONSE_BYTES);
+}
+
 export interface SafeFetchRetry {
   attempts: number;
   delayMs?: number;
@@ -64,6 +85,133 @@ export async function safeFetch(
     }
   }
   throw lastError;
+}
+
+function tooLargeError(status: number, bytes: number, maxBytes: number): NodeError {
+  return new NodeError(
+    'RESPONSE_TOO_LARGE',
+    `Response body of ${bytes} bytes exceeds the ${maxBytes}-byte limit`,
+    { status },
+  );
+}
+
+/**
+ * Read a response body into an ArrayBuffer while enforcing a hard byte cap.
+ *
+ * The `Content-Length` header is used as a fast-reject (bail before downloading
+ * anything), but the limit is *also* enforced while streaming, since the header
+ * can be absent or lie. On overrun the stream is cancelled and a
+ * `NodeError('RESPONSE_TOO_LARGE', …, { status })` is thrown.
+ */
+export async function readArrayBuffer(
+  res: Response,
+  maxBytes: number = DEFAULT_MAX_RESPONSE_BYTES,
+): Promise<ArrayBuffer> {
+  // Clamp to the hard ceiling so a permissive caller can't lift the guard above
+  // MAX_RESPONSE_BYTES (mirrors safeFetch's Math.min(timeoutMs, MAX_TIMEOUT_MS)).
+  const cap = clampResponseBytes(maxBytes);
+  const declared = Number(res.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > cap) {
+    throw tooLargeError(res.status, declared, cap);
+  }
+
+  const body = res.body;
+  if (!body) {
+    // No readable stream (e.g. a bodyless response) — fall back to the buffered
+    // read, still enforcing the cap after the fact.
+    const buf = await res.arrayBuffer();
+    if (buf.byteLength > cap) throw tooLargeError(res.status, buf.byteLength, cap);
+    return buf;
+  }
+
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      // The cap is checked after each chunk is buffered, so worst-case peak
+      // memory is ≈ cap + one undici chunk (undici bounds its chunk size).
+      total += value.byteLength;
+      if (total > cap) {
+        // Best-effort cancel; swallow any rejection (e.g. an already-errored
+        // stream) so the overrun always surfaces as RESPONSE_TOO_LARGE rather
+        // than a stream-cancel error.
+        await reader.cancel().catch(() => {});
+        throw tooLargeError(res.status, total, cap);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out.buffer;
+}
+
+/** Read a response body as UTF-8 text, capped at `maxBytes` (see {@link readArrayBuffer}). */
+export async function readText(
+  res: Response,
+  maxBytes: number = DEFAULT_MAX_RESPONSE_BYTES,
+): Promise<string> {
+  const buf = await readArrayBuffer(res, maxBytes);
+  return new TextDecoder().decode(buf);
+}
+
+/**
+ * Return `true` when a `Content-Type` header denotes JSON. The media type is
+ * matched case-insensitively and only after stripping any `;`-parameters
+ * (`charset`, `boundary`, …), so `Application/JSON; charset=utf-8` counts while
+ * a lookalike like `application/jsonp` does not. Structured-syntax `+json`
+ * suffixes (RFC 6839, e.g. `application/vnd.api+json`) are recognised too.
+ */
+function isJsonContentType(contentType: string): boolean {
+  const mediaType = contentType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+  return mediaType === 'application/json' || mediaType.endsWith('+json');
+}
+
+/**
+ * Read a response body as JSON when the `Content-Type` denotes JSON (see
+ * {@link isJsonContentType}), otherwise as text — the content-type sniff
+ * previously duplicated across the HTTP/Upload/DeepL node sinks. Capped at
+ * `maxBytes` (see {@link readArrayBuffer}).
+ *
+ * A malformed JSON body surfaces as `NodeError('RESPONSE_PARSE_ERROR', …, { status })`
+ * rather than a raw `SyntaxError`, keeping to the SDK error contract.
+ */
+export async function readJsonOrText(
+  res: Response,
+  maxBytes: number = DEFAULT_MAX_RESPONSE_BYTES,
+): Promise<unknown> {
+  const contentType = res.headers.get('content-type') ?? '';
+  const text = await readText(res, maxBytes);
+  if (!isJsonContentType(contentType)) return text;
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new NodeError(
+      'RESPONSE_PARSE_ERROR',
+      `Invalid JSON response: ${(e as Error).message}`,
+      { status: res.status },
+    );
+  }
+}
+
+export function maxBytesConfigField(opts?: { default?: number; max?: number }): IConfigField {
+  return {
+    key: 'maxBytes',
+    label: 'Max response size (bytes)',
+    type: 'number',
+    default: opts?.default ?? DEFAULT_MAX_RESPONSE_BYTES,
+    validation: { min: 1, max: Math.min(opts?.max ?? MAX_RESPONSE_BYTES, MAX_RESPONSE_BYTES) },
+  };
 }
 
 export function timeoutConfigField(opts?: { default?: number; max?: number }): IConfigField {
