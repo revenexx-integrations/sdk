@@ -116,7 +116,10 @@ export async function readArrayBuffer(
       if (done) break;
       total += value.byteLength;
       if (total > maxBytes) {
-        await reader.cancel();
+        // Best-effort cancel; swallow any rejection (e.g. an already-errored
+        // stream) so the overrun always surfaces as RESPONSE_TOO_LARGE rather
+        // than a stream-cancel error.
+        await reader.cancel().catch(() => {});
         throw tooLargeError(res.status, total, maxBytes);
       }
       chunks.push(value);

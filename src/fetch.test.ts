@@ -395,6 +395,25 @@ test('readArrayBuffer fast-rejects on an oversized Content-Length without touchi
   assert.equal(bodyAccessed, false, 'body must not be accessed when Content-Length already exceeds the cap');
 });
 
+test('readArrayBuffer surfaces RESPONSE_TOO_LARGE even when the stream cancel rejects', async () => {
+  // Underlying cancel() throws → reader.cancel() rejects. The overrun must still
+  // surface as RESPONSE_TOO_LARGE, not the cancellation error.
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes(20));
+      controller.close();
+    },
+    cancel() {
+      throw new Error('cancel failed');
+    },
+  });
+  const fake = { status: 200, headers: new Headers(), body: stream } as unknown as Response;
+  await assert.rejects(
+    () => readArrayBuffer(fake, 10),
+    (err: unknown) => err instanceof NodeError && err.code === 'RESPONSE_TOO_LARGE',
+  );
+});
+
 test('readArrayBuffer accepts a body exactly at the cap', async () => {
   const res = streamResponse([bytes(10)]);
   const buf = await readArrayBuffer(res, 10);
