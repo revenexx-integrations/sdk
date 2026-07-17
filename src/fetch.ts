@@ -166,9 +166,22 @@ export async function readText(
 }
 
 /**
- * Read a response body as JSON when the `Content-Type` is `application/json`,
- * otherwise as text — the content-type sniff previously duplicated across the
- * HTTP/Upload/DeepL node sinks. Capped at `maxBytes` (see {@link readArrayBuffer}).
+ * Return `true` when a `Content-Type` header denotes JSON. The media type is
+ * matched case-insensitively and only after stripping any `;`-parameters
+ * (`charset`, `boundary`, …), so `Application/JSON; charset=utf-8` counts while
+ * a lookalike like `application/jsonp` does not. Structured-syntax `+json`
+ * suffixes (RFC 6839, e.g. `application/vnd.api+json`) are recognised too.
+ */
+function isJsonContentType(contentType: string): boolean {
+  const mediaType = contentType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+  return mediaType === 'application/json' || mediaType.endsWith('+json');
+}
+
+/**
+ * Read a response body as JSON when the `Content-Type` denotes JSON (see
+ * {@link isJsonContentType}), otherwise as text — the content-type sniff
+ * previously duplicated across the HTTP/Upload/DeepL node sinks. Capped at
+ * `maxBytes` (see {@link readArrayBuffer}).
  *
  * A malformed JSON body surfaces as `NodeError('RESPONSE_PARSE_ERROR', …, { status })`
  * rather than a raw `SyntaxError`, keeping to the SDK error contract.
@@ -179,7 +192,7 @@ export async function readJsonOrText(
 ): Promise<unknown> {
   const contentType = res.headers.get('content-type') ?? '';
   const text = await readText(res, maxBytes);
-  if (!contentType.includes('application/json')) return text;
+  if (!isJsonContentType(contentType)) return text;
   try {
     return JSON.parse(text);
   } catch (e) {

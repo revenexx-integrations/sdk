@@ -439,6 +439,27 @@ test('readJsonOrText returns raw text for non-JSON content types', async () => {
   assert.equal(await readJsonOrText(res, 100), 'plain body');
 });
 
+test('readJsonOrText matches Content-Type case-insensitively and ignores parameters', async () => {
+  const res = new Response(JSON.stringify({ a: 1 }), {
+    headers: { 'content-type': 'Application/JSON; charset=utf-8' },
+  });
+  assert.deepEqual(await readJsonOrText(res, 100), { a: 1 });
+});
+
+test('readJsonOrText recognises +json structured-syntax suffixes', async () => {
+  const res = new Response(JSON.stringify({ a: 1 }), {
+    headers: { 'content-type': 'application/vnd.api+json' },
+  });
+  assert.deepEqual(await readJsonOrText(res, 100), { a: 1 });
+});
+
+test('readJsonOrText does not mis-detect application/jsonp as JSON', async () => {
+  const res = new Response('callback({"a":1})', {
+    headers: { 'content-type': 'application/jsonp' },
+  });
+  assert.equal(await readJsonOrText(res, 100), 'callback({"a":1})');
+});
+
 test('readJsonOrText throws RESPONSE_PARSE_ERROR on malformed JSON', async () => {
   const res = new Response('{not valid json', {
     headers: { 'content-type': 'application/json' },
