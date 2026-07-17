@@ -50,15 +50,18 @@ function expandIpv6(input: string): number[] | null {
   const zone = s.indexOf('%');
   if (zone !== -1) s = s.slice(0, zone);
 
-  // Peel off an embedded IPv4 tail and turn it into the trailing two hextets.
-  let tail: number[] = [];
+  // Rewrite an embedded IPv4 tail (`::ffff:1.2.3.4`, `::1.2.3.4`,
+  // `2001:db8::1.2.3.4`, …) as two hex groups, so the `::`-compression and
+  // group-split logic below handles every embedded form uniformly. Keeping the
+  // separating colon in place (`slice(0, idx + 1)`) preserves a preceding `::`.
   if (s.includes('.')) {
     const idx = s.lastIndexOf(':');
     if (idx === -1) return null;
     const v4 = parseIpv4(s.slice(idx + 1));
     if (!v4) return null;
-    tail = [(v4[0] << 8) | v4[1], (v4[2] << 8) | v4[3]];
-    s = s.slice(0, idx); // leave the part before the last colon (may still end in ':')
+    const hi = ((v4[0] << 8) | v4[1]).toString(16);
+    const lo = ((v4[2] << 8) | v4[3]).toString(16);
+    s = `${s.slice(0, idx + 1)}${hi}:${lo}`;
   }
 
   const halves = s.split('::');
@@ -70,17 +73,16 @@ function expandIpv6(input: string): number[] | null {
   const head = parseGroups(halves[0] ?? '');
   const back = halves.length === 2 ? parseGroups(halves[1] ?? '') : null;
 
-  const declared = [...head, ...(back ?? []), ...tail];
+  const declared = [...head, ...(back ?? [])];
   if (declared.some((h) => !Number.isInteger(h) || h < 0 || h > 0xffff)) return null;
 
   let hextets: number[];
   if (back === null) {
-    hextets = [...head, ...tail];
+    hextets = head;
   } else {
-    const fixed = head.length + back.length + tail.length;
-    const zeros = 8 - fixed;
+    const zeros = 8 - (head.length + back.length);
     if (zeros < 1) return null; // `::` must stand in for at least one zero group
-    hextets = [...head, ...new Array<number>(zeros).fill(0), ...back, ...tail];
+    hextets = [...head, ...new Array<number>(zeros).fill(0), ...back];
   }
   return hextets.length === 8 ? hextets : null;
 }

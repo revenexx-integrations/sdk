@@ -19,6 +19,7 @@ import {
   timeoutConfigField,
 } from './fetch.js';
 import { NodeError } from './errors.js';
+import { ssrfResolver } from './ssrf.js';
 
 // Helper: a fetch mock that waits `delayMs` before resolving, and respects the
 // AbortSignal so timeout/cancel behaviour can be observed.
@@ -578,34 +579,46 @@ function redirect(status: number, location: string): Response {
   return new Response(null, { status, headers: { location } });
 }
 
-// A lookup that always resolves to the given literal address(es).
-function lookupTo(...addresses: string[]): (host: string) => Promise<{ address: string; family: number }[]> {
-  return async () => addresses.map((address) => ({ address, family: address.includes(':') ? 6 : 4 }));
+// Run `fn` with the guard's default resolver pointed at fixed address(es). The
+// resolver seam is used here (rather than a per-call option) because safeFetch
+// intentionally exposes no `lookup` on its public options — the guard is not
+// opt-out-able by callers.
+function withLookup(addresses: string[], fn: () => Promise<void>): Promise<void> {
+  const orig = ssrfResolver.lookup;
+  ssrfResolver.lookup = async () =>
+    addresses.map((address) => ({ address, family: address.includes(':') ? 6 : 4 }));
+  return fn().finally(() => {
+    ssrfResolver.lookup = orig;
+  });
 }
 
 test('safeFetch blocks a host that resolves to a private address before any fetch', () => {
   const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
-  return withFetch(mock, async () => {
-    await assert.rejects(
-      () => safeFetch('https://intranet.example', { lookup: lookupTo('10.0.0.5') }),
-      (err: unknown) => {
-        assert.ok(err instanceof NodeError);
-        assert.equal(err.code, 'BLOCKED_ADDRESS');
-        assert.equal(err.meta?.['status'], 0);
-        return true;
-      },
-    );
-    assert.equal(calls.length, 0, 'fetch must not be called for a blocked address');
-  });
+  return withLookup(['10.0.0.5'], () =>
+    withFetch(mock, async () => {
+      await assert.rejects(
+        () => safeFetch('https://intranet.example'),
+        (err: unknown) => {
+          assert.ok(err instanceof NodeError);
+          assert.equal(err.code, 'BLOCKED_ADDRESS');
+          assert.equal(err.meta?.['status'], 0);
+          return true;
+        },
+      );
+      assert.equal(calls.length, 0, 'fetch must not be called for a blocked address');
+    }),
+  );
 });
 
 test('safeFetch allows a host that resolves to a public address', () => {
   const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
-  return withFetch(mock, async () => {
-    const res = await safeFetch('https://api.example', { lookup: lookupTo('93.184.216.34') });
-    assert.equal(res.status, 200);
-    assert.equal(calls.length, 1);
-  });
+  return withLookup(['93.184.216.34'], () =>
+    withFetch(mock, async () => {
+      const res = await safeFetch('https://api.example');
+      assert.equal(res.status, 200);
+      assert.equal(calls.length, 1);
+    }),
+  );
 });
 
 test('safeFetch rejects a redirect to a private target (redirect-bypass guard)', () => {

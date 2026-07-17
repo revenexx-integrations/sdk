@@ -1,5 +1,5 @@
 import { NodeError } from './errors.js';
-import { assertPublicUrl, type LookupFn } from './ssrf.js';
+import { assertPublicUrl } from './ssrf.js';
 import type { IConfigField } from './types.js';
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
@@ -45,11 +45,6 @@ export interface SafeFetchOptions extends RequestInit {
   /** Pass `ctx.signal` so the workflow engine can cancel the request. */
   signal?: AbortSignal;
   retry?: SafeFetchRetry;
-  /**
-   * Internal test seam: override the DNS resolver the SSRF guard uses for this
-   * call. Production callers leave this unset (real DNS). See {@link assertPublicUrl}.
-   */
-  lookup?: LookupFn;
 }
 
 /**
@@ -91,7 +86,6 @@ async function guardedFetch(
   fetchOptions: RequestInit,
   ctxSignal: AbortSignal | undefined,
   effectiveMs: number,
-  lookup: LookupFn | undefined,
 ): Promise<Response> {
   // The initial request is issued with the caller's URL and init untouched
   // (only `redirect: 'manual'` is added), so the common no-redirect path stays
@@ -100,7 +94,7 @@ async function guardedFetch(
   let currentUrl: string | URL = url;
   let currentInit: RequestInit = { ...fetchOptions, redirect: 'manual' };
 
-  await assertPublicUrl(currentUrl, { lookup });
+  await assertPublicUrl(currentUrl);
 
   for (let hop = 0; ; hop++) {
     const res = await timedFetch(currentUrl, currentInit, ctxSignal, effectiveMs);
@@ -114,7 +108,7 @@ async function guardedFetch(
 
     const base = currentUrl instanceof URL ? currentUrl : new URL(currentUrl);
     const nextUrl = new URL(location, base);
-    await assertPublicUrl(nextUrl, { lookup });
+    await assertPublicUrl(nextUrl);
 
     const headers = new Headers(currentInit.headers ?? undefined);
     let method = (currentInit.method ?? 'GET').toUpperCase();
@@ -142,7 +136,7 @@ export async function safeFetch(
   url: string | URL,
   options: SafeFetchOptions = {},
 ): Promise<Response> {
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, signal: ctxSignal, retry, lookup, ...fetchOptions } = options;
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, signal: ctxSignal, retry, ...fetchOptions } = options;
   const effectiveMs =
     Number.isFinite(timeoutMs) && timeoutMs > 0
       ? Math.min(timeoutMs, MAX_TIMEOUT_MS)
@@ -159,7 +153,7 @@ export async function safeFetch(
     if (ctxSignal?.aborted) throw ctxSignal.reason;
 
     try {
-      return await guardedFetch(url, fetchOptions, ctxSignal, effectiveMs, lookup);
+      return await guardedFetch(url, fetchOptions, ctxSignal, effectiveMs);
     } catch (err) {
       if (ctxSignal?.aborted) throw ctxSignal.reason;
       // A blocked address or redirect loop is deterministic — retrying can only

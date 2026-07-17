@@ -48,12 +48,16 @@ const BLOCKED_V6 = [
   '::ffff:127.0.0.1', // IPv4-mapped loopback
   '::ffff:169.254.169.254', // IPv4-mapped metadata
   '0:0:0:0:0:ffff:7f00:1', // IPv4-mapped loopback, non-dotted form
+  '::127.0.0.1', // deprecated IPv4-compatible loopback (dotted tail after ::)
+  '::10.0.0.1', // deprecated IPv4-compatible private
 ];
 
 const PUBLIC_V6 = [
   '2001:4860:4860::8888', // Google DNS
   '2606:4700:4700::1111', // Cloudflare DNS
   '::ffff:93.184.216.34', // IPv4-mapped public
+  '::93.184.216.34', // deprecated IPv4-compatible public (dotted tail after ::)
+  '2001:db8::93.184.216.34', // embedded IPv4 with a non-empty prefix
   'fe00::1', // just below fc00::/7
 ];
 
