@@ -1,5 +1,12 @@
 # @revenexx/integrations-node-sdk
 
+## 0.15.0
+
+### Minor Changes
+
+- f51f001: Add response body size-cap + parsing helpers to the fetch module (PO-137): `readArrayBuffer`, `readText` and `readJsonOrText` enforce a hard byte cap (fast-reject on `Content-Length`, plus streaming enforcement since the header can be absent or lie), throwing `NodeError('RESPONSE_TOO_LARGE', …, { status })` on overrun. Adds `DEFAULT_MAX_RESPONSE_BYTES` (25 MiB) plus a `MAX_RESPONSE_BYTES` hard ceiling (100 MiB) that no per-node `maxBytes` can lift — enforced both in `maxBytesConfigField()`'s validation and at runtime in the `read*` helpers (via `clampResponseBytes`), mirroring `safeFetch`'s timeout clamp. `readJsonOrText` surfaces malformed JSON as `NodeError('RESPONSE_PARSE_ERROR', …, { status })` instead of a raw `SyntaxError`, keeping to the SDK error contract, and detects the JSON content type robustly (case-insensitive, `;`-parameters stripped, `+json` structured-syntax suffixes recognised, `application/jsonp` not mis-detected). These centralise the content-type sniffing previously duplicated across the HTTP/Upload/DeepL node sinks and guard the shared worker against a single oversized response exhausting its memory.
+- bb3f945: Add a transport-agnostic retry/backoff primitive (PO-139): `withRetry`, `RetryableError`, `sleepWithSignal`, `backoffDelay`, `RetryPolicy` and `DEFAULT_RETRY_POLICY`, re-exported from the barrel. Connectors throw `RetryableError` (optionally carrying a server-dictated `retryAfterMs`) to opt an attempt into a retry; everything else is rethrown and terminal API errors modelled as values flow through unchanged. Backoff is exponential with full jitter, capped at `maxDelayMs`, and `Retry-After` takes precedence. The wait is abort-aware — cancelling the workflow (`ctx.signal`) stops the sleep and prevents any further attempt. No consumer changes; this is the shared mechanism connectors (BC/core/pipedrive) will adopt in follow-ups.
+
 ## 0.14.0
 
 ### Minor Changes
