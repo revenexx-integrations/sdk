@@ -1,5 +1,11 @@
 # @revenexx/integrations-node-sdk
 
+## 0.17.0
+
+### Minor Changes
+
+- d0f8625: Add optional `search` to `INodeAuthorContext` — the operator's type-to-search term for the option list being resolved. Set only for `loadOptions` calls; providers may use it server-side or to filter the returned options.
+
 ## 0.16.0
 
 ### Minor Changes
