@@ -213,6 +213,12 @@ export interface INodeAuthorContext {
   };
   /** Preferred locale for resolved labels, when the caller supplies one. */
   locale?: string;
+  /**
+   * The operator's type-to-search term for the option list being resolved.
+   * Only set for `loadOptions` calls. Providers may pass it to a server-side
+   * search endpoint or use it to filter the options they return.
+   */
+  search?: string;
 }
 
 export interface INode {
