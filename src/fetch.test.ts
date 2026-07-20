@@ -694,6 +694,41 @@ test('safeFetch throws TOO_MANY_REDIRECTS past MAX_REDIRECTS hops', () => {
   });
 });
 
+test('safeFetch rejects a redirect with an invalid Location header', () => {
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(302, 'http://'), // unparseable relative to the base
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    await assert.rejects(
+      () => safeFetch('https://93.184.216.34/start'),
+      (err: unknown) => err instanceof NodeError && err.code === 'BLOCKED_ADDRESS',
+    );
+    assert.equal(calls.length, 1, 'an invalid redirect target must never be fetched');
+  });
+});
+
+test('safeFetch releases the 3xx response socket on the TOO_MANY_REDIRECTS path', () => {
+  let cancelled = false;
+  const bodied = () =>
+    new Response(
+      new ReadableStream({
+        cancel() {
+          cancelled = true;
+        },
+      }),
+      { status: 302, headers: { location: 'https://93.184.216.34/loop' } },
+    );
+  const { fetch: mock } = scriptedFetch([bodied]);
+  return withFetch(mock, async () => {
+    await assert.rejects(
+      () => safeFetch('https://93.184.216.34/loop'),
+      (err: unknown) => err instanceof NodeError && err.code === 'TOO_MANY_REDIRECTS',
+    );
+    assert.equal(cancelled, true, 'the redirect body must be cancelled even on the error path');
+  });
+});
+
 test('safeFetch does not retry a blocked redirect target', () => {
   const { fetch: mock, calls } = scriptedFetch([redirect(302, 'http://127.0.0.1/')]);
   return withFetch(mock, async () => {

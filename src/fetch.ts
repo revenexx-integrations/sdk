@@ -131,12 +131,24 @@ async function guardedFetch(
     const location = res.headers.get('location');
     if (!REDIRECT_STATUSES.has(res.status) || !location) return res;
 
+    // We act on this redirect (follow or reject) and never read its 3xx body, so
+    // release the socket now — before any of the throw paths below — so a blocked
+    // target, redirect-budget overrun, invalid Location or downgrade all leave the
+    // connection released rather than occupied.
+    const redirectStatus = res.status;
+    await res.body?.cancel().catch(() => {});
+
     if (hop >= MAX_REDIRECTS) {
-      throw new NodeError('TOO_MANY_REDIRECTS', `Exceeded ${MAX_REDIRECTS} redirects`, { status: res.status });
+      throw new NodeError('TOO_MANY_REDIRECTS', `Exceeded ${MAX_REDIRECTS} redirects`, { status: redirectStatus });
     }
 
     const base = currentUrl instanceof URL ? currentUrl : new URL(currentUrl);
-    const nextUrl = new URL(location, base);
+    let nextUrl: URL;
+    try {
+      nextUrl = new URL(location, base);
+    } catch {
+      throw new NodeError('BLOCKED_ADDRESS', 'Blocked redirect with an invalid Location header', { status: 0 });
+    }
     // Refuse an https→http downgrade on redirect: a request that started over TLS
     // must not be bounced down to plaintext, which would expose it (and any
     // still-attached same-origin credentials) on the wire.
@@ -155,7 +167,7 @@ async function guardedFetch(
 
     // 303 always downgrades to GET; 301/302 downgrade a POST. On downgrade the
     // request body and its framing headers must be dropped.
-    if (res.status === 303 || ((res.status === 301 || res.status === 302) && method === 'POST')) {
+    if (redirectStatus === 303 || ((redirectStatus === 301 || redirectStatus === 302) && method === 'POST')) {
       method = 'GET';
       body = undefined;
       headers.delete('content-type');
@@ -170,8 +182,6 @@ async function guardedFetch(
       headers.delete('proxy-authorization');
     }
 
-    // Release the redirect response's socket before issuing the next hop.
-    await res.body?.cancel().catch(() => {});
     currentUrl = nextUrl;
     currentInit = { ...currentInit, method, body, headers, redirect: 'manual' };
   }
@@ -209,8 +219,12 @@ export async function safeFetch(
       lastError = err;
       if (attempt < maxAttempts) {
         await new Promise<void>((resolve) => {
-          const t = setTimeout(resolve, retryDelayMs);
-          ctxSignal?.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+          const onAbort = () => { clearTimeout(t); resolve(); };
+          // Remove the abort listener when the delay elapses normally, so many
+          // safeFetch calls sharing one long-lived ctx.signal don't accumulate
+          // listeners (which would leak and trip the max-listeners warning).
+          const t = setTimeout(() => { ctxSignal?.removeEventListener('abort', onAbort); resolve(); }, retryDelayMs);
+          ctxSignal?.addEventListener('abort', onAbort, { once: true });
         });
       }
     }
