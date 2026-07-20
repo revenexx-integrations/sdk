@@ -74,12 +74,41 @@ async function timedFetch(
 }
 
 /**
+ * Run the SSRF pre-flight resolve for one hop under the same per-hop budget as
+ * the request itself. `assertPublicUrl` may resolve DNS, and `dns.lookup` honours
+ * neither a timeout nor a signal; without this a hung/hostile resolver would block
+ * `safeFetch` past `timeoutMs` and ignore `ctxSignal`. We give the resolve its own
+ * timeout+cancellation signal so it is bounded exactly like the fetch that follows
+ * (note this means the resolve and the fetch each get up to `effectiveMs`, per hop).
+ * A resolve timeout surfaces as `TIMEOUT` (transient — safeFetch may retry it).
+ */
+async function guardUrl(
+  url: string | URL,
+  ctxSignal: AbortSignal | undefined,
+  effectiveMs: number,
+): Promise<void> {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), effectiveMs);
+  const signal = ctxSignal ? AbortSignal.any([ctxSignal, ac.signal]) : ac.signal;
+  try {
+    await assertPublicUrl(url, { signal });
+  } catch (err) {
+    if (ctxSignal?.aborted) throw ctxSignal.reason;
+    if (ac.signal.aborted) throw new NodeError('TIMEOUT', `DNS resolution timed out after ${effectiveMs}ms`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Perform one request while enforcing the SSRF guard. The initial URL and every
  * redirect target are checked with {@link assertPublicUrl}; redirects are
  * followed manually (`redirect: 'manual'`) so a 3xx `Location` pointing at a
  * private/loopback address is re-checked and rejected rather than transparently
- * followed by the runtime. `Authorization` is dropped on a cross-origin hop and
- * the request is downgraded to `GET` per the usual 301/302/303 rules.
+ * followed by the runtime. `Authorization`, `Cookie` and `Proxy-Authorization`
+ * are dropped on a cross-origin hop and the request is downgraded to `GET` per
+ * the usual 301/302/303 rules.
  */
 async function guardedFetch(
   url: string | URL,
@@ -94,7 +123,7 @@ async function guardedFetch(
   let currentUrl: string | URL = url;
   let currentInit: RequestInit = { ...fetchOptions, redirect: 'manual' };
 
-  await assertPublicUrl(currentUrl);
+  await guardUrl(currentUrl, ctxSignal, effectiveMs);
 
   for (let hop = 0; ; hop++) {
     const res = await timedFetch(currentUrl, currentInit, ctxSignal, effectiveMs);
@@ -108,10 +137,14 @@ async function guardedFetch(
 
     const base = currentUrl instanceof URL ? currentUrl : new URL(currentUrl);
     const nextUrl = new URL(location, base);
-    await assertPublicUrl(nextUrl);
+    await guardUrl(nextUrl, ctxSignal, effectiveMs);
 
     const headers = new Headers(currentInit.headers ?? undefined);
     let method = (currentInit.method ?? 'GET').toUpperCase();
+    // NOTE: 307/308 preserve the method and resend `body` as-is. A one-shot
+    // (ReadableStream) body is already consumed by the first hop and will fail
+    // here — pass a Buffer/string body if the target may 307/308. This mirrors
+    // native fetch's limitation.
     let body = currentInit.body;
 
     // 303 always downgrades to GET; 301/302 downgrade a POST. On downgrade the
@@ -122,8 +155,14 @@ async function guardedFetch(
       headers.delete('content-type');
       headers.delete('content-length');
     }
-    // Never leak credentials across an origin boundary on redirect.
-    if (nextUrl.origin !== base.origin) headers.delete('authorization');
+    // Never leak credentials across an origin boundary on redirect — drop every
+    // authentication-bearing header, matching what browsers/undici strip on a
+    // cross-origin redirect.
+    if (nextUrl.origin !== base.origin) {
+      headers.delete('authorization');
+      headers.delete('cookie');
+      headers.delete('proxy-authorization');
+    }
 
     // Release the redirect response's socket before issuing the next hop.
     await res.body?.cancel().catch(() => {});

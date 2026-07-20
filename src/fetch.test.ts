@@ -697,14 +697,42 @@ test('safeFetch downgrades POST to GET and drops the body on a 303 redirect', ()
   });
 });
 
-test('safeFetch strips Authorization on a cross-origin redirect', () => {
+test('safeFetch strips auth-bearing headers on a cross-origin redirect', () => {
   const { fetch: mock, calls } = scriptedFetch([
     redirect(302, 'https://93.184.216.35/next'),
     new Response(null, { status: 200 }),
   ]);
   return withFetch(mock, async () => {
-    await safeFetch('https://93.184.216.34/start', { headers: { authorization: 'Bearer secret' } });
+    await safeFetch('https://93.184.216.34/start', {
+      headers: {
+        authorization: 'Bearer secret',
+        cookie: 'session=abc',
+        'proxy-authorization': 'Basic xyz',
+      },
+    });
     assert.equal(calls[0]?.headers.get('authorization'), 'Bearer secret');
+    assert.equal(calls[0]?.headers.get('cookie'), 'session=abc');
+    assert.equal(calls[0]?.headers.get('proxy-authorization'), 'Basic xyz');
     assert.equal(calls[1]?.headers.get('authorization'), null, 'auth must not cross the origin boundary');
+    assert.equal(calls[1]?.headers.get('cookie'), null, 'cookie must not cross the origin boundary');
+    assert.equal(
+      calls[1]?.headers.get('proxy-authorization'),
+      null,
+      'proxy-authorization must not cross the origin boundary',
+    );
+  });
+});
+
+test('safeFetch preserves auth-bearing headers on a same-origin redirect', () => {
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(302, 'https://93.184.216.34/next'),
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    await safeFetch('https://93.184.216.34/start', {
+      headers: { authorization: 'Bearer secret', cookie: 'session=abc' },
+    });
+    assert.equal(calls[1]?.headers.get('authorization'), 'Bearer secret');
+    assert.equal(calls[1]?.headers.get('cookie'), 'session=abc');
   });
 });

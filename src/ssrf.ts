@@ -159,6 +159,33 @@ function blockedError(host: string, address: string): NodeError {
 }
 
 /**
+ * Run `lookup(host)` but stop waiting as soon as `signal` aborts, rejecting with
+ * the signal's abort reason. libuv's `getaddrinfo` (which `dns.lookup` uses) is
+ * not cancellable, so a hung or hostile DNS response cannot be interrupted at the
+ * syscall level — the losing `lookup()` promise stays pending in the background
+ * until the resolver eventually settles. This bounds only how long the *guard*
+ * waits, which is what lets the caller enforce a timeout / honour `ctx.signal`.
+ */
+async function resolveHost(lookup: LookupFn, host: string, signal?: AbortSignal): Promise<LookupAddress[]> {
+  if (!signal) return lookup(host);
+  if (signal.aborted) throw signal.reason;
+  return new Promise<LookupAddress[]>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    lookup(host).then(
+      (addresses) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(addresses);
+      },
+      (err) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(err);
+      },
+    );
+  });
+}
+
+/**
  * Assert that `url` is safe for a server-side fetch: an http(s) URL whose target
  * resolves only to public addresses. Rejects non-http(s) protocols, empty hosts
  * and `localhost`, checks literal-IP hosts directly, and otherwise resolves the
@@ -168,13 +195,19 @@ function blockedError(host: string, address: string): NodeError {
  *
  * Best-effort by design: Node re-resolves the hostname when it actually connects,
  * so a DNS-rebinding race (TOCTOU) remains. See the SDK README.
+ *
+ * Pass `signal` (the per-request timeout/cancellation budget) so a hung or
+ * hostile DNS resolve cannot block the guard past that budget — see
+ * {@link resolveHost}.
  */
-export async function assertPublicUrl(url: string | URL, opts: { lookup?: LookupFn } = {}): Promise<void> {
-  // Local-development opt-out: skip the whole check when explicitly enabled.
-  if (guardRelaxedForLocalDev()) return;
-
+export async function assertPublicUrl(
+  url: string | URL,
+  opts: { lookup?: LookupFn; signal?: AbortSignal } = {},
+): Promise<void> {
   const u = url instanceof URL ? url : new URL(url);
 
+  // The protocol allowlist is a correctness invariant independent of the
+  // private-range relaxation, so it is enforced even under the dev opt-out.
   if (u.protocol !== 'http:' && u.protocol !== 'https:') {
     throw new NodeError('BLOCKED_ADDRESS', `Blocked non-HTTP(S) URL protocol: ${u.protocol}`, { status: 0 });
   }
@@ -183,6 +216,10 @@ export async function assertPublicUrl(url: string | URL, opts: { lookup?: Lookup
   const rawHost = u.hostname;
   const host = rawHost.startsWith('[') && rawHost.endsWith(']') ? rawHost.slice(1, -1) : rawHost;
   if (!host) throw new NodeError('BLOCKED_ADDRESS', 'Blocked URL with empty host', { status: 0 });
+
+  // Local-development opt-out: relax only the private-range / loopback checks
+  // (the protocol allowlist and empty-host check above still apply).
+  if (guardRelaxedForLocalDev()) return;
 
   const lower = host.toLowerCase();
   if (lower === 'localhost' || lower.endsWith('.localhost')) {
@@ -196,7 +233,7 @@ export async function assertPublicUrl(url: string | URL, opts: { lookup?: Lookup
   }
 
   const lookup = opts.lookup ?? ssrfResolver.lookup;
-  const addresses = await lookup(host);
+  const addresses = await resolveHost(lookup, host, opts.signal);
   if (!addresses || addresses.length === 0) {
     throw new NodeError('BLOCKED_ADDRESS', `Could not resolve host: ${host}`, { status: 0 });
   }

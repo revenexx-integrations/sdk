@@ -162,6 +162,46 @@ test('RVNXX_SSRF_ALLOW_PRIVATE=1 relaxes the guard for local development', () =>
     await assertPublicUrl('https://intranet.example/', { lookup: lookup('10.0.0.5') });
   }));
 
+test('RVNXX_SSRF_ALLOW_PRIVATE still enforces the http(s)-only protocol allowlist', () =>
+  withEnv('1', async () => {
+    // The dev opt-out relaxes only the private-range checks; a non-http(s)
+    // protocol is a correctness invariant that stays rejected even when set.
+    await assertBlocked(() => assertPublicUrl('file:///etc/passwd'));
+    await assertBlocked(() => assertPublicUrl('ftp://127.0.0.1/x'));
+  }));
+
+test('assertPublicUrl aborts the DNS resolve when its signal fires', async () => {
+  const ac = new AbortController();
+  // A resolver that never settles — only the signal can end the wait.
+  const hangingLookup: (host: string) => Promise<LookupAddress[]> = () => new Promise(() => {});
+  setTimeout(() => ac.abort(new Error('resolve budget exceeded')), 10);
+  await assert.rejects(
+    () => assertPublicUrl('https://slow.example/', { lookup: hangingLookup, signal: ac.signal }),
+    (err: unknown) => {
+      assert.equal((err as Error).message, 'resolve budget exceeded');
+      return true;
+    },
+  );
+});
+
+test('assertPublicUrl rejects immediately when its signal is already aborted', async () => {
+  const ac = new AbortController();
+  ac.abort(new Error('already gone'));
+  let resolved = false;
+  const spyLookup: (host: string) => Promise<LookupAddress[]> = async () => {
+    resolved = true;
+    return [{ address: '93.184.216.34', family: 4 }];
+  };
+  await assert.rejects(
+    () => assertPublicUrl('https://slow.example/', { lookup: spyLookup, signal: ac.signal }),
+    (err: unknown) => {
+      assert.equal((err as Error).message, 'already gone');
+      return true;
+    },
+  );
+  assert.equal(resolved, false, 'an already-aborted signal must short-circuit before DNS');
+});
+
 test('the guard is restored once RVNXX_SSRF_ALLOW_PRIVATE is unset', () =>
   withEnv(undefined, async () => {
     await assertBlocked(() => assertPublicUrl('http://127.0.0.1:3000/'));
