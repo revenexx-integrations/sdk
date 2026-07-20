@@ -107,8 +107,8 @@ async function guardUrl(
  * followed manually (`redirect: 'manual'`) so a 3xx `Location` pointing at a
  * private/loopback address is re-checked and rejected rather than transparently
  * followed by the runtime. `Authorization`, `Cookie` and `Proxy-Authorization`
- * are dropped on a cross-origin hop and the request is downgraded to `GET` per
- * the usual 301/302/303 rules.
+ * are dropped on a cross-origin hop, an `https`→`http` downgrade is refused, and
+ * the request is downgraded to `GET` per the usual 301/302/303 rules.
  */
 async function guardedFetch(
   url: string | URL,
@@ -137,6 +137,12 @@ async function guardedFetch(
 
     const base = currentUrl instanceof URL ? currentUrl : new URL(currentUrl);
     const nextUrl = new URL(location, base);
+    // Refuse an https→http downgrade on redirect: a request that started over TLS
+    // must not be bounced down to plaintext, which would expose it (and any
+    // still-attached same-origin credentials) on the wire.
+    if (base.protocol === 'https:' && nextUrl.protocol !== 'https:') {
+      throw new NodeError('BLOCKED_ADDRESS', 'Blocked https→http downgrade on redirect', { status: 0 });
+    }
     await guardUrl(nextUrl, ctxSignal, effectiveMs);
 
     const headers = new Headers(currentInit.headers ?? undefined);

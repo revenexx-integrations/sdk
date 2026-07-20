@@ -124,6 +124,29 @@ test('assertPublicUrl rejects when any resolved address is private', async () =>
   await assertBlocked(() => assertPublicUrl('https://mixed.example/', { lookup: lookup('93.184.216.34', '10.0.0.5') }));
 });
 
+test('assertPublicUrl does not leak the resolved private IP in the error surfaced to the caller', async () => {
+  await assert.rejects(
+    () => assertPublicUrl('https://internal.example/', { lookup: lookup('10.0.0.5') }),
+    (err: unknown) => {
+      assert.ok(err instanceof NodeError && err.code === 'BLOCKED_ADDRESS');
+      assert.ok(!err.message.includes('10.0.0.5'), 'the resolved private IP must not appear in the surfaced error');
+      assert.ok(err.message.includes('internal.example'), 'the host (already known to the caller) may appear');
+      return true;
+    },
+  );
+});
+
+test('assertPublicUrl still reports a blocked literal-IP host in the error (no leak)', async () => {
+  await assert.rejects(
+    () => assertPublicUrl('http://10.0.0.5/'),
+    (err: unknown) => {
+      assert.ok(err instanceof NodeError && err.code === 'BLOCKED_ADDRESS');
+      assert.ok(err.message.includes('10.0.0.5'), 'a caller-supplied literal IP is not secret and may be echoed');
+      return true;
+    },
+  );
+});
+
 test('assertPublicUrl allows a host that resolves only to public addresses', async () => {
   await assertPublicUrl('https://api.example/', { lookup: lookup('93.184.216.34', '2001:4860:4860::8888') });
 });

@@ -154,8 +154,21 @@ function guardRelaxedForLocalDev(): boolean {
 }
 
 function blockedError(host: string, address: string): NodeError {
-  const detail = host === address ? address : `${address} (host: ${host})`;
-  return new NodeError('BLOCKED_ADDRESS', `Blocked request to private or reserved address ${detail}`, { status: 0 });
+  if (host === address) {
+    // Literal-IP host: the caller already supplied this address, so echoing it
+    // back to them leaks nothing.
+    return new NodeError('BLOCKED_ADDRESS', `Blocked request to private or reserved address ${address}`, {
+      status: 0,
+    });
+  }
+  // A hostname that *resolved* to a private/reserved IP. Returning the resolved IP
+  // to the (untrusted) caller would hand them an internal DNS→IP mapping — a
+  // recon primitive — so keep the address in the server log only and surface just
+  // the host (which the caller already knows) in the error.
+  console.warn(`[ssrf] blocked request to ${host}: resolves to private/reserved address ${address}`);
+  return new NodeError('BLOCKED_ADDRESS', `Blocked request to ${host}: resolves to a private or reserved address`, {
+    status: 0,
+  });
 }
 
 /**

@@ -640,6 +640,32 @@ test('safeFetch rejects a redirect to a private target (redirect-bypass guard)',
   });
 });
 
+test('safeFetch rejects an https→http downgrade on redirect', () => {
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(302, 'http://93.184.216.35/next'),
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    await assert.rejects(
+      () => safeFetch('https://93.184.216.34/start'),
+      (err: unknown) => err instanceof NodeError && err.code === 'BLOCKED_ADDRESS',
+    );
+    assert.equal(calls.length, 1, 'the downgraded target must never be fetched');
+  });
+});
+
+test('safeFetch allows an http→https upgrade on redirect', () => {
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(302, 'https://93.184.216.35/next'),
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    const res = await safeFetch('http://93.184.216.34/start');
+    assert.equal(res.status, 200);
+    assert.equal(calls.length, 2);
+  });
+});
+
 test('safeFetch follows a public redirect and returns the final response', () => {
   const { fetch: mock, calls } = scriptedFetch([
     redirect(302, 'https://93.184.216.35/next'),
