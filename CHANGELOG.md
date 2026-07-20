@@ -1,5 +1,21 @@
 # @revenexx/integrations-node-sdk
 
+## 0.17.0
+
+### Minor Changes
+
+- d0f8625: Add optional `search` to `INodeAuthorContext` — the operator's type-to-search term for the option list being resolved. Set only for `loadOptions` calls; providers may use it server-side or to filter the returned options.
+
+## 0.16.0
+
+### Minor Changes
+
+- 1edd7b3: Add optional `groups` to `INodeDescription`: a curated node-picker group path
+  (localized labels, outermost first, max 4 levels), e.g.
+  `[{ en: "Business Central" }, { en: "Sales Orders" }]`. The manifest CLI
+  carries it verbatim; pickers without it keep deriving groups from the package
+  and category.
+
 ## 0.15.0
 
 ### Minor Changes
