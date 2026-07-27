@@ -59,8 +59,22 @@ Static metadata about the node. Read at registry build time — never at runtime
 | `description` | `LocalizedString?` | Optional longer description |
 | `icon` | `string?` | Icon identifier, e.g. `mdi:cloud-download` |
 | `inputs` | `Record<string, IInputPort>` | Named input ports. Single-input nodes use the conventional key `'in'` |
-| `outputs` | `IOutputPort[]` | One or more output ports |
+| `outputs` | `IOutputPort[]` | Output ports. Empty `[]` marks a terminal node — see below |
 | `config` | `IConfigField[]?` | User-configurable fields |
+
+**Terminal nodes.** `outputs` may be an empty array. That marks the node as a
+dead end: the path ends there and the save-layer validation rejects any edge
+leaving it. It is the mirror image of `inputs: {}` on a trigger node.
+
+```ts
+// A node that always fails the run — no success path to wire.
+outputs: []
+```
+
+Do not confuse this with an **error port** (`kind: 'error'`): that is a
+*reachable* path the engine flows into without aborting the run. A terminal
+node has no path at all. A declared port that can never fire is a dead port
+and confuses workflow authors.
 
 ---
 
@@ -253,6 +267,9 @@ await safeFetch(url, {
 | `label` | `LocalizedString?` | Display label |
 | `sourceFromConfig` | `string?` | Dynamically names the port from a config field value |
 | `fallback` | `object?` | Fallback name/label when `sourceFromConfig` resolves to nothing |
+
+Note the difference from a node that declares **no** ports at all — that is a
+property of [`INodeDescription.outputs`](#inodedescription), not of a port.
 
 ---
 
