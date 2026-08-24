@@ -146,6 +146,14 @@ export interface INodeDescription {
   /** Associated images (screenshots, logos, banners) shipped with the package. */
   images?: IImage[];
   inputs: Record<string, IInputPort>;
+  /**
+   * Output ports the workflow editor wires to downstream nodes. An empty array
+   * marks a **terminal node**: the path ends here and no edge may leave it —
+   * the mirror image of `inputs: {}` on a trigger. `StopAndErrorNode` is the
+   * canonical case; it always throws, so there is no success path to wire, and
+   * a port that can never fire would leave a dead handle on the canvas. The
+   * key stays required so terminality is declared, not forgotten.
+   */
   outputs: IOutputPort[];
   config?: IConfigField[];
 }

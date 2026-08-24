@@ -1,5 +1,37 @@
 # @revenexx/integrations-node-sdk
 
+## 0.18.1
+
+### Patch Changes
+
+- d80e235: Document that `INodeDescription.outputs` may be an empty array (PO-201). An
+  empty array marks a **terminal node**: the path ends there and no edge may
+  leave it — the mirror image of `inputs: {}` on a trigger. The canonical case is
+  `StopAndErrorNode`, which always throws and therefore has no success path to
+  wire; before this it declared a dummy port labelled "Never" purely to satisfy
+  the manifest schema, which left a dead handle on the editor canvas.
+
+  No type change: `outputs: IOutputPort[]` stays required and already accepted
+  `[]`. The actual constraint lived in the Integrations node-manifest schema
+  (`minItems: 1`), which has been relaxed on the server side; publishing a node
+  with `outputs: []` requires that change to be deployed first.
+
+## 0.18.0
+
+### Minor Changes
+
+- 26a52ef: Add an always-on SSRF guard to `safeFetch`. Requests to private, loopback,
+  link-local or reserved targets (incl. the cloud metadata address) are now
+  rejected with `NodeError('BLOCKED_ADDRESS')`, and redirects are followed
+  manually with the guard re-checked on every hop (`NodeError('TOO_MANY_REDIRECTS')`
+  past 5 hops). On a cross-origin hop the `Authorization`, `Cookie` and
+  `Proxy-Authorization` headers are dropped, and an `https`→`http` downgrade is
+  refused. A hostname that resolves to a private address no longer echoes the
+  resolved IP back to the caller. Exports the new `assertPublicUrl` and
+  `isBlockedAddress` helpers (the guard is always on and not caller-opt-outable —
+  there is no public resolver override). Best-effort: a DNS-rebinding (TOCTOU) gap
+  remains — see the README.
+
 ## 0.17.0
 
 ### Minor Changes

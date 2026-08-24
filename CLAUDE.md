@@ -49,6 +49,7 @@ The SDK also ships its own unit tests: `src/credentials.test.ts`, `src/localized
 
 **Key design constraints:**
 - `IOutputPort.kind` (`'default' | 'branch' | 'error'`) controls routing in the workflow engine; `sourceFromConfig` lets the node dynamically name an output from a config field value.
+- `INodeDescription.outputs` may be an empty array (PO-201): that marks a **terminal node** (dead end — no edge may leave it), the mirror image of `inputs: {}` on a trigger. Only for nodes with genuinely no continuation, e.g. `StopAndErrorNode`, which always throws. Never declare a port that can never fire just to fill the field.
 - `IConfigField.type` `'secret-ref'` means the field value is a key resolved at runtime via `INodeContext.secrets.get()`.
 - `LocalizedString` is `string | Record<string, string>` — all user-visible text fields accept either a plain string or a locale map.
 - `INodeContext.signal` is always provided by the engine; nodes must propagate it to all I/O.
