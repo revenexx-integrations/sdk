@@ -29,7 +29,8 @@ enables the **linter only**. Three things about it are load-bearing:
   `guardedFetch` *after* the guard has run) and is excepted via `overrides`.
   Adding a second exception means adding a second way to bypass the guard.
 - **The formatter is deliberately disabled.** Biome disagrees with this repo's
-  hand-wrapped source in 13 of 22 files at *any* `lineWidth` — unlike its sibling
+  hand-wrapped source in 13 to 17 of 22 files depending on `lineWidth` (13 at its
+  narrowest useful setting, 17 at the siblings' 200) — unlike its sibling
   node packages, the SDK was never biome-formatted. Turning it on is a repo-wide
   reformat: fine as its own commit, never as a passenger on another change. The
   sibling packages' `indentStyle`/`lineWidth` values stay in the file for whoever

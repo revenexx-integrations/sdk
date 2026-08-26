@@ -260,7 +260,10 @@ file exists here yet.
 
 ## The baseline
 
-Measured 2026-08-26 against this branch:
+Measured 2026-08-26 by this branch's own `Scan` run
+([32938621945](https://github.com/revenexx-integrations/sdk/actions/runs/32938621945)),
+i.e. on the pull request's merge commit — not copied from the sibling packages,
+whose numbers are not this repository's:
 
 | Layer | Result |
 | --- | --- |
@@ -271,10 +274,11 @@ Three package-versions for **two** names: `js-yaml` appears at both 3.14.2 and
 4.2.0.
 
 The secrets row deliberately carries no commit count. It would be the one number
-here that moves with every commit to this repository, and it is not a finding — it
-is proof that the scan was not a no-op. The step now proves that itself, by
-failing on `0 commits scanned`. The dependency numbers stay exact, because there
-the count *is* the finding and *is* what has to reach zero.
+here that moves with every commit to this repository — it read 75 locally and 79
+in the run above, on the same day — and it is not a finding: it is proof that the
+scan was not a no-op. The step now proves that itself, by failing on `0 commits
+scanned`. The dependency numbers stay exact, because there the count *is* the
+finding and *is* what has to reach zero.
 
 **Every finding is a devDependency, and here that is true by construction rather
 than by inspection.** `package.json` has no `dependencies` key at all —
