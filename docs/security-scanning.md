@@ -30,15 +30,22 @@ Triggers: every **pull request**, every **push to `main`**, **weekly** (Mondays
 its weight — advisories are published against code that has not changed, so a
 scan that only fired on a lockfile change would never see them.
 
-The `push` trigger looks redundant next to `pull_request`, and the reason it is
-not differs from the sibling repos'. Theirs is that a direct push to `main` is
-possible because their rulesets are not live. Here the rulesets **are** live (see
-[branch-protection.md](branch-protection.md)) and `main.json` has no bypass
-actors, so nothing pushes to `main` directly. What does happen is that
-`main.json` permits **squash and rebase only** — so the commit that lands on
-`main` is not the ephemeral merge commit the `pull_request` run scanned, and
-carries a patch set gitleaks has never seen. This trigger scans the history
-`main` actually has.
+The `push` trigger looks redundant next to `pull_request`, and here it largely
+**is** — which is the opposite of the sibling repos, where it is load-bearing.
+They are private with rulesets that are not live, so a direct push to `main` is
+possible and never reaches `pull_request`. This repo is public, its four rulesets
+are `enforcement: active`, and `main.json` has no bypass actors, so every commit
+on `main` arrives through a pull request that was already scanned.
+
+It is kept for two honest reasons and not a third. It guards against the
+*configuration* changing — a bypass actor added, a ruleset relaxed — rather than
+against a code path; and it keeps this workflow byte-identical to the sibling
+repos' copies, which is worth more than the one extra run per merge. What it does
+**not** do is catch a secret the `pull_request` run missed: squash merge puts a
+new commit on `main`, but the lines it adds are the lines already scanned on the
+branch. If anything the pull-request run sees *more*, because an intermediate
+branch commit that added a secret and removed it again never reaches `main` at
+all.
 
 The job name is `Scan`. It is **not** in the required-status-check list of
 [`.github/rulesets/main.json`](../.github/rulesets/main.json) — that list is
@@ -134,7 +141,7 @@ gets an empty directory. gitleaks walks it to the end and says so, cheerfully:
 
 ```console
 $ docker run --rm -v "$EMPTY:/repo:ro" ghcr.io/gitleaks/gitleaks@sha256:cdbb7c95… detect --source=/repo --redact --no-banner --no-color -v --exit-code=0
-… ERR [git] fatal: not a git repository (or any parent up to mount point /)
+… ERR error="stderr is not empty"
 … INF 0 commits scanned.
 … INF no leaks found
 $ echo $?

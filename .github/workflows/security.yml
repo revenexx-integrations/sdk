@@ -22,12 +22,19 @@ name: Security Scan
 
 on:
   pull_request:
-  # Not a duplicate of pull_request. This repo is public, so the rulesets in
-  # docs/branch-protection.md are live and a direct push to main is already
-  # impossible — but main.json allows squash and rebase only, so the commit that
-  # lands on main is a *different* commit from the ephemeral merge commit the
-  # pull_request run scanned, with a different patch set. This trigger is what
-  # scans the history main actually has.
+  # In the three sibling repos this trigger is load-bearing: they are private
+  # with rulesets that are not live, so a direct push to main is possible and
+  # never reaches pull_request. Here it is not — this repo is public, its four
+  # rulesets are active, and main.json has no bypass actors, so every commit on
+  # main arrives through a pull request that was already scanned.
+  #
+  # It is kept anyway, and deliberately not dressed up as more than it is: it
+  # guards against the *configuration* changing (a bypass actor added, a ruleset
+  # relaxed) rather than against a code path, and it keeps this file identical to
+  # the sibling repos' copies, which is worth more than the one run per merge it
+  # costs. What it does not do is catch a secret the pull_request run missed —
+  # squash puts a new commit on main, but its added lines are the ones already
+  # scanned on the branch.
   push:
     branches: [main]
   schedule:
