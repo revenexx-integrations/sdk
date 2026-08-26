@@ -7,6 +7,8 @@ import {
   OAuth2ClientCredentialsCredential,
   SimpleValueCredential,
 } from './credentials.js';
+import { NodeError } from './errors.js';
+import { ssrfResolver } from './ssrf.js';
 import type { ICredentialContext, ICredentialDescription, ICredentialField } from './types.js';
 
 type Config = Record<string, unknown>;
@@ -23,12 +25,24 @@ function describe(slug: string, authKind: ICredentialDescription['authKind'], fi
   return { slug, version: '1.0.0', name: slug, authKind, fields };
 }
 
-/** Stub a JSON token response and restore `fetch` after the test. */
+/**
+ * Stub a JSON token response and restore `fetch` after the test.
+ *
+ * `postForm` goes through `safeFetch` (PO-185), so the SSRF guard runs ahead of
+ * the request and would try to resolve the `*.example` token hosts below. That
+ * TLD is reserved and never resolves, so the guard — not the assertion under
+ * test — would decide every one of these tests. `ssrfResolver.lookup` is
+ * injectable for exactly this: point it at a public address so the guard passes
+ * on its own terms rather than being bypassed. The guard itself always runs.
+ */
 function stubFetch(t: TestContext, body: Record<string, unknown>, status = 200): void {
-  const original = globalThis.fetch;
+  const originalFetch = globalThis.fetch;
+  const originalLookup = ssrfResolver.lookup;
   globalThis.fetch = async () => new Response(JSON.stringify(body), { status });
+  ssrfResolver.lookup = async () => [{ address: '93.184.216.34', family: 4 }];
   t.after(() => {
-    globalThis.fetch = original;
+    globalThis.fetch = originalFetch;
+    ssrfResolver.lookup = originalLookup;
   });
 }
 
@@ -123,6 +137,37 @@ test('OAuth2ClientCredentialsCredential.test returns ok on a successful mint', a
   const result = await new BusinessCentralCredential().test(ctx(), { clientId: 'id', clientSecret: 'sec' });
 
   assert.equal(result.ok, true);
+});
+
+// PO-185: `postForm` used a raw `fetch`, so the SSRF guard never saw the token
+// endpoint — and that endpoint comes from credential config, not from a
+// constant. This asserts the guard now runs *before* the request: no fetch may
+// be attempted at all when the host resolves somewhere private. The assertion is
+// the call count, not just the rejection — a guard that blocks after the secret
+// is already on the wire is no guard.
+test('postForm refuses a token endpoint that resolves to a private address', async (t) => {
+  let calls = 0;
+  const originalFetch = globalThis.fetch;
+  const originalLookup = ssrfResolver.lookup;
+  globalThis.fetch = async () => {
+    calls++;
+    return new Response('{}', { status: 200 });
+  };
+  ssrfResolver.lookup = async () => [{ address: '169.254.169.254', family: 4 }];
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    ssrfResolver.lookup = originalLookup;
+  });
+
+  await assert.rejects(
+    () => new BusinessCentralCredential().resolve(ctx(), { clientId: 'id', clientSecret: 'sec' }, null),
+    (err: unknown) => {
+      assert.ok(err instanceof NodeError, 'expected a NodeError');
+      assert.equal(err.code, 'BLOCKED_ADDRESS');
+      return true;
+    },
+  );
+  assert.equal(calls, 0, 'the client secret must never reach the wire');
 });
 
 // ----------------------------------------------------- OAuth2 auth-code
