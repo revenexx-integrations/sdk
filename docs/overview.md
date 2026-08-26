@@ -128,12 +128,76 @@ interface INodeContext {
   credentials: {
     get(credentialsId: string): Promise<Record<string, unknown>>;
   };
+  state: INodeState;
 }
 ```
 
 - `signal` — provided by the engine whenever a workflow run is cancelled or times out. Nodes MUST propagate it to any I/O they perform (`fetch`, database queries, `setTimeout`-based loops). Check `signal.aborted` at the start of long operations and throw an `AbortError` or simply let the downstream I/O reject. For HTTP requests, use the [`safeFetch` helper](#safefetch) instead of calling `fetch` directly.
 - `secrets.get(key)` resolves an **opaque** secret string by the key stored in a `secret-ref` config field.
 - `credentials.get(credentialsId)` resolves the **structured** access data of a credential instance referenced by a `credentials-ref` config field (e.g. `{ host, port, user, password }` or `{ accessToken }`). The runtime fulfils it from the credentials broker; for token-based types it always returns a currently-valid token, so call it at execution time rather than caching the result.
+- `state` is what the workflow already knows from earlier runs — see [`INodeState`](#inodestate) below.
+
+---
+
+### `INodeState`
+
+Without it a node is amnesiac: every run starts from nothing and has to
+re-derive what happened last time from the target system, or write its
+bookkeeping back into somebody else's data model. The store gives a workflow
+four things it can remember, and the role of a namespace decides **when a write
+becomes visible** — which is why these are four operations and not one
+`get`/`set`.
+
+```ts
+// Create or update? The question every ERP/PIM sync opens with.
+const known = await ctx.state.mapping.get('article', `pim:${id}`);
+
+if (known === null) {
+  const erpId = await createInErp(payload);
+  await ctx.state.mapping.put('article', `pim:${id}`, `erp:${erpId}`);
+} else {
+  await updateInErp(known, payload);
+}
+```
+
+```ts
+// Incremental sync: read from the watermark, advance it at the end.
+const since = await ctx.state.cursor.get('crm.customers');
+const page = await crm.customers({ updatedAfter: since?.updatedAfter });
+await ctx.state.cursor.set('crm.customers', { updatedAfter: page.maxUpdatedAt });
+```
+
+```ts
+// At-least-once delivery: the second copy of this event stops here.
+if (!(await ctx.state.claim('orders', event.id, { ttlSeconds: 604800 }))) {
+  return { outputs: {}, branch: 'duplicate' };
+}
+```
+
+```ts
+// 40 000 articles, 300 of them actually changed.
+if (await ctx.state.digest.unchanged('article.hash', `article:${id}`, hash)) {
+  return { outputs: { skipped: true } };
+}
+await writeToErp(payload);
+await ctx.state.digest.set('article.hash', `article:${id}`, hash);
+```
+
+| Operation | Visible | Why |
+|-----------|---------|-----|
+| `mapping.put` | immediately | If the run creates the record and *then* fails, a discarded correlation makes the next run create it twice |
+| `claim` | immediately, to every run | A claim invisible to parallel runs protects against nothing |
+| `cursor.set` | when the run completes | A watermark that advances on a failed run leaves exactly the gap it exists to prevent |
+| `digest.set` | when the run completes | A hash may only count once the write it describes went through |
+
+Two rules worth knowing before you reach for it:
+
+- **Namespaces must be declared.** A workflow lists what it may touch in its
+  `state[]` block (name, role, and `private` — the default — or `shared`). An
+  undeclared namespace is not merely undocumented; the engine refuses it.
+- **Author time is read-only.** Testing a node in the editor is a rehearsal, so
+  the write calls reject there: a correlation created by a test click would be
+  indistinguishable from one a production run made.
 
 ---
 

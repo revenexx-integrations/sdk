@@ -178,6 +178,84 @@ export interface INodeContext {
   credentials: {
     get(credentialsId: string): Promise<Record<string, unknown>>;
   };
+  /**
+   * The tenant state store: what this workflow already knows from earlier runs
+   * (PO-374). Every call names a namespace the workflow declared in its
+   * `state[]` block; anything else is refused by the engine, so a node cannot
+   * reach state its workflow did not ask for.
+   */
+  state: INodeState;
+}
+
+/**
+ * The four things a workflow can remember between runs, and the reason each is
+ * its own operation rather than a generic get/set: the role decides *when* a
+ * write becomes visible, and that decision is the engine's to make, not the
+ * node author's.
+ *
+ * - **mapping** and **claim** take effect immediately. A correlation discarded
+ *   because the run failed afterwards is how the next run creates a duplicate
+ *   in the target system; a claim invisible to other runs protects against
+ *   nothing.
+ * - **cursor** and **digest** are staged and adopted only when the run
+ *   completes. A watermark that advances on a failed run leaves exactly the gap
+ *   it exists to prevent, and a digest may only count once the write it
+ *   describes actually went through.
+ *
+ * At author time — the editor's "test this node" button — the store is
+ * **read-only**: a rehearsal must not leave correlations behind that a later
+ * production run would treat as truth. The write calls reject there.
+ */
+export interface INodeState {
+  /** Correlate an id on each side of an integration (PIM article ↔ ERP number). */
+  mapping: {
+    /**
+     * The partner id of a correlation, or `null` when it is unknown — which is
+     * the usual way to decide between creating and updating in the target
+     * system.
+     */
+    get(namespace: string, key: string, side?: 'left' | 'right'): Promise<string | null>;
+    /**
+     * Record a correlation. Takes effect immediately, and re-pointing one side
+     * of an existing pair is refused: an id correlated two ways is always a bug,
+     * and no later sync can untangle it.
+     */
+    put(
+      namespace: string,
+      left: string,
+      right: string,
+      metadata?: Record<string, unknown>,
+    ): Promise<void>;
+  };
+  /** How far an incremental sync has read. */
+  cursor: {
+    /**
+     * The committed watermark — an arbitrary JSON value such as
+     * `{ updatedAfter }` or a provider page token — or `undefined` when the
+     * sync has never run. A value staged by *this* run is not visible yet.
+     */
+    get(namespace: string, partitionKey?: string): Promise<unknown>;
+    /**
+     * Stage a watermark. Adopted only if the run completes, so a failed run
+     * leaves the previous value in place and the next run picks the gap up.
+     * `partitionKey` separates e.g. one shop or company code from another.
+     */
+    set(namespace: string, value: unknown, partitionKey?: string): Promise<void>;
+  };
+  /**
+   * Claim a key for the duration of its TTL. `true` means this run got it;
+   * `false` means somebody else holds it and this delivery is a duplicate —
+   * the normal answer under at-least-once delivery, and a value to branch on
+   * rather than an error.
+   */
+  claim(namespace: string, key: string, opts?: { ttlSeconds?: number }): Promise<boolean>;
+  /** Skip expensive writes for entities that have not changed. */
+  digest: {
+    /** Whether the entity still carries this hash — i.e. the write can be skipped. */
+    unchanged(namespace: string, entityKey: string, digest: string): Promise<boolean>;
+    /** Stage a hash; adopted only if the run completes. Call it *after* the write. */
+    set(namespace: string, entityKey: string, digest: string): Promise<void>;
+  };
 }
 
 export interface INodeResult {
