@@ -14,6 +14,9 @@ export type ConfigType =
   | 'expression'
   | 'secret-ref'
   | 'credentials-ref'
+  // Names one of the workflow's declared state namespaces (PO-374). The value
+  // is the namespace NAME, which the node passes to `ctx.state.*`.
+  | 'state-ref'
   // A marker field: the flat set of fields that replaces it is resolved at
   // author time by the node's `resolveConfigSchema` callback (PO-143).
   | 'dynamic-schema';
@@ -123,6 +126,19 @@ export interface IConfigFieldBase {
    * a node that works with both an OAuth and an API-token credential).
    */
   credentialType?: string | string[];
+  /**
+   * Only meaningful when `type === 'state-ref'`: which kind of state namespace
+   * this field accepts (PO-374). The editor lists the workflow's declared
+   * namespaces of that role — and lets the author declare a new one without
+   * leaving the node — and the blob stores the chosen NAME.
+   *
+   * Declare the field rather than hardcoding a namespace name in `execute`: a
+   * literal is a contract nothing checks, and the mismatch surfaces as a 403 in
+   * the first production run rather than as an empty picker while authoring. It
+   * also narrows what the node may reach — a namespace is reachable only from
+   * the node whose config names it.
+   */
+  stateRole?: 'mapping' | 'cursor' | 'dedupe' | 'digest';
 }
 
 export interface IConfigField extends IConfigFieldBase {

@@ -15,5 +15,10 @@ The role of a namespace decides when a write becomes visible — mappings and
 claims immediately, cursors and digests only once the run completes — so these
 are four operations rather than a generic get/set.
 
+Nodes name a namespace through a new `state-ref` config field type (with
+`stateRole` narrowing it to one of the four roles), not through a literal in
+`execute`: the editor gives the author a picker, and the engine only lets a node
+reach the namespaces its own config names.
+
 Additive for node authors. Anything that *implements* `INodeContext` (test
 helpers, mock contexts) must now supply `state`.

@@ -148,9 +148,23 @@ four things it can remember, and the role of a namespace decides **when a write
 becomes visible** — which is why these are four operations and not one
 `get`/`set`.
 
+Name the namespace through a `state-ref` config field rather than hardcoding it:
+
+```ts
+config: [
+  { key: 'articleMap', label: 'Article mapping', type: 'state-ref', stateRole: 'mapping' },
+]
+```
+
+A literal would be a contract nothing checks — the author has to type the same
+word into the workflow's State dialog, and the mismatch shows up as a 403 in the
+first production run. The field gives them a picker instead, and narrows what the
+node may reach: a namespace is reachable only from the node whose config names
+it.
+
 ```ts
 // Create or update? The question every ERP/PIM sync opens with.
-const known = await ctx.state.mapping.get('article', `pim:${id}`);
+const known = await ctx.state.mapping.get(inputs.articleMap as string, `pim:${id}`);
 
 if (known === null) {
   const erpId = await createInErp(payload);
@@ -353,6 +367,7 @@ Describes a user-configurable input on the node. Rendered as a form field in the
 | `expression` | Expression editor |
 | `secret-ref` | Secret-key picker — value is an opaque tenant secret key, resolved via `ctx.secrets.get()` at runtime |
 | `credentials-ref` | Credential picker filtered by `credentialType` — value is a credential instance id, resolved via `ctx.credentials.get()` at runtime |
+| `state-ref` | State-namespace picker filtered by `stateRole` — value is the namespace NAME, passed to `ctx.state.*` at runtime |
 
 ---
 
