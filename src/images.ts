@@ -78,5 +78,5 @@ function isSafeRelativePath(src: string): boolean {
   }
   const normalized = normalize(src);
 
-  return normalized !== '..' && !normalized.startsWith('..'+sep);
+  return normalized !== '..' && !normalized.startsWith(`..${sep}`);
 }

@@ -8,11 +8,44 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run build      # compile to dist/ (ESM + CJS + .d.ts) via tsup
 npm run dev        # tsup watch mode
 npm test           # node --test via tsx over src/**/*.test.ts
+npm run lint       # biome check src (linter only — see below)
 npm run typecheck  # tsc --noEmit
 ```
 
-There is no lint script (biome is not configured for the SDK). The SDK does
-ship unit tests (`src/*.test.ts`) — run them with `npm test`.
+The SDK ships unit tests (`src/*.test.ts`) — run them with `npm test`. `lint`,
+`typecheck`, `test` and `build` all run in the `test` job of `ci.yml`, which is a
+required status check.
+
+### biome: linter on, formatter off
+
+`biome.json` (schema **2.5.x** — the 1.9 shape is a different config format)
+enables the **linter only**. Three things about it are load-bearing:
+
+- **The rule it exists for is `style/noRestrictedGlobals` on `fetch`.** This is
+  the package that defines `safeFetch` and `assertPublicUrl`, and PO-185 was a
+  raw `fetch` in `src/credentials.ts` posting OAuth client credentials at a URL
+  taken from credential config — no SSRF guard. Use `safeFetch`.
+  **`src/fetch.ts` is the one sanctioned exception** (`timedFetch`, called by
+  `guardedFetch` *after* the guard has run) and is excepted via `overrides`.
+  Adding a second exception means adding a second way to bypass the guard.
+- **The formatter is deliberately disabled.** Biome disagrees with this repo's
+  hand-wrapped source in 13 to 17 of 22 files depending on `lineWidth` (13 at its
+  narrowest useful setting, 17 at the siblings' 200) — unlike its sibling
+  node packages, the SDK was never biome-formatted. Turning it on is a repo-wide
+  reformat: fine as its own commit, never as a passenger on another change. The
+  sibling packages' `indentStyle`/`lineWidth` values stay in the file for whoever
+  does it.
+- **`biome.json` does not accept `//` comments, and fails silently.** Biome falls
+  back to its built-in defaults with no error, which looks like a working config
+  while the `fetch` rule is off and the formatter is reformatting to tabs. If a
+  rule seems not to fire, probe it (write a deliberate violation) rather than
+  trusting the output. Comments would need the file renamed to `biome.jsonc`,
+  which the three sibling repos do not do.
+
+See [`docs/security-scanning.md`](docs/security-scanning.md) for the scanners
+(gitleaks, osv-scanner) and [`docs/branch-protection.md`](docs/branch-protection.md)
+for the rulesets — which, unlike the sibling repos', are live, because this repo
+is public.
 
 ## Architecture
 
