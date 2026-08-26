@@ -131,7 +131,11 @@ async function main(): Promise<void> {
           '`integrations/scripts/register-nodes-core.sh`, which packs and uploads ' +
           'the tarball to the admin API.',
       );
+      // `process.exit` is typed `never` so this break is unreachable, but the
+      // linter does not narrow on that — and an unmarked fallthrough into
+      // `default` is better ruled out by construction than by argument.
       process.exit(1);
+      break;
     default:
       console.error('Usage: rvnxx-nodes <manifest>');
       process.exit(1);

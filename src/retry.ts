@@ -68,7 +68,7 @@ function abortReason(signal: AbortSignal): unknown {
  */
 export function backoffDelay(attempt: number, policy: RetryPolicy): number {
   const exponent = Math.max(0, attempt - 1);
-  const raw = policy.baseDelayMs * Math.pow(policy.factor, exponent);
+  const raw = policy.baseDelayMs * policy.factor ** exponent;
   const cap = Math.min(policy.maxDelayMs, raw);
   return policy.jitter ? Math.random() * cap : cap;
 }

@@ -26,6 +26,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # `biome check src` — the linter only (see biome.json). Its reason for
+      # existing is noRestrictedGlobals on `fetch`: this is the package that
+      # defines safeFetch/assertPublicUrl, and PO-185 was a raw fetch here that
+      # only a scanner in another repository caught. This step is the enforcement
+      # point on the commit that writes the next one.
+      - name: Lint
+        run: npm run lint
+
       - name: Typecheck
         run: npm run typecheck
 
