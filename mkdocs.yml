@@ -6,6 +6,8 @@ nav:
   - Home: index.md
   - Overview: overview.md
   - Versioning & Release Policy: versioning.md
+  - Branch & Release-Tag Protection: branch-protection.md
+  - Security Scanning: security-scanning.md
 
 plugins:
   - techdocs-core

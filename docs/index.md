@@ -59,3 +59,5 @@ manifest's `templates[]`.
 
 - [API Reference & Node Authoring Guide](overview.md)
 - [Versioning & Release Policy](versioning.md)
+- [Branch & Release-Tag Protection](branch-protection.md)
+- [Security Scanning](security-scanning.md)
