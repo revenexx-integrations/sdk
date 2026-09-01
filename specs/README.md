@@ -14,18 +14,28 @@ What stays out is the machinery behind the name — that is `docs/`, and
 
 ## Specs
 
+### Reaching a host
+
 - [`ssrf-guard.md`](ssrf-guard.md) — what a request is allowed to reach: which targets
   are refused before a request is made, how each redirect hop is judged again, and what
   a refusal is allowed to tell the caller
+- [`request-budget.md`](request-budget.md) — what one request may cost: how long an
+  attempt may take, how often it is retried, how cancellation ends it, and how both
+  budgets reach a workflow author as bounded settings
+- [`response-reading.md`](response-reading.md) — reading what came back: the byte cap
+  and where it is enforced, what is parsed as JSON and what is not, and the ceiling
+  neither a node nor a workflow author can raise
 
 ## What is not promised yet
 
-Every other surface in this package. The largest is the node and credential contract —
-what `INode`, `INodeDescription` and `ICredential` guarantee an implementer, and the
-*Key design constraints* in [`../CLAUDE.md`](../CLAUDE.md) that read as promises today
-while living in a file nothing enforces. Also unpromised: the timeout, retry and
-response-cap behaviour that shares a home with the guard but answers a different
-question, the manifest envelope the registry consumes, and the credential base classes.
+Most of this package. The largest surface is the node and credential contract — what
+`INode`, `INodeDescription` and `ICredential` guarantee an implementer, and the *Key
+design constraints* in [`../CLAUDE.md`](../CLAUDE.md) that read as promises today while
+living in a file nothing enforces. Also unpromised: the credential base classes, the
+manifest envelope the registry consumes, the image files a package ships beside it, the
+retry primitive a node can drive itself, the author-time resolvers, the two helpers that
+settle a loosely declared value, and the `rvnxx-nodes` CLI — which has no tests at all,
+so a spec for it is test work before it is spec work.
 
 **None of these has a row yet, and that is the honest state rather than an omission.**
 A row here names the ticket that will promise its surface, and no such ticket has been

@@ -48,13 +48,15 @@ function withFetch(mock: typeof globalThis.fetch, fn: () => Promise<void>): Prom
 
 // ------------------------------------------------------------------ safeFetch
 
-test('returns the response when fetch succeeds within the timeout', () =>
+// AC-2 — A request that answers in time returns its response
+test('returns the response when fetch succeeds within the timeout [@spec:request-budget:AC-2]', () =>
   withFetch(delayedFetch(0), async () => {
     const res = await safeFetch('https://93.184.216.34', { timeoutMs: 500 });
     assert.equal(res.status, 200);
   }));
 
-test('throws NodeError TIMEOUT when fetch takes longer than timeoutMs', () =>
+// AC-1 — A request that does not answer in time fails as a timeout
+test('throws NodeError TIMEOUT when fetch takes longer than timeoutMs [@spec:request-budget:AC-1]', () =>
   withFetch(delayedFetch(200), async () => {
     await assert.rejects(
       () => safeFetch('https://93.184.216.34', { timeoutMs: 30 }),
@@ -88,7 +90,8 @@ test('clamps timeoutMs to MAX_TIMEOUT_MS when scheduling the timeout', () => {
   });
 });
 
-test('TIMEOUT error message contains the clamped MAX_TIMEOUT_MS value', () => {
+// AC-3 — A budget above the ceiling is treated as the ceiling
+test('TIMEOUT error message contains the clamped MAX_TIMEOUT_MS value [@spec:request-budget:AC-3]', () => {
   const orig = globalThis.setTimeout;
   // @ts-expect-error partial overload patch
   globalThis.setTimeout = (fn: () => void, _delay: number) => orig(fn, 0);
@@ -151,7 +154,8 @@ test('negative timeoutMs falls back to DEFAULT_TIMEOUT_MS', () => {
   });
 });
 
-test('ctxSignal reason wins over TIMEOUT when both abort simultaneously', () => {
+// AC-5 — Cancelling outranks the budget when both end together
+test('ctxSignal reason wins over TIMEOUT when both abort simultaneously [@spec:request-budget:AC-5]', () => {
   const userAc = new AbortController();
   const orig = globalThis.setTimeout;
   // Intercept the per-attempt timer: also abort ctxSignal in the same turn so both
@@ -186,7 +190,8 @@ test('ctxSignal reason wins over TIMEOUT when both abort simultaneously', () => 
   });
 });
 
-test('propagates AbortError when ctx.signal is already aborted', async () => {
+// AC-4 — Cancelling ends the call, before or during flight
+test('propagates AbortError when ctx.signal is already aborted [@spec:request-budget:AC-4]', async () => {
   const ac = new AbortController();
   ac.abort();
   await assert.rejects(
@@ -199,7 +204,8 @@ test('propagates AbortError when ctx.signal is already aborted', async () => {
   );
 });
 
-test('propagates AbortError when ctx.signal is aborted mid-flight', () =>
+// AC-4 — Cancelling ends the call, before or during flight
+test('propagates AbortError when ctx.signal is aborted mid-flight [@spec:request-budget:AC-4]', () =>
   withFetch(delayedFetch(500), async () => {
     const ac = new AbortController();
     setTimeout(() => ac.abort(), 30);
@@ -215,7 +221,8 @@ test('propagates AbortError when ctx.signal is aborted mid-flight', () =>
 
 // ------------------------------------------------------------------ retry
 
-test('retries on network error and throws after exhausting attempts', async () => {
+// AC-6 — A failed attempt is retried, and the last failure is the one raised
+test('retries on network error and throws after exhausting attempts [@spec:request-budget:AC-6]', async () => {
   let calls = 0;
   const failingFetch: typeof globalThis.fetch = () => {
     calls++;
@@ -235,7 +242,8 @@ test('retries on network error and throws after exhausting attempts', async () =
   );
 });
 
-test('succeeds on the second attempt', async () => {
+// AC-7 — An attempt that succeeds after a failure returns its answer
+test('succeeds on the second attempt [@spec:request-budget:AC-7]', async () => {
   let calls = 0;
   const flakyFetch: typeof globalThis.fetch = () => {
     calls++;
@@ -250,7 +258,8 @@ test('succeeds on the second attempt', async () => {
   });
 });
 
-test('stops retrying immediately when ctx.signal is aborted between attempts', async () => {
+// AC-8 — Cancelling stops the retrying, without waiting the delay out
+test('stops retrying immediately when ctx.signal is aborted between attempts [@spec:request-budget:AC-8]', async () => {
   const ac = new AbortController();
   let calls = 0;
   const failingFetch: typeof globalThis.fetch = () => {
@@ -274,7 +283,8 @@ test('stops retrying immediately when ctx.signal is aborted between attempts', a
   );
 });
 
-test('abort during retry delay interrupts the sleep immediately', async () => {
+// AC-8 — Cancelling stops the retrying, without waiting the delay out
+test('abort during retry delay interrupts the sleep immediately [@spec:request-budget:AC-8]', async () => {
   const userAc = new AbortController();
   let calls = 0;
   const failingFetch: typeof globalThis.fetch = () => {
@@ -305,7 +315,8 @@ test('abort during retry delay interrupts the sleep immediately', async () => {
 
 // ----------------------------------------------------------- config factories
 
-test('timeoutConfigField returns a number field with correct key and defaults', () => {
+// AC-9 — The budget can be handed to the workflow author as a setting, bounded
+test('timeoutConfigField returns a number field with correct key and defaults [@spec:request-budget:AC-9]', () => {
   const field = timeoutConfigField();
   assert.equal(field.key, 'timeoutMs');
   assert.equal(field.type, 'number');
@@ -314,13 +325,15 @@ test('timeoutConfigField returns a number field with correct key and defaults', 
   assert.equal(field.validation?.max, MAX_TIMEOUT_MS);
 });
 
-test('timeoutConfigField accepts custom default and max', () => {
+// AC-9 — The budget can be handed to the workflow author as a setting, bounded
+test('timeoutConfigField accepts custom default and max [@spec:request-budget:AC-9]', () => {
   const field = timeoutConfigField({ default: 5_000, max: 60_000 });
   assert.equal(field.default, 5_000);
   assert.equal(field.validation?.max, 60_000);
 });
 
-test('retryConfigFields returns two fields with correct keys and defaults', () => {
+// AC-10 — The retry policy can be handed over the same way
+test('retryConfigFields returns two fields with correct keys and defaults [@spec:request-budget:AC-10]', () => {
   const [attemptsField, delayField] = retryConfigFields();
   assert.equal(attemptsField?.key, 'retryAttempts');
   assert.equal(attemptsField?.type, 'number');
@@ -333,7 +346,8 @@ test('retryConfigFields returns two fields with correct keys and defaults', () =
   assert.equal(delayField?.validation?.min, 100);
 });
 
-test('retryConfigFields accepts custom defaults', () => {
+// AC-10 — The retry policy can be handed over the same way
+test('retryConfigFields accepts custom defaults [@spec:request-budget:AC-10]', () => {
   const [attemptsField, delayField] = retryConfigFields({ defaultAttempts: 3, defaultDelayMs: 2_000 });
   assert.equal(attemptsField?.default, 3);
   assert.equal(delayField?.default, 2_000);
@@ -359,13 +373,15 @@ function bytes(n: number): Uint8Array {
   return new Uint8Array(n).fill(65); // 'A'
 }
 
-test('readArrayBuffer returns the full body when under the cap', async () => {
+// AC-1 — An answer within the cap is returned whole
+test('readArrayBuffer returns the full body when under the cap [@spec:response-reading:AC-1]', async () => {
   const res = streamResponse([bytes(4), bytes(4)]);
   const buf = await readArrayBuffer(res, 100);
   assert.equal(buf.byteLength, 8);
 });
 
-test('readArrayBuffer enforces the cap while streaming (no Content-Length)', async () => {
+// AC-2 — An answer that outgrows the cap while arriving is refused
+test('readArrayBuffer enforces the cap while streaming (no Content-Length) [@spec:response-reading:AC-2]', async () => {
   const res = streamResponse([bytes(6), bytes(6)]); // 12 bytes, cap 10
   await assert.rejects(
     () => readArrayBuffer(res, 10),
@@ -378,7 +394,8 @@ test('readArrayBuffer enforces the cap while streaming (no Content-Length)', asy
   );
 });
 
-test('readArrayBuffer fast-rejects on an oversized Content-Length without touching the body', async () => {
+// AC-3 — An answer that declares an oversized length is refused untouched
+test('readArrayBuffer fast-rejects on an oversized Content-Length without touching the body [@spec:response-reading:AC-3]', async () => {
   // A Response-shaped fake whose `body` getter throws if accessed — proving the
   // Content-Length fast-reject bails out before any body read. (A real undici
   // Response eagerly drains a stream body on construction, so a read-side-effect
@@ -399,7 +416,8 @@ test('readArrayBuffer fast-rejects on an oversized Content-Length without touchi
   assert.equal(bodyAccessed, false, 'body must not be accessed when Content-Length already exceeds the cap');
 });
 
-test('readArrayBuffer surfaces RESPONSE_TOO_LARGE even when the stream cancel rejects', async () => {
+// AC-4 — An oversized answer is reported as oversized even if discarding it fails
+test('readArrayBuffer surfaces RESPONSE_TOO_LARGE even when the stream cancel rejects [@spec:response-reading:AC-4]', async () => {
   // Underlying cancel() throws → reader.cancel() rejects. The overrun must still
   // surface as RESPONSE_TOO_LARGE, not the cancellation error.
   const stream = new ReadableStream<Uint8Array>({
@@ -418,51 +436,59 @@ test('readArrayBuffer surfaces RESPONSE_TOO_LARGE even when the stream cancel re
   );
 });
 
-test('readArrayBuffer accepts a body exactly at the cap', async () => {
+// AC-1 — An answer within the cap is returned whole
+test('readArrayBuffer accepts a body exactly at the cap [@spec:response-reading:AC-1]', async () => {
   const res = streamResponse([bytes(10)]);
   const buf = await readArrayBuffer(res, 10);
   assert.equal(buf.byteLength, 10);
 });
 
-test('readText decodes the body as UTF-8', async () => {
+// AC-6 — Text is decoded as UTF-8
+test('readText decodes the body as UTF-8 [@spec:response-reading:AC-6]', async () => {
   const res = new Response('héllo', { headers: { 'content-type': 'text/plain' } });
   assert.equal(await readText(res, 100), 'héllo');
 });
 
-test('readJsonOrText parses JSON when Content-Type is application/json', async () => {
+// AC-7 — JSON is parsed when the answer says it is JSON, and only then
+test('readJsonOrText parses JSON when Content-Type is application/json [@spec:response-reading:AC-7]', async () => {
   const res = new Response(JSON.stringify({ a: 1 }), {
     headers: { 'content-type': 'application/json' },
   });
   assert.deepEqual(await readJsonOrText(res, 100), { a: 1 });
 });
 
-test('readJsonOrText returns raw text for non-JSON content types', async () => {
+// AC-7 — JSON is parsed when the answer says it is JSON, and only then
+test('readJsonOrText returns raw text for non-JSON content types [@spec:response-reading:AC-7]', async () => {
   const res = new Response('plain body', { headers: { 'content-type': 'text/plain' } });
   assert.equal(await readJsonOrText(res, 100), 'plain body');
 });
 
-test('readJsonOrText matches Content-Type case-insensitively and ignores parameters', async () => {
+// AC-7 — JSON is parsed when the answer says it is JSON, and only then
+test('readJsonOrText matches Content-Type case-insensitively and ignores parameters [@spec:response-reading:AC-7]', async () => {
   const res = new Response(JSON.stringify({ a: 1 }), {
     headers: { 'content-type': 'Application/JSON; charset=utf-8' },
   });
   assert.deepEqual(await readJsonOrText(res, 100), { a: 1 });
 });
 
-test('readJsonOrText recognises +json structured-syntax suffixes', async () => {
+// AC-7 — JSON is parsed when the answer says it is JSON, and only then
+test('readJsonOrText recognises +json structured-syntax suffixes [@spec:response-reading:AC-7]', async () => {
   const res = new Response(JSON.stringify({ a: 1 }), {
     headers: { 'content-type': 'application/vnd.api+json' },
   });
   assert.deepEqual(await readJsonOrText(res, 100), { a: 1 });
 });
 
-test('readJsonOrText does not mis-detect application/jsonp as JSON', async () => {
+// AC-7 — JSON is parsed when the answer says it is JSON, and only then
+test('readJsonOrText does not mis-detect application/jsonp as JSON [@spec:response-reading:AC-7]', async () => {
   const res = new Response('callback({"a":1})', {
     headers: { 'content-type': 'application/jsonp' },
   });
   assert.equal(await readJsonOrText(res, 100), 'callback({"a":1})');
 });
 
-test('readJsonOrText throws RESPONSE_PARSE_ERROR on malformed JSON', async () => {
+// AC-8 — An answer that claims to be JSON and is not is reported as such
+test('readJsonOrText throws RESPONSE_PARSE_ERROR on malformed JSON [@spec:response-reading:AC-8]', async () => {
   const res = new Response('{not valid json', {
     headers: { 'content-type': 'application/json' },
   });
@@ -477,7 +503,8 @@ test('readJsonOrText throws RESPONSE_PARSE_ERROR on malformed JSON', async () =>
   );
 });
 
-test('readJsonOrText enforces the cap on JSON bodies too', async () => {
+// AC-9 — The cap holds for JSON answers too
+test('readJsonOrText enforces the cap on JSON bodies too [@spec:response-reading:AC-9]', async () => {
   const big = JSON.stringify({ v: 'x'.repeat(50) });
   const res = new Response(big, { headers: { 'content-type': 'application/json' } });
   await assert.rejects(
@@ -486,14 +513,16 @@ test('readJsonOrText enforces the cap on JSON bodies too', async () => {
   );
 });
 
-test('read* helpers default to DEFAULT_MAX_RESPONSE_BYTES', async () => {
+// AC-10 — Reading without naming a cap uses the package default
+test('read* helpers default to DEFAULT_MAX_RESPONSE_BYTES [@spec:response-reading:AC-10]', async () => {
   const res = new Response('small');
   const buf = await readArrayBuffer(res);
   assert.equal(buf.byteLength, 5);
   assert.ok(DEFAULT_MAX_RESPONSE_BYTES > 1_000_000);
 });
 
-test('maxBytesConfigField returns a number field defaulting to the SDK cap', () => {
+// AC-11 — The cap can be handed to the workflow author as a setting, bounded
+test('maxBytesConfigField returns a number field defaulting to the SDK cap [@spec:response-reading:AC-11]', () => {
   const field = maxBytesConfigField();
   assert.equal(field.key, 'maxBytes');
   assert.equal(field.type, 'number');
@@ -503,20 +532,23 @@ test('maxBytesConfigField returns a number field defaulting to the SDK cap', () 
   assert.equal(field.validation?.max, MAX_RESPONSE_BYTES);
 });
 
-test('maxBytesConfigField accepts custom default and max', () => {
+// AC-11 — The cap can be handed to the workflow author as a setting, bounded
+test('maxBytesConfigField accepts custom default and max [@spec:response-reading:AC-11]', () => {
   const field = maxBytesConfigField({ default: 1024, max: 4096 });
   assert.equal(field.default, 1024);
   assert.equal(field.validation?.max, 4096);
 });
 
-test('maxBytesConfigField clamps a custom max above the hard ceiling', () => {
+// AC-11 — The cap can be handed to the workflow author as a setting, bounded
+test('maxBytesConfigField clamps a custom max above the hard ceiling [@spec:response-reading:AC-11]', () => {
   const field = maxBytesConfigField({ max: MAX_RESPONSE_BYTES * 4 });
   assert.equal(field.validation?.max, MAX_RESPONSE_BYTES);
 });
 
 // ------------------------------------------------ size cap: hard ceiling
 
-test('clampResponseBytes bounds a request into [1, MAX_RESPONSE_BYTES]', () => {
+// AC-5 — A cap above the hard ceiling does not lift it
+test('clampResponseBytes bounds a request into [1, MAX_RESPONSE_BYTES] [@spec:response-reading:AC-5]', () => {
   assert.equal(clampResponseBytes(1024), 1024);
   assert.equal(clampResponseBytes(MAX_RESPONSE_BYTES), MAX_RESPONSE_BYTES);
   assert.equal(clampResponseBytes(MAX_RESPONSE_BYTES + 1), MAX_RESPONSE_BYTES);
@@ -526,7 +558,8 @@ test('clampResponseBytes bounds a request into [1, MAX_RESPONSE_BYTES]', () => {
   assert.ok(MAX_RESPONSE_BYTES > DEFAULT_MAX_RESPONSE_BYTES);
 });
 
-test('readArrayBuffer clamps maxBytes to the hard ceiling (Content-Length fast-reject)', async () => {
+// AC-5 — A cap above the hard ceiling does not lift it
+test('readArrayBuffer clamps maxBytes to the hard ceiling (Content-Length fast-reject) [@spec:response-reading:AC-5]', async () => {
   // A caller passing a maxBytes above the ceiling must not lift the guard: a
   // Content-Length just over MAX_RESPONSE_BYTES is still rejected.
   const fake = {
