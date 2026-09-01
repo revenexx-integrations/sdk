@@ -73,10 +73,12 @@ the address a consumer reaches a promise by, and a criterion may write `safeFetc
 where a spec for a product with a UI would name a button. The machinery behind the
 name still belongs in `docs/`.
 
-**One spec exists so far** — the SSRF guard — and
-[`specs/README.md`](specs/README.md) records what is not promised yet, which is most
-of this package including the node and credential contract. The *Key design
-constraints* below read as promises and are not yet held by anything.
+[`specs/README.md`](specs/README.md) is the index, and it is the only place that says
+how much is promised — do not restate the count here, or the next spec falsifies this
+file. It also carries the register of what is *not* promised, which is where the two
+surfaces with no tests to point at are recorded: the node and credential contract, and
+the `rvnxx-nodes` CLI. The *Key design constraints* below are part of the first of those
+— they read as promises and are held by nothing yet.
 
 ## Architecture
 

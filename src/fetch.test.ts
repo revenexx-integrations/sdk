@@ -644,7 +644,7 @@ test('safeFetch blocks a host that resolves to a private address before any fetc
   );
 });
 
-// AC-2 — A target that resolves only to public addresses is allowed through
+// AC-2 — A public target is allowed through, by each of the three ways in
 test('safeFetch allows a host that resolves to a public address [@spec:ssrf-guard:AC-2]', () => {
   const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
   return withLookup(['93.184.216.34'], () =>
