@@ -13,11 +13,12 @@ Cloud, not anything about this package.
 |---|---|---|
 | [`feature-spec`](./feature-spec/SKILL.md) | `revenexx/skills-catalog` — `feature-spec`, via the Skill Registry | Keeping `specs/*.md` the single point of truth for promised behaviour, and binding every promise to a test |
 
-**The gate itself is not installed here yet** — there is no `spec.config.json`, no
-`specs/` and no `spec:check`, which is what still separates this repository from its
-four siblings. That is [PO-368](https://linear.app/revenexx/issue/PO-368); the skill
-ships the installer for it under `scripts/install.mjs`. Until then the format rules in
-`SKILL.md` hold, simply unenforced.
+The gate is installed — `spec.config.json`, `scripts/spec-check.mjs`, `specs/` and the
+`spec` job in `ci.yml`. It was **not** installed by `scripts/install.mjs`: that looks
+for a `test`/`tests`/`__tests__`/`spec` directory and this package keeps its tests
+beside the code in `src/`, so it would have declared no layer at all. The suite is
+written by hand against `node --test` through the bundled reporter, with `--import tsx`
+added because the tests are TypeScript.
 
 ### Updating
 

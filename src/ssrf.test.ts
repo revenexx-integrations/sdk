@@ -35,7 +35,8 @@ for (const ip of BLOCKED_V4) {
   test(`isBlockedAddress blocks IPv4 ${ip}`, () => assert.equal(isBlockedAddress(ip), true));
 }
 for (const ip of PUBLIC_V4) {
-  test(`isBlockedAddress allows IPv4 ${ip}`, () => assert.equal(isBlockedAddress(ip), false));
+  // AC-2 — A public target is allowed through, by each of the three ways in
+  test(`isBlockedAddress allows IPv4 ${ip} [@spec:ssrf-guard:AC-2]`, () => assert.equal(isBlockedAddress(ip), false));
 }
 
 const BLOCKED_V6 = [
@@ -65,10 +66,12 @@ for (const ip of BLOCKED_V6) {
   test(`isBlockedAddress blocks IPv6 ${ip}`, () => assert.equal(isBlockedAddress(ip), true));
 }
 for (const ip of PUBLIC_V6) {
-  test(`isBlockedAddress allows IPv6 ${ip}`, () => assert.equal(isBlockedAddress(ip), false));
+  // AC-2 — A public target is allowed through, by each of the three ways in
+  test(`isBlockedAddress allows IPv6 ${ip} [@spec:ssrf-guard:AC-2]`, () => assert.equal(isBlockedAddress(ip), false));
 }
 
-test('isBlockedAddress fails closed on an unparseable address', () => {
+// AC-9 — An address the guard cannot parse counts as blocked
+test('isBlockedAddress fails closed on an unparseable address [@spec:ssrf-guard:AC-9]', () => {
   assert.equal(isBlockedAddress('not-an-ip'), true);
   assert.equal(isBlockedAddress('999.999.999.999'), true);
 });
@@ -87,7 +90,8 @@ async function assertBlocked(fn: () => Promise<void>): Promise<void> {
   });
 }
 
-test('assertPublicUrl rejects non-HTTP(S) protocols', async () => {
+// AC-4 — Only http and https targets are accepted
+test('assertPublicUrl rejects non-HTTP(S) protocols [@spec:ssrf-guard:AC-4]', async () => {
   await assertBlocked(() => assertPublicUrl('ftp://example.com/x', { lookup: lookup('93.184.216.34') }));
   await assertBlocked(() => assertPublicUrl('file:///etc/passwd', { lookup: lookup('93.184.216.34') }));
 });
@@ -118,13 +122,15 @@ test('assertPublicUrl checks a literal-IP host directly (no DNS)', async () => {
   assert.equal(resolved, false);
 });
 
-test('assertPublicUrl rejects when any resolved address is private', async () => {
+// AC-3 — One private address among the answers is enough to refuse the host
+test('assertPublicUrl rejects when any resolved address is private [@spec:ssrf-guard:AC-3]', async () => {
   // A hostname that resolves to both a public and a private address must be
   // rejected — DNS-rebinding-style split answers must not pass.
   await assertBlocked(() => assertPublicUrl('https://mixed.example/', { lookup: lookup('93.184.216.34', '10.0.0.5') }));
 });
 
-test('assertPublicUrl does not leak the resolved private IP in the error surfaced to the caller', async () => {
+// AC-8 — A refusal never discloses the address a hostname resolved to
+test('assertPublicUrl does not leak the resolved private IP in the error surfaced to the caller [@spec:ssrf-guard:AC-8]', async () => {
   await assert.rejects(
     () => assertPublicUrl('https://internal.example/', { lookup: lookup('10.0.0.5') }),
     (err: unknown) => {
@@ -136,7 +142,8 @@ test('assertPublicUrl does not leak the resolved private IP in the error surface
   );
 });
 
-test('assertPublicUrl still reports a blocked literal-IP host in the error (no leak)', async () => {
+// AC-8 — A refusal never discloses the address a hostname resolved to
+test('assertPublicUrl still reports a blocked literal-IP host in the error (no leak) [@spec:ssrf-guard:AC-8]', async () => {
   await assert.rejects(
     () => assertPublicUrl('http://10.0.0.5/'),
     (err: unknown) => {
@@ -147,7 +154,8 @@ test('assertPublicUrl still reports a blocked literal-IP host in the error (no l
   );
 });
 
-test('assertPublicUrl allows a host that resolves only to public addresses', async () => {
+// AC-2 — A public target is allowed through, by each of the three ways in
+test('assertPublicUrl allows a host that resolves only to public addresses [@spec:ssrf-guard:AC-2]', async () => {
   await assertPublicUrl('https://api.example/', { lookup: lookup('93.184.216.34', '2001:4860:4860::8888') });
 });
 
@@ -185,7 +193,8 @@ test('RVNXX_SSRF_ALLOW_PRIVATE=1 relaxes the guard for local development', () =>
     await assertPublicUrl('https://intranet.example/', { lookup: lookup('10.0.0.5') });
   }));
 
-test('RVNXX_SSRF_ALLOW_PRIVATE still enforces the http(s)-only protocol allowlist', () =>
+// AC-10 — The local-development opt-out never relaxes the protocol allowlist
+test('RVNXX_SSRF_ALLOW_PRIVATE still enforces the http(s)-only protocol allowlist [@spec:ssrf-guard:AC-10]', () =>
   withEnv('1', async () => {
     // The dev opt-out relaxes only the private-range checks; a non-http(s)
     // protocol is a correctness invariant that stays rejected even when set.

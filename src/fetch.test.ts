@@ -592,7 +592,8 @@ function withLookup(addresses: string[], fn: () => Promise<void>): Promise<void>
   });
 }
 
-test('safeFetch blocks a host that resolves to a private address before any fetch', () => {
+// AC-1 — A request to a private or reserved target is refused before it is sent
+test('safeFetch blocks a host that resolves to a private address before any fetch [@spec:ssrf-guard:AC-1]', () => {
   const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
   return withLookup(['10.0.0.5'], () =>
     withFetch(mock, async () => {
@@ -610,7 +611,8 @@ test('safeFetch blocks a host that resolves to a private address before any fetc
   );
 });
 
-test('safeFetch allows a host that resolves to a public address', () => {
+// AC-2 — A target that resolves only to public addresses is allowed through
+test('safeFetch allows a host that resolves to a public address [@spec:ssrf-guard:AC-2]', () => {
   const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
   return withLookup(['93.184.216.34'], () =>
     withFetch(mock, async () => {
@@ -621,10 +623,14 @@ test('safeFetch allows a host that resolves to a public address', () => {
   );
 });
 
-test('safeFetch rejects a redirect to a private target (redirect-bypass guard)', () => {
-  // Public first hop, then a 302 pointing at the cloud metadata endpoint.
+// AC-5 — A redirect cannot carry a request from a public target to a private one
+test('safeFetch rejects a redirect to a private target (redirect-bypass guard) [@spec:ssrf-guard:AC-5]', () => {
+  // Public first hop, then a 302 pointing at the cloud metadata endpoint. The hop
+  // stays on https deliberately: an http target would trip the downgrade check
+  // above the address guard, and both throw BLOCKED_ADDRESS — so the test would
+  // pass with the address guard switched off entirely.
   const { fetch: mock, calls } = scriptedFetch([
-    redirect(302, 'http://169.254.169.254/latest/meta-data/'),
+    redirect(302, 'https://169.254.169.254/latest/meta-data/'),
     new Response(null, { status: 200 }),
   ]);
   return withFetch(mock, async () => {
@@ -640,7 +646,8 @@ test('safeFetch rejects a redirect to a private target (redirect-bypass guard)',
   });
 });
 
-test('safeFetch rejects an https→http downgrade on redirect', () => {
+// AC-6 — A redirect may not downgrade an https request to http
+test('safeFetch rejects an https→http downgrade on redirect [@spec:ssrf-guard:AC-6]', () => {
   const { fetch: mock, calls } = scriptedFetch([
     redirect(302, 'http://93.184.216.35/next'),
     new Response(null, { status: 200 }),
@@ -654,7 +661,8 @@ test('safeFetch rejects an https→http downgrade on redirect', () => {
   });
 });
 
-test('safeFetch allows an http→https upgrade on redirect', () => {
+// AC-6 — A redirect may not downgrade an https request to http
+test('safeFetch allows an http→https upgrade on redirect [@spec:ssrf-guard:AC-6]', () => {
   const { fetch: mock, calls } = scriptedFetch([
     redirect(302, 'https://93.184.216.35/next'),
     new Response(null, { status: 200 }),
@@ -666,7 +674,8 @@ test('safeFetch allows an http→https upgrade on redirect', () => {
   });
 });
 
-test('safeFetch follows a public redirect and returns the final response', () => {
+// AC-5 — A redirect cannot carry a request from a public target to a private one
+test('safeFetch follows a public redirect and returns the final response [@spec:ssrf-guard:AC-5]', () => {
   const { fetch: mock, calls } = scriptedFetch([
     redirect(302, 'https://93.184.216.35/next'),
     new Response('ok', { status: 200 }),
@@ -758,7 +767,8 @@ test('safeFetch downgrades POST to GET and drops the body on a 303 redirect', ()
   });
 });
 
-test('safeFetch strips auth-bearing headers on a cross-origin redirect', () => {
+// AC-7 — Authentication-bearing headers do not cross an origin boundary on a redirect
+test('safeFetch strips auth-bearing headers on a cross-origin redirect [@spec:ssrf-guard:AC-7]', () => {
   const { fetch: mock, calls } = scriptedFetch([
     redirect(302, 'https://93.184.216.35/next'),
     new Response(null, { status: 200 }),
@@ -784,7 +794,8 @@ test('safeFetch strips auth-bearing headers on a cross-origin redirect', () => {
   });
 });
 
-test('safeFetch preserves auth-bearing headers on a same-origin redirect', () => {
+// AC-7 — Authentication-bearing headers do not cross an origin boundary on a redirect
+test('safeFetch preserves auth-bearing headers on a same-origin redirect [@spec:ssrf-guard:AC-7]', () => {
   const { fetch: mock, calls } = scriptedFetch([
     redirect(302, 'https://93.184.216.34/next'),
     new Response(null, { status: 200 }),

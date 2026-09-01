@@ -1,0 +1,39 @@
+{
+  "$comment": "Everything project-specific about the feature-spec gate lives here; the format rules and the workflow are project-agnostic and live in the `feature-spec` skill, which is also what runs them: `/feature-spec <ticket|spec path|feature area>`. The skill came from the Skill Registry (`revenexx skills add revenexx/skills-catalog feature-spec`) at 0.3.0, and `scripts/spec-check.mjs` is byte-identical to `.claude/skills/feature-spec/assets/spec-check.mjs`, so a fix in the catalogue travels by copying the file again. Only this config differs, and every difference is a comment below.",
+
+  "specDir": "specs",
+
+  "$comment_audience": "Who the promises here are made to. Not read by the gate — it is the declaration that settles which vocabulary a promise may be stated in, and it is a fourth shape beside the three the skill names. This package has no screen and no human consumer: what consumes it is other code, in four node packages and the worker, through a published version rather than a checkout. So the exported name IS the address a consumer reaches the promise by — the same role a route plays for an integrator — and a spec that refused to write `safeFetch` would have to say `the fetch helper the SDK offers`, which costs every reader a translation and hides whether the thing has a name at all. What that does NOT license is the machinery behind the name: how a hostname is resolved, which resolver holder the tests swap, how a socket is opened. That half goes to the docs/ companion, and the implementation ban stays checked by `implementationPattern`.",
+  "audience": "an integration node author calling this package's exports: the exported name, the options it takes and the error code it throws are the product's vocabulary and belong in a criterion — the resolution and transport machinery behind them is implementation and belongs in the docs/ companion",
+
+  "$comment_ticketPattern": "Shape of a ticket id in this project's tracker — Linear, team Product Engineering (`PO-…`). The pattern stays as wide as the catalogue's rather than being narrowed to `PO`, because a spec may legitimately cite a ticket from another team, and `AC-<n>` is reserved for this format's own criterion ids and is never read as a ticket.",
+  "ticketPattern": "[A-Z][A-Z0-9]*-\\d+",
+
+  "$comment_implementationPattern": "What counts as naming the implementation in a spec. The catalogue's default, unchanged: this package is TypeScript and emits `.js`, `.cjs` and `.d.ts`, so every extension the default lists is one a spec here has as little business naming. It is left at the default deliberately rather than narrowed the way a sibling narrowed it — nothing is bought by removing `.vue` from a pattern that will never meet one, and a deviation costs a reader the question of why. Bare identifiers are not matched by it, which is what makes the `audience` declaration above possible: `safeFetch` in a criterion is the address, `src/fetch.ts` is the implementation, and only the second is a path.",
+  "implementationPattern": "(?:\\bsrc/\\S+|\\b[\\w./-]+\\.(?:vue|tsx|ts|mjs|cjs|jsx|js)(?![\\w-]))",
+
+  "companions": [],
+
+  "$comment_houseRules": "Empty, and kept rather than dropped so the mechanism is here the day there is something to put in it. The one addition this package has belongs to a key of its own — the vocabulary boundary is `audience` — and stating it again in a house-rules file would produce two truths about one thing, which is the failure this key warns about.",
+  "houseRules": "",
+
+  "$comment_indexRegister": "Heading of the section in the index that records surfaces carrying no promise yet. In this package a \"surface\" is one export or one closely-bound family of exports that a node author reaches for by name — see `specs/README.md`. Each row names the ticket that will promise it, and a ticket named there must not already be history in a spec's `## Tickets`.",
+  "indexRegister": "What is not promised yet",
+
+  "$comment_formDebt": "The ratchet the catalogue needed for a corpus that predated the rule. This corpus was written after it, so the figure starts at zero and the ratchet is an outright gate: any `## Gaps` entry sitting outside the three bold labels (`Undecided` / `Known` / `Unreachable`) is simply new, and gets fixed rather than counted.",
+  "formDebt": {
+    "unlabelledGaps": 0
+  },
+
+  "$comment_ceiling": "What this package's harness cannot reach at any layer, and therefore the rule that routes a promise out of `unit` and into `manual` or `todo`. It is not a redefinition of what `unit` means — that is the same everywhere — it is the local limit, and here it is sharp: the guard's own tests inject the resolver and stub the transport, so nothing in this suite ever resolves a real name or opens a real socket. What the guard does with an address it was handed is therefore provable; what happens at connect time, after it has approved one, is not.",
+  "ceiling": "no test here resolves a real hostname or opens a real socket — the resolver is injected and the transport is stubbed — so a criterion about what happens at connect time, or about bytes actually reaching a host, is `manual` with a reason or `todo` with a ticket, never `unit`",
+
+  "$comment_suites": "One suite, not two. This is a library: no application stands up around it, so `unit` is the only layer that exists here and `feature` and `e2e` are not omissions. The tests are `node --test` over TypeScript via tsx, and node:test has no listing mode — so the suite is enumerated by RUNNING it through the bundled reporter, which prints the flat `[{ name, file }]` array the `vitest` adapter reads. Three consequences, all of them normal for this adapter: only the claiming tests run, a claiming test that FAILS takes the listing down and coverage reads as unknown rather than absent, and the glob must stay quoted or node reads it as a file name and collects nothing. `--import tsx` is this repository's addition to the catalogue's command and is not optional: the test files are TypeScript and node cannot load them without it.",
+  "suites": {
+    "unit": {
+      "adapter": "vitest",
+      "command": "node --import tsx --test --test-reporter=./scripts/spec-claims-reporter.mjs --test-name-pattern='@spec:' 'src/**/*.test.ts'",
+      "runHint": "node --import tsx --test --test-name-pattern='@spec:<feature>' 'src/**/*.test.ts'"
+    }
+  }
+}

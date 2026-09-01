@@ -10,11 +10,14 @@ npm run dev        # tsup watch mode
 npm test           # node --test via tsx over src/**/*.test.ts
 npm run lint       # biome check src (linter only — see below)
 npm run typecheck  # tsc --noEmit
+npm run spec:check # every promise in specs/ bound to the test that proves it
 ```
 
 The SDK ships unit tests (`src/*.test.ts`) — run them with `npm test`. `lint`,
 `typecheck`, `test` and `build` all run in the `test` job of `ci.yml`, which is a
-required status check.
+required status check. `spec:check` runs in a `spec` job of its own, so a spec failure
+reads as a spec failure rather than as a red test — **that job is not a required check
+yet**, and until `spec` is added to `.github/rulesets/main.json` a red gate can merge.
 
 ### biome: linter on, formatter off
 
@@ -59,11 +62,21 @@ update it, from the registry:
 revenexx skills add revenexx/skills-catalog feature-spec
 ```
 
-**Its gate is not installed here yet** — no `spec.config.json`, no `specs/`, no
-`spec:check` — which is what still separates this repo from the four node packages,
-and is PO-368. Until it is, the format rules hold unenforced: a change to what this
-SDK promises its consumers has nothing holding it to a written promise, so say so in
-the pull request instead.
+Its gate is installed: [`spec.config.json`](spec.config.json) declares the one layer
+this package has, `scripts/spec-check.mjs` enforces it, and [`specs/`](specs/README.md)
+holds the promises. **Change what this SDK promises its consumers → change the spec in
+the same commit, and the test with it.**
+
+`spec.config.json` carries the one thing this package decided differently from its
+siblings, in `$comment_audience`: a library has no screen, so the exported name *is*
+the address a consumer reaches a promise by, and a criterion may write `safeFetch`
+where a spec for a product with a UI would name a button. The machinery behind the
+name still belongs in `docs/`.
+
+**One spec exists so far** — the SSRF guard — and
+[`specs/README.md`](specs/README.md) records what is not promised yet, which is most
+of this package including the node and credential contract. The *Key design
+constraints* below read as promises and are not yet held by anything.
 
 ## Architecture
 
