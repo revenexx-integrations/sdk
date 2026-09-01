@@ -61,14 +61,22 @@ What stays out is the machinery behind the name — that is `docs/`, and
 
 ## What is not promised yet
 
-Most of this package. The largest surface is the node and credential contract — what
-`INode`, `INodeDescription` and `ICredential` guarantee an implementer, and the *Key
-design constraints* in [`../CLAUDE.md`](../CLAUDE.md) that read as promises today while
-living in a file nothing enforces. Also unpromised: the
-manifest envelope the registry consumes, the image files a package ships beside it, the
-retry primitive a node can drive itself, the author-time resolvers, the two helpers that
-settle a loosely declared value, and the `rvnxx-nodes` CLI — which has no tests at all,
-so a spec for it is test work before it is spec work.
+Three surfaces, and they have one thing in common: not one of them has a test to point
+at, which is why none of them could be backfilled.
+
+- **The node and credential contract** — what `INode`, `INodeDescription`,
+  `INodeContext` and `ICredential` guarantee whoever implements them, the iteration
+  capability, and the *Key design constraints* in [`../CLAUDE.md`](../CLAUDE.md) that
+  read as promises today while living in a file nothing enforces. The largest promise
+  surface in the vertical.
+- **The error contract** — when a node throws and when it routes to an error port, and
+  what `NodeError` obliges either way. Stated in `../CLAUDE.md`, held by nothing.
+- **The `rvnxx-nodes` CLI** — which every node package's build runs, and which has no
+  test file at all.
+
+The guardrail this corpus is written under seeds a criterion only from behaviour
+somebody can point at, so a spec for any of these is test work before it is spec work.
+That is the shape the next ticket should take.
 
 **None of these has a row yet, and that is the honest state rather than an omission.**
 A row here names the ticket that will promise its surface, and no such ticket has been

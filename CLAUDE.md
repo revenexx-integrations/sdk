@@ -16,8 +16,14 @@ npm run spec:check # every promise in specs/ bound to the test that proves it
 The SDK ships unit tests (`src/*.test.ts`) — run them with `npm test`. `lint`,
 `typecheck`, `test` and `build` all run in the `test` job of `ci.yml`, which is a
 required status check. `spec:check` runs in a `spec` job of its own, so a spec failure
-reads as a spec failure rather than as a red test — **that job is not a required check
-yet**, and until `spec` is added to `.github/rulesets/main.json` a red gate can merge.
+reads as a spec failure rather than as a red test. `.github/rulesets/main.json` lists it
+beside `test` and `changeset`, but **that file is an import source, not the ruleset** —
+until it is applied to the live ruleset a red gate can still merge:
+
+```bash
+gh api -X PUT repos/revenexx-integrations/sdk/rulesets/18063253 \
+  --input .github/rulesets/main.json
+```
 
 ### biome: linter on, formatter off
 
