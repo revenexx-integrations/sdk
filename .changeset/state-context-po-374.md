@@ -1,5 +1,5 @@
 ---
-"@revenexx/integrations-node-sdk": minor
+"@revenexx/integrations-node-sdk": major
 ---
 
 Add `ctx.state` — the tenant state store a workflow remembers between runs (PO-374).
@@ -22,3 +22,12 @@ reach the namespaces its own config names.
 
 Additive for node authors. Anything that *implements* `INodeContext` (test
 helpers, mock contexts) must now supply `state`.
+
+**Major, and therefore 1.0.0.** `state` is a required member on `INodeContext`,
+which `docs/versioning.md` puts under Major — and the pre-1.0 stance is to follow
+that matrix as if the leading zero were not there. A required member on a minor
+is the one combination the policy rules out, and making `state` optional to earn
+the smaller bump would mean every node author writing `ctx.state?.` for something
+the engine always supplies, while mock contexts kept compiling without it — the
+exact gap this changeset exists to announce. So the version follows the type
+rather than the other way round.

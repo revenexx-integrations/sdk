@@ -209,7 +209,11 @@ export interface INodeContext {
  * write becomes visible, and that decision is the engine's to make, not the
  * node author's.
  *
- * - **mapping** and **claim** take effect immediately. A correlation discarded
+ * The four roles are named **mapping**, **cursor**, **dedupe** and **digest** —
+ * those are the values a `state-ref` field's `stateRole` takes. `claim` below is
+ * the *operation* on a dedupe namespace, not a role of its own.
+ *
+ * - **mapping** and **dedupe** take effect immediately. A correlation discarded
  *   because the run failed afterwards is how the next run creates a duplicate
  *   in the target system; a claim invisible to other runs protects against
  *   nothing.
@@ -229,6 +233,12 @@ export interface INodeState {
      * The partner id of a correlation, or `null` when it is unknown — which is
      * the usual way to decide between creating and updating in the target
      * system.
+     *
+     * `side` says which side of the pair `key` is on, not which side to return:
+     * the default `'left'` matches `key` against the left id and answers with
+     * the right one, and `'right'` does the reverse. It never searches both, so
+     * a lookup on the wrong side answers `null` rather than falling back — and
+     * `null` on the create path is what makes the target record a second time.
      */
     get(namespace: string, key: string, side?: 'left' | 'right'): Promise<string | null>;
     /**
@@ -259,10 +269,21 @@ export interface INodeState {
     set(namespace: string, value: unknown, partitionKey?: string): Promise<void>;
   };
   /**
-   * Claim a key for the duration of its TTL. `true` means this run got it;
-   * `false` means somebody else holds it and this delivery is a duplicate —
-   * the normal answer under at-least-once delivery, and a value to branch on
-   * rather than an error.
+   * Claim a key for the duration of its TTL. `true` means this caller got it;
+   * `false` means the key is held and this delivery is a duplicate — the normal
+   * answer under at-least-once delivery, and a value to branch on rather than an
+   * error.
+   *
+   * **A claim outlives the attempt that made it.** The holder is not identified:
+   * a claim is taken over only once it has expired, so a retry of the very
+   * attempt that claimed the key — after a transient failure that happened
+   * *after* the claim — is also told `false`. Treating that as a duplicate drops
+   * the delivery for the rest of the TTL, which makes `ttlSeconds` the retry
+   * window as much as the duplicate-suppression window. Choose it against both,
+   * and do not claim earlier in the node than necessary.
+   *
+   * `ttlSeconds` defaults to 604800 (seven days) and is accepted between 1 and
+   * 31536000.
    */
   claim(namespace: string, key: string, opts?: { ttlSeconds?: number }): Promise<boolean>;
   /** Skip expensive writes for entities that have not changed. */
