@@ -55,8 +55,8 @@ Vendored copies of upstream skills from the
 | [`typescript-pro`](./typescript-pro/SKILL.md) | [link](https://github.com/Jeffallan/claude-skills/tree/main/skills/typescript-pro) | Type-system design, narrowing, generics, branded types |
 | [`test-master`](./test-master/SKILL.md) | [link](https://github.com/Jeffallan/claude-skills/tree/main/skills/test-master) | Unit/integration/E2E test design, coverage, mocking |
 
-These two carry a `LICENSE` inside their own directory, and only these two — the
-in-house skill above is internal and has none.
+These two carry a `LICENSE` inside their own directory, and only these two.
+`feature-spec` carries none — see the note on its licence below.
 
 ### Updating
 
@@ -86,4 +86,12 @@ replaced it.
 
 `typescript-pro` and `test-master` are MIT-licensed; see the `LICENSE` inside each of
 those two directories. Original author: <https://github.com/Jeffallan>.
-`feature-spec` is Revenexx-internal.
+
+`feature-spec` **declares `license: MIT` in its own frontmatter** and ships no `LICENSE`
+file, because the catalogue does not put one in the skill directory. Its
+`visibility: private` is a *distribution* setting on the Skill Registry — it says who
+may `revenexx skills add` it, not what the text may be reused for. The two answer
+different questions and do not contradict each other, which is worth stating here
+because this repository is public and the files are readable by anyone who clones it.
+Where the two would conflict, the catalogue is the source: change it there, not in the
+vendored copy, or the `diff` that detects drift stops working.
