@@ -46,6 +46,16 @@ What stays out is the machinery behind the name — that is `docs/`, and
 - [`node-images.md`](node-images.md) — the pictures a package ships: what is collected,
   what reaches the build, and which paths are refused
 
+### What a node declares
+
+- [`author-time-resolution.md`](author-time-resolution.md) — settings a node works out
+  while somebody is editing: which markers reach the manifest, and how much of this
+  mechanism this package does *not* hold
+- [`localized-text.md`](localized-text.md) — reducing a label to the one word that gets
+  drawn, and what happens when the language asked for was never written
+- [`credential-type.md`](credential-type.md) — which credentials a node will accept, and
+  why every reader sees the same list however the node wrote it
+
 ## What is not promised yet
 
 Most of this package. The largest surface is the node and credential contract — what
