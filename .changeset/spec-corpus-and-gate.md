@@ -2,10 +2,11 @@
 '@revenexx/integrations-node-sdk': patch
 ---
 
-The behaviour this package has always had is now written down and held to it. Ten
-feature specs state 82 promises across the egress guard, the request budget, response
-reading, the retry primitive, the credential base classes, the manifest envelope, the
-shipped image files, and the three helpers that settle what a node declares. Every
+The behaviour this package has always had is now written down and held to it. Eleven
+feature specs state 94 promises across the egress guard, redirect following, the request
+budget, response reading, the retry primitive, the credential base classes, the manifest
+envelope, the shipped image files, and the three helpers that settle what a node
+declares. Every
 promise names a test that proves it, and `npm run spec:check` refuses a change that
 moves one without the other.
 

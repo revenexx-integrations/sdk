@@ -149,6 +149,85 @@ workflow.
   nobody asked for
 - verify: unit
 
+### AC-11 — The refused set covers every shape a non-public address comes in
+
+- **Given** an address that is loopback, private, link-local, unique-local or the
+  unspecified address
+- **When** it is judged
+- **Then** it is refused, in either IP version and in the forms that embed one version
+  inside the other
+- **And** an address just outside one of those ranges is allowed
+- **Because** the ranges are contiguous and the boundaries are where a hand-written
+  check goes wrong — one octet out and the cloud metadata address reads as public, or a
+  customer's real host becomes unreachable
+- verify: unit
+
+### AC-12 — A host that can be judged without asking DNS is judged without asking
+
+- **Given** a target whose host is `localhost`, a name beneath it, or a literal address
+- **When** it is judged
+- **Then** the answer is reached without a name being resolved at all
+- **Because** the resolver is the one part of this that talks to something we do not
+  control; a name that never needed it should not be able to hang the guard, and a
+  literal address is already the answer
+- **Pair** AC-2, where a name that genuinely needs resolving does get resolved
+- verify: unit
+
+### AC-13 — A host that resolves to nothing is refused
+
+- **Given** a name that resolves to no address at all
+- **When** it is judged
+- **Then** it is refused
+- **Because** the ruling is "every address this resolves to is public", and no addresses
+  would satisfy that vacuously — letting a name through to a connection that resolves it
+  again, on its own terms
+- **Pair** AC-2
+- verify: unit
+
+### AC-14 — An address written in a form the guard does not recognise is still caught
+
+- **Given** a host written as a bare integer rather than as a recognisable address — the
+  decimal form of a loopback address, say
+- **When** it is judged
+- **Then** it is refused, because it is handed to the resolver like any other name and
+  the address that comes back is judged
+- **Because** the obfuscated forms are what somebody probing this reaches for, and the
+  guard does not have to recognise every one of them so long as nothing it fails to
+  recognise gets through unjudged
+- **Pair** AC-2
+- verify: unit
+
+### AC-15 — The local-development relaxation is off unless it is deliberately on
+
+- **Given** the environment variable that relaxes the address rules
+- **When** it is unset, or set to something that does not read as on
+- **Then** the guard applies in full
+- **And** it applies again as soon as the variable is removed, within the same process
+- **Because** this is the one switch that turns the guard off, so the failure that
+  matters is it being on when nobody meant it — a stale value in an environment, a
+  default copied out of the development stack
+- **Pair** AC-1, the same refusal with the switch absent
+- verify: unit
+
+### AC-16 — The guard gives up when the call it belongs to is cancelled
+
+- **Given** a name being resolved as part of judging a target
+- **When** the caller's signal aborts — before the resolve starts, or while it runs
+- **Then** the guard ends with the abort rather than waiting for the resolver
+- **Because** resolving a name cannot be interrupted at the system level, so without this
+  a hung or hostile resolver decides how long the call takes and the budget the caller
+  set means nothing
+- verify: unit
+
+## Elsewhere
+
+- **What following a redirect does to the request** — how many hops are allowed, what a
+  malformed target costs, and how the method and body change on the way — is
+  [`redirect-following.md`](redirect-following.md). This spec promises only where a hop
+  may go.
+- **How long the call may take and how often it is tried** is
+  [`request-budget.md`](request-budget.md).
+
 ## Gaps
 
 **Known**
@@ -187,3 +266,7 @@ workflow.
   token request through the guard, which had been reaching the network around it
 - [PO-368](https://linear.app/revenexx/issue/PO-368) — backfilled this spec against the
   tests that already proved it, and installed the gate that now holds it
+  - AC-11 through AC-16 came in a second pass, from proven behaviour the first pass left
+    unbound. At sixteen criteria this is the largest spec here; if it grows again, the
+    local-development relaxation (AC-10, AC-15) is the seam to split along — it is the one
+    subject here about operating this package rather than about what the guard refuses.

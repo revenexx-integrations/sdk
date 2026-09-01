@@ -126,6 +126,18 @@ signal the engine passes in, which ends the call wherever it has got to.
   cannot argue with
 - verify: unit
 
+### AC-11 — A refusal that cannot change is not asked again
+
+- **Given** a call with retries allowed, whose target is refused for a reason that will
+  be the same every time — a blocked address, a chain that never ends
+- **When** it fails
+- **Then** it fails once, without using any of the retry budget
+- **Because** a retry can only change the outcome of something transient; asking again
+  after a deterministic refusal spends the caller's time and the host's, and delays the
+  failure by the whole backoff before saying the same thing
+- **Pair** AC-6, a failure that is worth asking again
+- verify: unit
+
 ## Elsewhere
 
 - **Where a request is allowed to go at all** — the address rules, the redirect hops
@@ -134,6 +146,9 @@ signal the engine passes in, which ends the call wherever it has got to.
 - **How much of an answer is read, and as what**, is
   [`response-reading.md`](response-reading.md). The budget here bounds the request, not
   the body that comes back.
+- **What following a redirect does to the request** is
+  [`redirect-following.md`](redirect-following.md). Each hop gets its own budget, which
+  is the `## Gaps` entry below.
 
 ## Gaps
 
@@ -151,10 +166,10 @@ signal the engine passes in, which ends the call wherever it has got to.
 
 **Undecided**
 
-- **Which failures are worth retrying is not promised.** Nothing here states whether a
-  host that answers with a refusal should be asked again, or only one that fails to
-  answer at all — the distinction a workflow author would care about most, and the one
-  no test covers.
+- **Which failures are worth retrying is only half promised.** AC-11 says a refusal that
+  cannot change is not asked again. What is still unstated is the other side: whether a
+  host that answers with a rejection — a refused authorisation, a malformed request —
+  should be asked again, or only one that fails to answer at all.
 - **What a workflow author sees when the budget runs out is decided by each node.** A
   timeout is raised, not routed, so whether it surfaces as a failed run or as a branch
   that can be handled is not settled here.

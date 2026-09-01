@@ -708,7 +708,8 @@ test('safeFetch allows an http→https upgrade on redirect [@spec:ssrf-guard:AC-
 });
 
 // AC-5 — A redirect cannot carry a request from a public target to a private one
-test('safeFetch follows a public redirect and returns the final response [@spec:ssrf-guard:AC-5]', () => {
+// AC-2 — A chain that ends returns the answer at the end of it
+test('safeFetch follows a public redirect and returns the final response [@spec:ssrf-guard:AC-5] [@spec:redirect-following:AC-2]', () => {
   const { fetch: mock, calls } = scriptedFetch([
     redirect(302, 'https://93.184.216.35/next'),
     new Response('ok', { status: 200 }),
@@ -721,7 +722,8 @@ test('safeFetch follows a public redirect and returns the final response [@spec:
   });
 });
 
-test('safeFetch throws TOO_MANY_REDIRECTS past MAX_REDIRECTS hops', () => {
+// AC-1 — A chain that does not end is stopped, and says so
+test('safeFetch throws TOO_MANY_REDIRECTS past MAX_REDIRECTS hops [@spec:redirect-following:AC-1]', () => {
   const { fetch: mock, calls } = scriptedFetch([redirect(302, 'https://93.184.216.34/loop')]);
   return withFetch(mock, async () => {
     await assert.rejects(
@@ -736,7 +738,8 @@ test('safeFetch throws TOO_MANY_REDIRECTS past MAX_REDIRECTS hops', () => {
   });
 });
 
-test('safeFetch rejects a redirect with an invalid Location header', () => {
+// AC-3 — A target that cannot be read as an address is refused, not guessed at
+test('safeFetch rejects a redirect with an invalid Location header [@spec:redirect-following:AC-3]', () => {
   const { fetch: mock, calls } = scriptedFetch([
     redirect(302, 'http://'), // unparseable relative to the base
     new Response(null, { status: 200 }),
@@ -750,7 +753,8 @@ test('safeFetch rejects a redirect with an invalid Location header', () => {
   });
 });
 
-test('safeFetch releases the 3xx response socket on the TOO_MANY_REDIRECTS path', () => {
+// AC-4 — The connection is let go on the way out, including the failing ways
+test('safeFetch releases the 3xx response socket on the TOO_MANY_REDIRECTS path [@spec:redirect-following:AC-4]', () => {
   let cancelled = false;
   const bodied = () =>
     new Response(
@@ -771,7 +775,8 @@ test('safeFetch releases the 3xx response socket on the TOO_MANY_REDIRECTS path'
   });
 });
 
-test('safeFetch does not retry a blocked redirect target', () => {
+// AC-11 — A refusal that cannot change is not asked again
+test('safeFetch does not retry a blocked redirect target [@spec:request-budget:AC-11]', () => {
   const { fetch: mock, calls } = scriptedFetch([redirect(302, 'http://127.0.0.1/')]);
   return withFetch(mock, async () => {
     await assert.rejects(
@@ -782,7 +787,8 @@ test('safeFetch does not retry a blocked redirect target', () => {
   });
 });
 
-test('safeFetch downgrades POST to GET and drops the body on a 303 redirect', () => {
+// AC-5 — A redirect that changes the meaning of the request changes the request
+test('safeFetch downgrades POST to GET and drops the body on a 303 redirect [@spec:redirect-following:AC-5]', () => {
   const { fetch: mock, calls } = scriptedFetch([
     redirect(303, 'https://93.184.216.34/result'),
     new Response(null, { status: 200 }),
