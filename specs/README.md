@@ -38,6 +38,14 @@ What stays out is the machinery behind the name — that is `docs/`, and
   what each credential kind hands a node, where a token endpoint may be reached, what a
   rotated refresh token obliges, and what a refusal may repeat
 
+### What a built package hands over
+
+- [`package-manifest.md`](package-manifest.md) — what a package tells the registry: the
+  envelope, what appears only when a package has it, and what is taken from a package's
+  own metadata
+- [`node-images.md`](node-images.md) — the pictures a package ships: what is collected,
+  what reaches the build, and which paths are refused
+
 ## What is not promised yet
 
 Most of this package. The largest surface is the node and credential contract — what
