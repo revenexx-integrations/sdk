@@ -47,6 +47,24 @@ See [`docs/security-scanning.md`](docs/security-scanning.md) for the scanners
 for the rulesets — which, unlike the sibling repos', are live, because this repo
 is public.
 
+## Skills
+
+[`.claude/skills/`](.claude/skills/README.md) carries three, and its README says which
+are ours and which are vendored. The one to know about before changing behaviour is
+**[`feature-spec`](.claude/skills/feature-spec/SKILL.md)** — promised behaviour lives in
+`specs/*.md`, and every promise is bound to the test that proves it. Install it, or
+update it, from the registry:
+
+```bash
+revenexx skills add revenexx/skills-catalog feature-spec
+```
+
+**Its gate is not installed here yet** — no `spec.config.json`, no `specs/`, no
+`spec:check` — which is what still separates this repo from the four node packages,
+and is PO-368. Until it is, the format rules hold unenforced: a change to what this
+SDK promises its consumers has nothing holding it to a written promise, so say so in
+the pull request instead.
+
 ## Architecture
 
 `@revenexx/integrations-node-sdk` is a tiny shared TypeScript library consumed by individual Revenexx integration node packages. It ships dual ESM/CJS output via `tsup`.
