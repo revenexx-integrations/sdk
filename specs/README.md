@@ -32,12 +32,18 @@ What stays out is the machinery behind the name — that is `docs/`, and
   work: which failures are asked twice, how the wait between attempts grows, and how a
   cancellation lands during one
 
+### Acting as somebody's account
+
+- [`credentials.md`](credentials.md) — standing in for the person who owns the account:
+  what each credential kind hands a node, where a token endpoint may be reached, what a
+  rotated refresh token obliges, and what a refusal may repeat
+
 ## What is not promised yet
 
 Most of this package. The largest surface is the node and credential contract — what
 `INode`, `INodeDescription` and `ICredential` guarantee an implementer, and the *Key
 design constraints* in [`../CLAUDE.md`](../CLAUDE.md) that read as promises today while
-living in a file nothing enforces. Also unpromised: the credential base classes, the
+living in a file nothing enforces. Also unpromised: the
 manifest envelope the registry consumes, the image files a package ships beside it, the
 retry primitive a node can drive itself, the author-time resolvers, the two helpers that
 settle a loosely declared value, and the `rvnxx-nodes` CLI — which has no tests at all,
