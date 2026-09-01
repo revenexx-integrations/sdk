@@ -26,6 +26,12 @@ What stays out is the machinery behind the name — that is `docs/`, and
   and where it is enforced, what is parsed as JSON and what is not, and the ceiling
   neither a node nor a workflow author can raise
 
+### Doing work that may fail
+
+- [`retrying-an-operation.md`](retrying-an-operation.md) — asking again when it might
+  work: which failures are asked twice, how the wait between attempts grows, and how a
+  cancellation lands during one
+
 ## What is not promised yet
 
 Most of this package. The largest surface is the node and credential contract — what
