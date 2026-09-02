@@ -82,9 +82,12 @@ same answer.**
   cannot import `settingApplies`: this package's entry point re-exports the SSRF guard,
   which pulls Node built-ins, so importing the root into a browser bundle drags
   `node:net` in with it. A subpath export for the pure half would fix that and is not
-  built. Until it is, the second and third implementations are checked against the rows
-  in this package's answer table by copy — the same arrangement the shared skills use,
-  and it holds only as long as somebody copies the file again.
+  built. Until it is, the second and third implementations transcribe these rows and
+  assert their **count**, so a row dropped on either side fails — which is the least
+  that works, and less than sharing one table. It was worth building: the first review
+  of PO-410 found a real divergence this way, in a text comparison against a value that
+  is not there, and no row here had exercised it. What the count still cannot see is a
+  row *changed* on two sides in different ways.
 - **What happens to the value of a setting that stops applying is not promised here.**
   The editor clears it, following the cascade it already runs for dynamic options
   (PO-410). Nothing in this package would notice either way.
