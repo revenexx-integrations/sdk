@@ -21,8 +21,8 @@ list that is right for whoever the node was built against.
 So a description may mark a setting as one to resolve rather than one to list, and
 offer a resolver that fetches the answers while a workflow is being edited. The
 markers travel in the manifest, which is how an editor knows to ask at all. The
-resolvers themselves run in the editing host, and what they return is written into the
-saved workflow rather than fetched again at run time.
+resolvers themselves run in the node-runtime host, and what they return is written
+into the saved workflow rather than fetched again at run time.
 
 **A node can say a setting is resolved without saying what it resolves to, and every
 reader of the manifest can tell.**
@@ -56,11 +56,12 @@ reader of the manifest can tell.**
 
 - **Most of this subject is below rather than above, and that is the honest result.**
   Two criteria is what this package can actually be held to; the rule the whole mechanism
-  depends on lives in the editing host, which is a different codebase.
+  depends on lives in the node-runtime host, which is a different codebase.
 - **That the resolvers run while editing and never during a run is not promised here.**
   It is the rule the mechanism depends on — a resolver called during a run would reach a
-  customer's system on every execution — and it is stated in `../CLAUDE.md` and enforced
-  by the editing host, which is a different codebase. Nothing in this package holds it.
+  customer's system on every execution — and it is stated in `../CLAUDE.md` and
+  enforced by the node-runtime host, which is a different codebase. Nothing in this
+  package holds it.
 - **That what a resolver returns is written into the saved workflow rather than fetched
   again is likewise unpromised here**, for the same reason: the host does the writing.
 - **Two of the three tests covering this area exercise a node written inside the test

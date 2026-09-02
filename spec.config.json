@@ -14,8 +14,8 @@
 
   "companions": [],
 
-  "$comment_houseRules": "Empty, and kept rather than dropped so the mechanism is here the day there is something to put in it. The one addition this package has belongs to a key of its own — the vocabulary boundary is `audience` — and stating it again in a house-rules file would produce two truths about one thing, which is the failure this key warns about.",
-  "houseRules": "",
+  "$comment_houseRules": "`README.md`, whose last two sections are the addition this package has made to the format. `audience` states the coarse vocabulary boundary — which words a promise may be written in at all — and it cannot state the finer one a library needs: which of two defensible words to reach for when nothing on a screen decides it, and which exported name a promise is looked up by. Those are the two sections, and neither restates a key in this file, which is the limit a house-rules file may not cross. Kept in the index rather than in a file of its own, so it needs no `companions` entry: the index is exempt from the spec shape already.",
+  "houseRules": "README.md",
 
   "$comment_indexRegister": "Heading of the section in the index that records surfaces carrying no promise yet. In this package a \"surface\" is one export or one closely-bound family of exports that a node author reaches for by name — see `specs/README.md`. Each row names the ticket that will promise it, and a ticket named there must not already be history in a spec's `## Tickets`.",
   "indexRegister": "What is not promised yet",

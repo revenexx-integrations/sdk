@@ -10,7 +10,7 @@ updated: 2026-09-01
 
 **Which credentials a node will accept** is declared once by the node author and read by
 everything that has to offer a choice: the editor, when somebody picks a connection for
-a step, and the platform, when it decides whether a saved workflow still holds together.
+a node, and the engine, when it decides whether a saved workflow still holds together.
 
 A node usually accepts one kind and says so as a single name. Some accept several — an
 account connected by OAuth or by an API token do the same work for the node behind them
