@@ -64,6 +64,14 @@ const exec = has('pnpm-lock.yaml') ? 'pnpm exec'
     : has('bun.lockb') ? 'bun x'
       : 'npx'
 
+// The same cascade for running a *script*, because the seeded index prints the gate's
+// command for a reader who arrives without the skill — and `npm run` in a pnpm repo is
+// a command that reader would have to translate before it worked.
+const runScript = has('pnpm-lock.yaml') ? 'pnpm spec:check'
+  : has('yarn.lock') ? 'yarn spec:check'
+    : has('bun.lockb') ? 'bun run spec:check'
+      : 'npm run spec:check'
+
 /**
  * Which JS runner this repo uses. Only two shapes can be *listed* — vitest's JSON
  * and the `[{ name, file }]` the bundled reporter prints for `node --test` — so a
@@ -269,12 +277,21 @@ const existing = readJson(join(root, 'spec.config.json'), 'the existing spec.con
 const config = existing ?? { ...defaults, suites }
 if (!existing) {
   say(review, '`ceiling` is empty — fill in what this repo\'s harness cannot reach at any layer (a mocked transport, an external system), so a promise beyond it lands on `manual` or `todo` rather than on a layer that cannot prove it')
-  say(review, `\`houseRules\` is empty — set it to the bare filename of a file in \`${config.specDir}\`, named in \`companions\` too, once this repo has additions of its own to the format: what counts as a surface here, a title convention. Leave it empty until there is something to put in it, and keep out anything the config already has a key for`)
+  say(review, `\`houseRules\` points at \`${config.specDir}/README.md\`, whose last sections are empty on purpose and fill at different times — the surface register with the first spec, because every spec's \`where:\` already holds the material; the words and the cuts when this repo has one to record. What must NOT go in there is anything this file already has a key for: \`suites\`, \`ceiling\`, \`audience\`, \`ticketPattern\`, \`indexRegister\` are settled here, and stating one twice produces two truths about one thing`)
 }
 put('spec.config.json', `${JSON.stringify(config, null, 2)}\n`)
 
 const specDir = config.specDir ?? defaults.specDir
 const register = config.indexRegister ?? defaults.indexRegister
+/**
+ * The index gets all six of its sections at install, the empty ones included. They are
+ * the same six in every repository, and a heading that is already there is what makes
+ * the next author fill it — the two this did not seed before are exactly the two nobody
+ * wrote without being asked: the words a corpus had to settle, and the register of what
+ * the product calls each surface.
+ */
+const runner = pkg ? runScript : 'node scripts/spec-check.mjs'
+const indexExisted = existsSync(join(root, specDir, 'README.md'))
 put(`${specDir}/README.md`, `# Feature specs
 
 What this product promises, one spec per surface. Every promise here is bound to a
@@ -291,7 +308,63 @@ test that proves it; \`spec:check\` holds the two together.
 
 <!-- Surfaces that carry no promise of their own yet: what it is, and the ticket
      that will promise it. A row here is a state, not an oversight. -->
+
+## How a spec is cut here
+
+<!-- The granularity calls this repo has made, one entry each: which item of the
+     skill's \`## One spec per surface\` list it was, and what the other choice would
+     have cost. The reasoning, not the outcome — where a spec lives is a fact the
+     directory already states. Empty until a cut here took an argument.
+     An entry OPENS on bold text, never on a link. This heading is one of the four
+     in \`indexAsides\`, so the gate already subtracts it from the inventory — the
+     convention is what still holds if that heading is renamed and the config is
+     not: a bullet read as inventory would count as a spec's index row and let the
+     real one be deleted unnoticed. -->
+
+## Words these specs use
+
+<!-- Terms the product leaves open — the roles, a thing named differently at two
+     points of its life — settled by agreement and written down so the next author
+     follows them. Empty until two authors could reasonably write two words for one
+     thing. Settling one obliges a sweep: replace the word that lost in every spec
+     and here, in the same change, because nothing in the gate can see a drifted
+     term. A word a sibling corpus already settled is borrowed and cited, not
+     decided again. -->
+
+## The surfaces, and what the product calls them
+
+<!-- One row per name a consumer reaches a promise by, and the spec that promises it
+     — the message key in a translated product, the shipped copy in a
+     single-language one, the exported name or the route in a library. No column
+     describing the surface: that is the spec's opening sentence, and the copy here
+     is the one that rots. Read before a spec, a ticket or a pull request names a
+     surface, so one surface is named once everywhere. This section starts with the
+     first spec — every spec's \`where:\` already holds the material — and a surface
+     the product does not name is listed underneath rather than given a house
+     name. -->
+
+## How this stays true
+
+Every AC declares how it is verified, and every automated one is claimed by a test
+tagged \`@spec:<feature>:AC-n\`. The gate fails the build when a promise has no
+claimant, when a claim resolves to no promise, and when the index has stopped
+matching the specs — so a promise cannot change without its tests coming along.
+Behaviour nobody tests is not hidden: it is \`manual\` with a reason or \`todo\` with
+a ticket, and the gate prints both on every run.
+
+- Run the gate: \`${runner}\`
+- Working on a ticket that changes behaviour: \`/feature-spec <ticket>\`
+- Writing or editing a spec: the \`feature-spec\` skill carries the format rules
 `)
+
+/**
+ * An index that was already here is kept, like every other existing file — but it was
+ * very likely seeded by an older version of this installer, which wrote three of the
+ * six sections the skill's index table now names. Nothing else would say so: the gate
+ * reads two sections and cannot miss what is absent, so without this line a repo
+ * carries a three-section index indefinitely and the operator never learns why.
+ */
+if (indexExisted) say(review, `\`${specDir}/README.md\` was already here and was left alone — check it against the six sections the skill's index table names: the inventory, \`${register}\`, *how a spec is cut here*, *words these specs use*, *the surfaces, and what the product calls them*, and *how this stays true*. An older install seeded only the first two, the gate reads only those two, and nothing else will report the other four missing`)
 
 if (pkg) {
   const scripts = pkg.scripts ?? {}
@@ -385,6 +458,7 @@ if (kept.length) console.log(`\nalready present, left alone:\n${kept.map(f => ` 
 
 if (existing) {
   say(review, 'this repo already had a `spec.config.json`, so it was left untouched — the layers above are the ones it declares, not the ones this run detected. Merge anything missing by hand')
+  if (!existing.indexAsides) say(review, "this config has no `indexAsides`, so every section of the index except the register is read as the inventory — a bullet in the words section or the surface register counts as a spec's index row if a link opens it, and the real row can then be deleted in silence. Copy the key from the skill's `assets/spec.config.json` and check the four headings against the ones this index actually uses")
 }
 else {
   say(review, '`audience` is a placeholder describing an operator on a screen — restate it in this product\'s own words if its readers are integrators calling an API, workflow authors on a canvas, or anyone else; the `$comment` beside it carries three worked examples')

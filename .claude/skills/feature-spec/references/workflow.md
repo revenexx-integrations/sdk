@@ -65,8 +65,24 @@ in place:
 If the change spans two specs, edit both. If it spans five, this is probably a refactor
 rather than a behaviour change — go back to step 1.
 
-New specs need their row in the index, and a surface left deliberately unpromised needs
-its row in the register (see `references/spec-anatomy.md`).
+**The index is edited in the same pass, and three of its sections travel with a
+spec.** A new spec needs its row in the inventory. A surface left deliberately
+unpromised needs its row in the register of what is not promised yet. And every surface
+this spec promises needs its name in the surface register — read there *first*, so the
+spec uses the name the product ships rather than a description of it, and extended
+where the name is missing. A surface the product does not name is recorded as such
+rather than given a house name.
+
+**A word this pass had to settle goes in the words section, and then through the whole
+corpus.** Grep for the word that lost and replace it wherever it stands — every spec
+and the index. Do it in this change: the section otherwise describes a corpus that does
+not follow it. Nothing here is checked and nothing can be, because a drifted term breaks
+no promise — every file involved is green before the sweep and green after, and writing
+the word down is the only thing that finds those places at all. `updated:` records when
+a promise last changed, so a file whose prose was only aligned keeps the date it has.
+
+What each section holds, and which of them starts with the first spec:
+`SKILL.md` and `references/spec-anatomy.md`.
 
 ## 3. Update the tests in the same pass
 
@@ -88,7 +104,9 @@ vacuous test the first time they were applied — an absence assertion matching 
 ## 4. Record the ticket
 
 Append to the spec's `## Tickets` — one line on what this change contributed — and bump
-`updated:` in the frontmatter. In **backfill** mode with no ticket to name, record the
+`updated:` in the frontmatter of every spec whose promise this change touched. Not in one
+whose prose was only aligned by a word sweep (step 2): that date says when the promise
+last moved. In **backfill** mode with no ticket to name, record the
 ticket being worked under: the section must never be empty, because it is the history of
 the promise.
 
@@ -100,6 +118,10 @@ the promise.
 - Report: the mode and its source, specs touched, ACs added / changed / retired, the tests
   claiming them, everything left as `manual` or `todo` **with the reason**, and every gap
   opened. If a promise was left unverified, say it plainly.
+- Report the index too: rows added to the inventory or the register, **names added to the
+  surface register**, and **any word settled — with the files the sweep touched**. A word
+  settled and not swept is the one item on this list the gate cannot contradict, so it is
+  the one worth naming out loud.
 
-The last item is the one that decides whether the corpus stays worth trusting. A run that
-reports "done" over an AC nobody proved has spent the only thing this format buys.
+**Reporting honestly is what decides whether the corpus stays worth trusting.** A run
+that reports "done" over an AC nobody proved has spent the only thing this format buys.

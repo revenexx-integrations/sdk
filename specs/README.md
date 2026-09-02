@@ -84,6 +84,63 @@ filed — carving the rest of this package into surfaces is a decision somebody 
 make, not a line to invent here. The ticket that installed this gate is history in
 `ssrf-guard.md` and cannot stand in for them.
 
+## How a spec is cut here
+
+The rule is the `feature-spec` skill's `## One spec per surface`. What the rule leaves
+to judgement was decided once, at the backfill this corpus arrived in, and is recorded
+here so the next author inherits the call instead of re-arguing it. Every entry below is
+a cut this package could defensibly have made the other way.
+
+- **`safeFetch` is three specs, and the export is not the unit — the goal is.** Where a
+  request may go ([ssrf-guard.md](ssrf-guard.md)), what a hop does to it
+  ([redirect-following.md](redirect-following.md)) and what it may cost
+  ([request-budget.md](request-budget.md)) are three things a reader comes looking for
+  separately, and each would be buried inside a spec that answered all three. The cut
+  follows item 3 without the split it describes: there was never a single file to grow
+  past a dozen promises, because the three goals were already visible when the corpus
+  was backfilled. What this costs is stated in the register below — no one of the three
+  may be read as the whole of what that name promises.
+- **Asking again is its own surface, not part of what one request costs.** The budget
+  spec promises how many attempts there may be;
+  [retrying-an-operation.md](retrying-an-operation.md) promises which failures are asked
+  twice at all, how the wait between attempts grows, and where a cancellation lands.
+  The deciding evidence is that `withRetry` has **no caller inside this package**: it is
+  an export a node author reaches directly, around an operation that need not be a
+  request, so its promises cannot live in a spec about one request without becoming
+  invisible to the people they are for.
+- **Reading the answer is a second goal, and the file boundary follows the word.** A
+  budget is what a caller may spend and a cap is what an answer may weigh — the
+  distinction *Words these specs use* draws below — so
+  [response-reading.md](response-reading.md) is where the cap and its ceiling live, and
+  [request-budget.md](request-budget.md) is where the budgets do. Both specs have a
+  criterion about a caller asking past a ceiling, and they are about different ceilings;
+  one file would have made that read as one promise.
+- **The five credential base classes are one spec; the declaration that names them is
+  another.** [credentials.md](credentials.md) is what each kind hands a node —
+  item 1, one surface for a closely-bound family. [credential-type.md](credential-type.md)
+  is a different goal with a different reader: what a node *will accept*, read by the
+  editor when somebody picks a connection and by the engine when it decides whether a
+  saved workflow still holds together. Not a size split — that spec has two criteria.
+- **The manifest and the pictures it points at are two specs, because they fail
+  differently.** [package-manifest.md](package-manifest.md) is the envelope a package
+  hands the registry; [node-images.md](node-images.md) is what a declared path is
+  allowed to reach at build time and what a bad one costs. The declaration travels in
+  the manifest and the file is copied beside it, so one spec was defensible — but the
+  whole of the second is about a risk the first does not have.
+- **[author-time-resolution.md](author-time-resolution.md) was written although two
+  criteria is all this package can be held to.** The alternative was leaving the surface
+  out and letting the register of what is not promised yet carry it. It was written
+  because the omission would have hidden the more useful fact: the rule the whole
+  mechanism depends on lives in the node-runtime host, and a spec that says so out loud
+  is worth more than a row saying nothing is promised. A spec that is mostly gaps is the
+  honest result here rather than an unfinished one.
+- **The inventory is grouped by goal, and no group mirrors a source file.** *Reaching a
+  host*, *Doing work that may fail*, *Acting as somebody's account*, *What a built
+  package hands over*, *What a node declares* — a reader arrives with a task rather than
+  with a module, and a group named after a file would be the one thing in this index that
+  goes stale on a rename. The groups are the index's own; a filename still names its
+  feature and never its group.
+
 ## Words these specs use
 
 Conventions this corpus was already following before anybody wrote them down, recorded
@@ -222,3 +279,32 @@ a renamed export shows up here only when somebody looks. Kept anyway, because th
 lookup it answers — from the name in your hand to the spec that promises it — is the
 one a consumer actually has. If it starts to rot, delete it rather than half-maintain
 it.
+
+## How this stays true
+
+Every AC declares how it is verified, and every automated one is claimed by a test
+tagged `@spec:<feature>:AC-n`. `npm run spec:check` fails the build when
+
+- an AC promises behaviour that no test claims, **or**
+- a test claims an AC that no longer exists, **or**
+- a spec has stopped matching the index: one is missing its own entry there, or an entry
+  links a file that is gone, **or**
+- a ticket reference goes nowhere, including a row in
+  [What is not promised yet](#what-is-not-promised-yet) naming a ticket a spec already
+  lists as done — that work landed, so the row outlived itself.
+
+The second direction is what keeps this alive: rewrite or delete a promise and its tests
+go red in the same change, so they have to be brought along.
+
+**This package has one layer, and that is not a deficiency.** No application stands up
+around these exports — a consumer imports a name and calls it — so `unit` is the weakest
+layer at which every promise here is observable, and it is the only one declared. What
+it cannot reach is the `ceiling` in [`../spec.config.json`](../spec.config.json): no test
+here resolves a real hostname or opens a real socket, so a promise about what happens at
+connect time is `manual` with a reason or `todo` with a ticket, never `unit`.
+
+Two things the gate cannot see, and both fall to whoever writes: the vocabulary sections
+above are not compared against anything, and a word settled there has to be swept through
+every spec in the same change. Working on a ticket that changes behaviour:
+`/feature-spec <ticket>`. Writing or editing a spec: the `feature-spec` skill carries the
+format rules.

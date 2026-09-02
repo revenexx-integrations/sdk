@@ -275,12 +275,40 @@ every spec appears as an entry **opening its own bullet or table row** (a mentio
 prose, or inside another entry, does not count), every `.md` link resolves, and ticket
 links get the same reading as in a spec.
 
-It is one file and two readings. The inventory answers "where is the spec for this?".
-The register — the section named by `indexRegister` — answers "what has no spec?", and
-its rows name the ticket that will promise each surface. That is where item 4 of the
-granularity list is recorded, so the index stops being a list of what exists and
-becomes the map of what is and is not promised. Sections inside the inventory earn
-their keep from the second surface onwards.
+**The inventory is identified negatively, so the sections around it have to be named.**
+The gate reads the index as everything except the register (`indexRegister`) and the
+four sections `indexAsides` names — because a corpus of any size groups its inventory
+under headings of its own and adds to them, so naming the inventory positively would go
+stale on the next group and take the check with it. Rename one of those headings and the
+list in the config comes along, or that section is read as inventory again.
+
+**Outside the inventory, an entry opens on bold text or a name — never on a link.** It
+is the same rule as the config's, held by the writing instead: a bullet under *how a
+spec is cut here* that opens with a link to a spec, or a register row whose first cell
+is that link, would count as that spec's inventory entry and let the real row be deleted
+with nothing going red. Bold the point and put the link inside the sentence; in the
+register, the name goes in the first column and the spec in a later one. Both corpora
+already write them this way, which is why the hole stayed shut before anything watched
+it — and it is what still holds if the config drifts.
+
+It is one file and several readings, and `SKILL.md` names the six sections and when
+each of them starts. The inventory answers "where is the spec for this?" — sections
+*inside* it earn their keep from the second surface onwards. The register named by
+`indexRegister` answers "what has no spec?", and its rows name the ticket that will
+promise each surface; that is where item 4 of the granularity list is recorded, and it
+is what turns the index from a list of what exists into the map of what is and is not
+promised. The two vocabulary sections answer "what is this called?" and have a section
+of their own below.
+
+**What *how a spec is cut here* holds is the reasoning, not the outcome.** The outcome
+is already visible — the files are right there, and "the add-a-secret form lives in
+`secrets.md`" is a fact the directory states better. An entry says which item of the
+granularity list the call was, and what the other choice would have cost: *"the
+add-a-secret form is part of `secrets.md`, not a surface of its own — it exists only to
+put a row in the list behind it and holds no state the operator returns to. Not because
+it is small: size alone never splits or merges a spec."* Written that way it answers the
+next author before they reopen the argument, and it says which reasoning would have to
+change for the call to change.
 
 **Directories are the documented way out, and worth it somewhere past two dozen specs
 — not before.** They cost the gate's flatness rule, the tag grammar, every existing
@@ -290,23 +318,62 @@ deliberately, or not at all.
 ## Where the names come from, and where they are written down
 
 Two vocabularies earn their place in the spec directory's `README.md`, and they divide
-by **source**. Neither is the register named by `indexRegister` above: that one records
-surfaces carrying no promise yet, while these record what things are *called*.
+by **source**.
 
 | | Holds | Comes from |
 | --- | --- | --- |
-| **The surface register** | one row per surface: what it is called, how a reader reaches it, which spec promises it | the product settled it — it is only looked up |
-| **The words** | the terms the product leaves open: roles, a thing named differently at two points of its life | we settled it — arguable, changed by agreement |
+| **The surface register** | one row per name a consumer reaches a promise by, and which spec promises it | the product settled it — it is only looked up |
+| **The words** | the terms the product leaves open: the roles, a thing named differently at two points of its life | we settled it — arguable, changed by agreement |
 
-**In a translated product the register's entry is the message key, not the word.** The
-catalogues already hold every language, so the key yields all of them and none can
-drift from what is drawn; a written-out column per language is one more copy to keep
-true, and the first to rot.
+**Use them before writing anything that names a surface** — a spec, a ticket, a pull
+request, a commit body. A surface is named once, and every text about it uses that name;
+the register is what makes that possible without anybody having to remember.
 
-**Use, extend, create — in that order.** Use it before writing a spec, a ticket or a
-pull request. Extend it when a spec promises a surface the register does not list yet.
-Create it when descriptions start repeating — three texts calling one thing three ways
-is the signal, and before that a register is furniture nobody reads.
+**Neither is the register named by `indexRegister`, and the boundary is stated here so
+that no corpus has to argue it again.** Three sections of one file record three
+different things: what carries no promise yet (`indexRegister`), what a thing is called
+where the product decided (the surface register), and what a thing is called where
+nobody did (the words). The difference is not tone, it is who can change the entry — a
+name in the register changes when the product's copy changes and never otherwise, a
+word in the words section changes by agreement between two authors. So extend the
+register when a reader could point at the thing, and the words when two authors could
+reasonably write two of them.
+
+**The register's entry is whatever a consumer is actually holding when they come
+looking**, which follows the product and not this format:
+
+| The product is | The entry | Why |
+| --- | --- | --- |
+| translated | the message key | the catalogues already hold every language, so the key yields all of them and none can drift from what is drawn — a column per language is one more copy to keep true, and the first to rot |
+| a UI in one language | the copy it ships | there is one string, and it is the one on the screen |
+| a library, or an API | the exported name, or the route | there is no screen: a consumer reaches a promise by importing a name and calling it, so the name *is* the address |
+
+**No column describes the surface.** A description beside the name is a second copy of
+the spec's own opening sentence, and the copy is the one that rots; the link to the spec
+is what the row is for. The other columns are the corpus's own call — how a reader
+reaches it earns one where a surface can be reached two ways, and earns nothing where
+the name is already the address.
+
+**One row per name, not per surface.** A surface may own several names — three ways to
+read an answer, five credential base classes — and whoever looks one up has only the
+name in their hand. The reverse happens too: one name can carry three specs, and then
+its row links all three, because none of them is the whole of what that name promises.
+
+**A surface the product does not name is recorded beside the register, not in it.**
+Every row in the table is a name to cite; a surface with no name has none, so it goes in
+a short list under the register instead — the ones named after their content (a node's
+configuration, `Run #123`), and the ones named by nothing at all. Each is a small
+question rather than a defect: a name is worth adding only where a reader has to refer
+to the thing. Recorded all the same, because otherwise the description that turns up in
+a ticket reads as sloppiness rather than as the symptom it is — there was nothing to
+look up.
+
+**A word a sibling corpus already settled is borrowed, and cited as borrowed.** Two
+spec corpora in one product family share their roles and most of their nouns, and
+deciding one of them twice produces the two truths this section exists to prevent, one
+repository apart. Name where the entry came from, so the next author knows which end to
+change — and where the sibling's product draws the line, that line wins over an argument
+made here.
 
 Kept in the index they need nothing declared. In a file of their own they are prose
 rather than specs, so name that file in `companions` or the gate reports it as a spec

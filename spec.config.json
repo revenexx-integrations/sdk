@@ -1,5 +1,5 @@
 {
-  "$comment": "Everything project-specific about the feature-spec gate lives here; the format rules and the workflow are project-agnostic and live in the `feature-spec` skill, which is also what runs them: `/feature-spec <ticket|spec path|feature area>`. The skill came from the Skill Registry (`revenexx skills add revenexx/skills-catalog feature-spec`) at 0.3.0, and `scripts/spec-check.mjs` is byte-identical to `.claude/skills/feature-spec/assets/spec-check.mjs`, so a fix in the catalogue travels by copying the file again. Only this config differs, and every difference is a comment below.",
+  "$comment": "Everything project-specific about the feature-spec gate lives here; the format rules and the workflow are project-agnostic and live in the `feature-spec` skill, which is also what runs them: `/feature-spec <ticket|spec path|feature area>`. The skill came from the Skill Registry (`revenexx skills add revenexx/skills-catalog feature-spec`) at 1.0.0, and `scripts/spec-check.mjs` is byte-identical to `.claude/skills/feature-spec/assets/spec-check.mjs`, so a fix in the catalogue travels by copying the file again. Only this config differs, and every difference is a comment below.",
 
   "specDir": "specs",
 
@@ -14,11 +14,19 @@
 
   "companions": [],
 
-  "$comment_houseRules": "`README.md`, whose last two sections are the addition this package has made to the format. `audience` states the coarse vocabulary boundary — which words a promise may be written in at all — and it cannot state the finer one a library needs: which of two defensible words to reach for when nothing on a screen decides it, and which exported name a promise is looked up by. Those are the two sections, and neither restates a key in this file, which is the limit a house-rules file may not cross. Kept in the index rather than in a file of its own, so it needs no `companions` entry: the index is exempt from the spec shape already.",
+  "$comment_houseRules": "`README.md`, whose four sections below the inventory and the register are the additions this package keeps. Two of them are its own: `audience` states the coarse vocabulary boundary — which words a promise may be written in at all — and it cannot state the finer one a library needs, which is *Words these specs use* (which of two defensible words to reach for when nothing on a screen decides it) and *The surfaces, and what the product calls them* (which exported name a promise is looked up by). The other two are the skill's canonical sections rather than this package's invention: *How a spec is cut here* records the granularity calls so the next author inherits them, and *How this stays true* restates for a reader who arrives without the skill what the gate holds. None of the four restates a key in this file, which is the limit a house-rules file may not cross. Kept in the index rather than in a file of its own, so it needs no `companions` entry: the index is exempt from the spec shape already.",
   "houseRules": "README.md",
 
   "$comment_indexRegister": "Heading of the section in the index that records surfaces carrying no promise yet. In this package a \"surface\" is one export or one closely-bound family of exports that a node author reaches for by name — see `specs/README.md`. Each row names the ticket that will promise it, and a ticket named there must not already be history in a spec's `## Tickets`.",
   "indexRegister": "What is not promised yet",
+
+  "$comment_indexAsides": "The index's non-inventory sections beside the register, by heading. The inventory check reads the index as everything except these and `indexRegister`, because a spec's entry has to be an entry of its own — and every one of these sections cites specs by link, so without the subtraction a bullet in the words section or a row in the surface register would count as a spec's inventory row and let the real one be deleted in silence. These four are the catalogue default verbatim and they are the headings this index actually uses; rename one here and this list has to come along, because a heading that is not found is skipped and that section is read as inventory again. That is why an entry in those sections opens on bold text or on a name rather than on a link — the convention is what holds when the config has drifted, and it is how the surface register keeps the exported name in its first column and the spec in its second.",
+  "indexAsides": [
+    "How a spec is cut here",
+    "Words these specs use",
+    "The surfaces, and what the product calls them",
+    "How this stays true"
+  ],
 
   "$comment_formDebt": "The ratchet the catalogue needed for a corpus that predated the rule. This corpus was written after it, so the figure starts at zero and the ratchet is an outright gate: any `## Gaps` entry sitting outside the three bold labels (`Undecided` / `Known` / `Unreachable`) is simply new, and gets fixed rather than counted.",
   "formDebt": {

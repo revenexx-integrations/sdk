@@ -1,7 +1,7 @@
 ---
 name: feature-spec
 description: Keep a single point of truth for promised behaviour in specs/*.md and bind every promise to a test that proves it, via "@spec:feature:AC-n" tags a spec:check gate enforces in both directions. Use when writing or changing a feature spec, when a ticket changes promised behaviour, when wiring a test to an acceptance criterion, when spec:check fails, when asking which promises changed between two refs, or when installing the gate in a repository that has none yet. Invoke as "/feature-spec" followed by a ticket id, a spec path, or a feature area to bring a spec and its tests in line with reality.
-version: 0.3.0
+version: 1.0.0
 visibility: private
 license: MIT
 allowed-tools:
@@ -97,8 +97,7 @@ run returned" — costs every reader a translation, and it hides whether the sur
 a name at all. **A surface the product does not name is a finding, not a licence to
 invent one:** record the absence where the register would have held its row, because a
 house name that appears in no interface sends the reader hunting for words that are not
-there. Where names are looked up, and the two vocabularies a spec directory keeps, is
-[`references/spec-anatomy.md`](references/spec-anatomy.md).
+there. Where a name is looked up is the index's surface register, below.
 
 **Wire details follow the audience, declared once as `audience` in the config** — in
 that repo's own words, because the line sits in a different place in every product.
@@ -147,8 +146,15 @@ Work down this list and stop at the first line that fits:
    "Covered only from across" is a state, not an oversight.
 5. **None of the above** → a new spec, named after the surface, or after the goal
    when item 1 sent you here.
-6. **Still none** → invent the unit that fits, then record it as a line in the
-   index. The next person needs the precedent.
+6. **Still none** → invent the unit that fits, then record it in the index under
+   *how a spec is cut here*. The next person needs the precedent.
+
+**A cut that took an argument is recorded where the precedent lives** — *how a spec
+is cut here* in the index, one entry saying what was decided and what the other choice
+would have cost. Item 6 is the loudest case and not the only one: promoting a
+cross-surface promise, or leaving a surface covered only from across, is the same kind
+of call and re-argued just as easily. What one spec does not promise stays in its own
+`## Gaps`; this section is about the shape of the corpus, not about a promise.
 
 **When in doubt, one spec.** A file boundary is the expensive one, because AC ids
 are permanent: moving a promise to another file gives it a new id and retags its
@@ -170,10 +176,11 @@ promise intact.
 **Two keys carry what a repository decided on top of this format, and both are read
 before writing a spec rather than after.** `ceiling` says what the test harness here
 cannot reach at any layer, so a promise beyond it is `manual` or `todo`. `houseRules`
-names a file in the spec directory carrying the rest — what counts as a surface here,
-a title convention, a vocabulary boundary finer than `audience` can state. Where that
-file is more specific than this skill, it wins for this repo; it may narrow and extend
-a rule, never switch off one the gate checks.
+names where the rest is written down, and by default that is the index — what counts as
+a surface here, the cuts already made, the words this corpus settled, a title
+convention, a vocabulary boundary finer than `audience` can state. Where it is more
+specific than this skill, it wins for this repo; it may narrow and extend a rule, never
+switch off one the gate checks.
 
 **The canonical template lives in
 [`references/spec-anatomy.md`](references/spec-anatomy.md)** — frontmatter keys, the
@@ -199,9 +206,43 @@ say something about that line and are the only bullets that may follow it.
 
 **A new spec is not finished until the index has a row for it.** `specs/README.md`
 lists every spec, and the gate checks both directions — a spec missing from it, and a
-row naming a file that is gone. Where the config names `indexRegister`, that section of
-the index is the other half: a surface carrying no promise yet is recorded there with
-the ticket that will promise it, and the row goes when the promise lands.
+row naming a file that is gone.
+
+**The index is one file and six sections, and they are the same six in every
+repository**, so a reader who knows one corpus's index knows where to look in the next.
+**Only the inventory and the register are checked** — the gate knows the other four by
+name, from `indexAsides` in the config, but only so that it can tell them apart from the
+inventory. It would not notice one missing or reordered, and a renamed one has to be
+renamed in the config too, so those four are held by the next author to open the file:
+
+| Section | Starts | Holds |
+| --- | --- | --- |
+| the inventory | with the first spec | one entry per spec, each opening its own bullet or row |
+| *what is not promised yet* | with the first surface left unpromised | the surface, and the ticket that will promise it — its heading is `indexRegister` in the config, and the row goes when the promise lands |
+| *how a spec is cut here* | with the first cut that took an argument | the calls the granularity list leaves to judgement, decided once |
+| *words these specs use* | with the first word two authors could write two ways | the terms the product leaves open, settled by agreement |
+| *the surfaces, and what the product calls them* | with the first spec | one row per name a consumer reaches a promise by, and which spec promises it |
+| *how this stays true* | at install | what the gate holds and the command that runs it, for a reader who arrives without this skill |
+
+**The surface register starts with the first spec; the words section waits for a
+disagreement.** The two look alike and their lifecycles are opposite, because they
+divide by source. Every spec already carries a `where:`, so a register row costs a line
+— and until one exists, *look the name up rather than writing it* is a rule with
+nowhere to look, which is how a corpus ends up with three descriptions of one surface.
+Which words need settling cannot be known that early: it takes two authors reaching for
+two defensible words, and a section written before that is guesswork about a
+disagreement nobody has had.
+
+**Settling a word obliges a sweep of the corpus in the same change** — grep for the
+word that lost and replace it wherever it stands, specs and index alike. Nothing checks
+this and nothing can: a drifted term breaks no promise, so every file involved is green
+before the sweep and green after, and the only thing that finds those places is
+somebody writing the word down. `updated:` records when a promise last changed, so a
+file whose prose was only aligned keeps the date it has.
+
+Which entry a register row carries, how a surface the product does not name is
+recorded, and what a word a sibling corpus already settled obliges:
+[`references/spec-anatomy.md`](references/spec-anatomy.md).
 
 **Assert the outcome, not the mechanism.** "Nothing is persisted and the work is
 offered back as paused" survives a refactor; a function call re-sent with a changed

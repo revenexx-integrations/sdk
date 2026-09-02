@@ -690,25 +690,43 @@ const readmePath = join(root, config.specDir, 'README.md')
 const readme = existsSync(readmePath) ? readFileSync(readmePath, 'utf8') : null
 
 /**
- * The index, split into the inventory and the register of unpromised surfaces.
+ * The index, split into the inventory and everything in it that is not an inventory.
  *
- * They are one file and two readings. The inventory answers "where is the spec for
- * this?"; the register answers "what has no spec?", and its second column names
- * specs on purpose — as the neighbours a surface is *not* promised by. So a
- * register row is the one place in this file where a spec being named is evidence
- * of the opposite of being listed, and reading the whole file as an inventory lets
- * a spec's real row be deleted while a mention of it in the register keeps the
- * check quiet.
+ * The inventory answers "where is the spec for this?". The register answers "what has
+ * no spec?", and its second column names specs on purpose — as the neighbours a
+ * surface is *not* promised by. So a register row is a place in this file where a spec
+ * being named is evidence of the opposite of being listed, and reading the whole file
+ * as an inventory lets a spec's real row be deleted while a mention of it elsewhere
+ * keeps the check quiet.
  *
- * Sliced once, here, so the two checks below cannot disagree about where the
- * register starts and ends. `indexRegister` names the section because its heading
- * is this project's copy — without the key there is no register and the whole file
- * is the inventory, which is what it was before PO-267.
+ * The register is sliced once, here, so the two checks below cannot disagree about
+ * where it starts and ends. `indexRegister` names the section because its heading is
+ * this project's copy — without the key there is no register and the whole file is the
+ * inventory, which is what it was before PO-267.
+ *
+ * `indexAsides` names the rest: the sections that record how a spec is cut here, the
+ * words this corpus settled and what the product calls each surface. Every one of them
+ * cites specs by link, so before they were subtracted a bullet in any of them counted
+ * as an inventory entry if a link happened to open it. The inventory cannot be
+ * identified the other way round — positively, by naming the sections that ARE one —
+ * because a corpus of any size groups its inventory under headings of its own and adds
+ * to them, so that list would go stale on the next group and take the check with it.
+ * What this cannot see is a renamed aside: it falls out of the list and is read as
+ * inventory again, which is the old behaviour rather than a new failure. That is why
+ * an entry in those sections opens on bold text or a name rather than on a link — the
+ * convention holds when the config has drifted.
  */
 const register = readme !== null && config.indexRegister
   ? splitSection(readme, config.indexRegister)
   : null
-const inventory = register ? register.without : readme
+const inventory = (config.indexAsides ?? []).reduce(
+  (text, heading) => {
+    if (text === null) return null
+    const aside = splitSection(text, heading)
+    return aside ? aside.without : text
+  },
+  register ? register.without : readme,
+)
 
 // An entry of its own, not a mention: the link has to open its line, after a
 // bullet or a table's first pipe — required, not optional. Optional was the same
