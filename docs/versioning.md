@@ -176,8 +176,15 @@ The SDK is currently in the `0.x` range, which means by SemVer convention
 **every minor bump is allowed to break consumers**. We keep this pre-1.0
 window short and stay disciplined about following the matrix above as
 if we were already at 1.x; the only real difference is the leading
-zero in the version. Plan a `1.0.0` release once the type surface
-stops shifting weekly.
+zero in the version.
+
+`1.0.0` was originally planned for the point at which the type surface stopped
+shifting weekly. It arrived earlier and for a different reason: PO-374 added
+`state` as a required member of `INodeContext`, the matrix puts a required member
+under Major, and a Major on `0.18.1` is `1.0.0`. The alternative was to bend the
+type to fit the version, which is the failure this document exists to prevent. So
+`1.0.0` here records "the matrix was followed", not "the surface has settled" —
+and the matrix keeps applying unchanged above the leading one.
 
 ## Related documents
 

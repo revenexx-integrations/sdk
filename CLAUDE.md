@@ -56,7 +56,8 @@ is public.
 - `src/types.ts` — all interfaces and union types that define the node and credential contracts:
   - `INode` — the interface every integration node must implement (`description` + `execute`)
   - `INodeDescription` — static metadata (slug, version, category, ports, config schema)
-  - `INodeContext` — runtime context injected into `execute` (signal, logger, secrets, credentials)
+  - `INodeContext` — runtime context injected into `execute` (signal, logger, secrets, credentials, state)
+  - `INodeState` — the tenant state store a workflow remembers between runs (mapping / cursor / dedupe / digest — `dedupe` is the role, `claim` its operation); the role decides whether a write is immediate or only counts once the run completes
   - `INodeDescription.inputs` is `Record<string, IInputPort>` — single-input nodes use the conventional key `'in'`; fan-in nodes (merge, join) declare multiple named keys
   - `INodeResult` — what `execute` must return (output map + optional branch name)
   - `INodeWithIteration` / `isNodeWithIteration` — optional capability for nodes that drive iteration over a collection
