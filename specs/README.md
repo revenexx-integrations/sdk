@@ -60,6 +60,9 @@ What stays out is the machinery behind the name — that is `docs/`, and
 - [`author-time-resolution.md`](author-time-resolution.md) — settings a node works out
   while somebody is editing: which markers reach the manifest, and how much of this
   mechanism this package does *not* hold
+- [`setting-conditions.md`](setting-conditions.md) — a setting that says when it
+  applies: the condition, the comparison vocabulary it is written in, and the two
+  codebases that honour it rather than this one
 - [`localized-text.md`](localized-text.md) — reducing a label to the one word that gets
   drawn, and what happens when the language asked for was never written
 - [`credential-type.md`](credential-type.md) — which credentials a node will accept, and
@@ -259,6 +262,8 @@ name they are holding.
 
 | Name | Promised in |
 | --- | --- |
+| the `dynamic`, `dependsOn`, `dynamic-schema` and `resolveOutputs` markers | [author-time-resolution.md](author-time-resolution.md) |
+| the `showIf` condition on a setting | [setting-conditions.md](setting-conditions.md) |
 | `ApiKeyCredential` | [credentials.md](credentials.md) |
 | `assertPublicUrl` | [ssrf-guard.md](ssrf-guard.md) |
 | `backoffDelay` | [retrying-an-operation.md](retrying-an-operation.md) |
@@ -267,7 +272,7 @@ name they are holding.
 | `collectImageSources` | [node-images.md](node-images.md) |
 | `copyImages` | [node-images.md](node-images.md) |
 | `DEFAULT_RETRY_POLICY` | [retrying-an-operation.md](retrying-an-operation.md) |
-| the `dynamic`, `dependsOn`, `dynamic-schema` and `resolveOutputs` markers | [author-time-resolution.md](author-time-resolution.md) |
+| `evaluate` | [setting-conditions.md](setting-conditions.md) |
 | `INode.loadOptions` | [author-time-resolution.md](author-time-resolution.md) |
 | `INode.resolveConfigSchema` | [author-time-resolution.md](author-time-resolution.md) |
 | `INode.resolveOutputs` | [author-time-resolution.md](author-time-resolution.md) |
@@ -279,6 +284,7 @@ name they are holding.
 | `normalizeLocalized` | [localized-text.md](localized-text.md) |
 | `OAuth2AuthCodeCredential` | [credentials.md](credentials.md) |
 | `OAuth2ClientCredentialsCredential` | [credentials.md](credentials.md) |
+| `OPERATORS` | [setting-conditions.md](setting-conditions.md) |
 | `parsePackageMeta` | [package-manifest.md](package-manifest.md) |
 | `readArrayBuffer` | [response-reading.md](response-reading.md) |
 | `readJsonOrText` | [response-reading.md](response-reading.md) |
@@ -286,6 +292,7 @@ name they are holding.
 | `RetryableError` | [retrying-an-operation.md](retrying-an-operation.md) |
 | `retryConfigFields` | [request-budget.md](request-budget.md) |
 | `safeFetch` | [ssrf-guard.md](ssrf-guard.md), [redirect-following.md](redirect-following.md), [request-budget.md](request-budget.md) |
+| `settingApplies` | [setting-conditions.md](setting-conditions.md) |
 | `SimpleValueCredential` | [credentials.md](credentials.md) |
 | `sleepWithSignal` | [retrying-an-operation.md](retrying-an-operation.md) |
 | `timeoutConfigField` | [request-budget.md](request-budget.md) |

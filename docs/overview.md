@@ -401,6 +401,46 @@ Describes a user-configurable input on the node. Rendered as a form field in the
 | `credentials-ref` | Credential picker filtered by `credentialType` — value is a credential instance id, resolved via `ctx.credentials.get()` at runtime |
 | `state-ref` | State-namespace picker filtered by `stateRole` — one of `mapping`, `cursor`, `dedupe`, `digest`. The value is the namespace NAME, passed to `ctx.state.*` at runtime. `dedupe` is the role behind `ctx.state.claim()`, which is the operation's name rather than the role's |
 
+#### `showIf` — when a field applies, and how it differs from `dependsOn`
+
+The two sit next to each other on a field and are easy to mistake for one another.
+They answer different questions:
+
+| | Question | Effect |
+|---|---|---|
+| `showIf` | Does this field apply at all? | The editor draws it, or does not |
+| `dependsOn` | Whose change invalidates what this field resolved? | The editor re-resolves `loadOptions` / `resolveConfigSchema`, and clears the stale value |
+
+```ts
+{ key: 'source', label: 'Source', type: 'select', options: [
+    { value: 'now',   label: { en: 'Now',        de: 'Jetzt' } },
+    { value: 'field', label: { en: 'From field', de: 'Aus Feld' } },
+] },
+{ key: 'path', label: 'Path to the date', type: 'string',
+  showIf: { key: 'source', op: 'equals', value: 'field' } },
+```
+
+- `op` is one of `OPERATORS`, the same fourteen a condition node offers an author:
+  `equals`, `notEquals`, `contains`, `notContains`, `startsWith`, `endsWith`,
+  `greaterThan`, `greaterThanOrEqual`, `lessThan`, `lessThanOrEqual`, `exists`,
+  `notExists`, `isEmpty`, `isNotEmpty`. What each means is `evaluate`, and the answer
+  table in `src/operators.test.ts` is the canonical statement of it.
+- `value` is left out by the four that read presence rather than content (`exists`,
+  `notExists`, `isEmpty`, `isNotEmpty`).
+- The driving `key` must be a **literal** — a field that sets `expressionAllowed` may
+  not be named by a condition, because applicability has to be decidable while the
+  author is typing. The platform's manifest constraints refuse it.
+- **A hidden field's value is cleared**, the same cascade `dependsOn` already runs.
+  Switching away from a choice and back does not bring the old value with it.
+- Ask `settingApplies(field, config)` for the answer rather than reading `showIf`
+  yourself — a field with no condition always applies, and that default is what makes
+  the key additive.
+
+Do not reach for `dynamic-schema` to hide a declared field. It resolves a whole field
+set from somewhere the node cannot know at build time; used for a condition it puts a
+sandbox round trip, a loading state and a Retry button behind the question *should this
+text box be drawn*.
+
 ---
 
 ### `LocalizedString`
