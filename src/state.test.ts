@@ -38,7 +38,8 @@ function stubContext(state: INodeState): INodeContext {
   };
 }
 
-test('a node can branch on an existing correlation', async () => {
+// AC-1 — An unknown correlation is an answer, not a failure
+test('a node can branch on an existing correlation [@spec:workflow-state:AC-1]', async () => {
   const node: INode['execute'] = async (ctx, inputs) => {
     const known = await ctx.state.mapping.get('article', `pim:${String(inputs['id'])}`);
 
@@ -56,7 +57,8 @@ test('a node can branch on an existing correlation', async () => {
   assert.deepEqual(updated.outputs, { known: 'erp:A-8891' });
 });
 
-test('a rejected claim is a value the node handles, not a thrown error', async () => {
+// AC-2 — A claim that was refused is an answer, not a failure
+test('a rejected claim is a value the node handles, not a thrown error [@spec:workflow-state:AC-2]', async () => {
   const node: INode['execute'] = async (ctx) => {
     if (!(await ctx.state.claim('orders', 'evt_1', { ttlSeconds: 60 }))) {
       return { outputs: {}, branch: 'duplicate' };
@@ -72,7 +74,8 @@ test('a rejected claim is a value the node handles, not a thrown error', async (
   assert.equal(duplicate.branch, 'duplicate');
 });
 
-test('a cursor round-trips an arbitrary watermark shape', async () => {
+// AC-3 — A watermark keeps whatever shape the source counts in
+test('a cursor round-trips an arbitrary watermark shape [@spec:workflow-state:AC-3]', async () => {
   let written: unknown;
 
   const state = stubState({
@@ -97,7 +100,8 @@ test('a cursor round-trips an arbitrary watermark shape', async () => {
   assert.deepEqual(written, { updatedAfter: '2026-08-26T10:00:00Z' });
 });
 
-test('a digest short-circuits the expensive write', async () => {
+// AC-4 — An entity that has not changed is known before anything is written
+test('a digest short-circuits the expensive write [@spec:workflow-state:AC-4]', async () => {
   let wrote = false;
 
   const node: INode['execute'] = async (ctx) => {
@@ -117,4 +121,71 @@ test('a digest short-circuits the expensive write', async () => {
 
   assert.deepEqual(unchanged.outputs, { skipped: true });
   assert.equal(wrote, false);
+});
+
+// AC-5 — A node that remembers can be exercised without the engine
+test('all four roles are reachable through a context built from plain objects [@spec:workflow-state:AC-5]', async () => {
+  const calls: string[] = [];
+
+  const state: INodeState = {
+    mapping: {
+      get: async () => {
+        calls.push('mapping.get');
+
+        return 'erp:A-8891';
+      },
+      put: async () => {
+        calls.push('mapping.put');
+      },
+    },
+    cursor: {
+      get: async () => {
+        calls.push('cursor.get');
+
+        return undefined;
+      },
+      set: async () => {
+        calls.push('cursor.set');
+      },
+    },
+    claim: async () => {
+      calls.push('claim');
+
+      return true;
+    },
+    digest: {
+      unchanged: async () => {
+        calls.push('digest.unchanged');
+
+        return false;
+      },
+      set: async () => {
+        calls.push('digest.set');
+      },
+    },
+  };
+
+  const node: INode['execute'] = async (ctx) => {
+    await ctx.state.mapping.get('article', 'pim:1');
+    await ctx.state.mapping.put('article', 'pim:1', 'erp:A-8891');
+    await ctx.state.cursor.get('crm.customers');
+    await ctx.state.cursor.set('crm.customers', { updatedAfter: '2026-08-26T10:00:00Z' });
+    await ctx.state.claim('orders', 'evt_1');
+    await ctx.state.digest.unchanged('article.hash', 'article:1', 'sha-abc');
+    await ctx.state.digest.set('article.hash', 'article:1', 'sha-abc');
+
+    return { outputs: {} };
+  };
+
+  await node(stubContext(state), {});
+
+  assert.deepEqual(calls, [
+    'mapping.get',
+    'mapping.put',
+    'cursor.get',
+    'cursor.set',
+    'claim',
+    'digest.unchanged',
+    'digest.set',
+  ]);
 });

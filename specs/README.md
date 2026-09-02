@@ -41,6 +41,12 @@ What stays out is the machinery behind the name — that is `docs/`, and
   what each credential kind hands a node, where a token endpoint may be reached, what a
   rotated refresh token obliges, and what a refusal may repeat
 
+### What a node reaches while it runs
+
+- [`workflow-state.md`](workflow-state.md) — what a workflow remembers between runs: the
+  four roles a namespace can have, what each answer obliges a node to handle, and how much
+  of the store this package does *not* hold
+
 ### What a built package hands over
 
 - [`package-manifest.md`](package-manifest.md) — what a package tells the registry: the
@@ -68,7 +74,10 @@ at, which is why none of them could be backfilled.
   `INodeContext` and `ICredential` guarantee whoever implements them, the iteration
   capability, and the *Key design constraints* in [`../CLAUDE.md`](../CLAUDE.md) that
   read as promises today while living in a file nothing enforces. The largest promise
-  surface in the vertical.
+  surface in the vertical. One member of the run context is carved out of this row and
+  promised in [workflow-state.md](workflow-state.md), because it is the only one with
+  tests to point at; the signal, the secrets and the credentials a run is handed are
+  still here.
 - **The error contract** — when a node throws and when it routes to an error port, and
   what `NodeError` obliges either way. Stated in `../CLAUDE.md`, held by nothing.
 - **The `rvnxx-nodes` CLI** — which every node package's build runs, and which has no
@@ -134,6 +143,20 @@ a cut this package could defensibly have made the other way.
   mechanism depends on lives in the node-runtime host, and a spec that says so out loud
   is worth more than a row saying nothing is promised. A spec that is mostly gaps is the
   honest result here rather than an unfinished one.
+- **What a run remembers is a spec although the context it arrives on is not.**
+  `INodeContext` sits in the register above as unpromised, and its state member is a spec
+  of its own — item 5, named after the surface. What decided it is the guardrail rather
+  than the granularity: state is the only member of that context with tests to point at,
+  so it is the only one that could be backfilled without inventing promises. The cost is
+  that a reader of the register has to be told which part was carved out, which is why
+  that entry now says so.
+- **The setting that names a namespace stayed in that spec instead of joining *What a node
+  declares*.** A `state-ref` field and the calls it feeds are one subject — a node names a
+  namespace only in order to reach it — and splitting them would have put the marker in one
+  spec and every promise about the answers in another. Item 1, and *when in doubt, one
+  spec*. What it costs is visible in the surface register below: the marker has no row,
+  because nothing here promises it means anything, and only [package-manifest.md](package-manifest.md)
+  AC-1 carries it as far as the registry.
 - **The inventory is grouped by goal, and no group mirrors a source file.** *Reaching a
   host*, *Doing work that may fail*, *Acting as somebody's account*, *What a built
   package hands over*, *What a node declares* — a reader arrives with a task rather than
@@ -198,6 +221,15 @@ are called.
   identifier cannot change and the prose should not fight it, but "type" reads as a
   TypeScript type in a package that is mostly types — so the specs say kind, and the
   one export that reads the declaration keeps its name.
+- **State is two different things, and both keep the word.** In
+  [credentials.md](credentials.md) it is the OAuth `state` parameter, which the protocol
+  names and nobody here may rename; in [workflow-state.md](workflow-state.md) it is what a
+  workflow remembers between runs, which is the word the package exports. Where either
+  could be meant, write *the OAuth state* or *the state store*. Within the second: a
+  *namespace* is where one kind of state lives, the *store* is all of a tenant's
+  namespaces, and the four roles are `mapping`, `cursor`, `dedupe` and `digest` — that last
+  set is looked up rather than settled here, because the values are the package's own, and
+  `claim` is the dedupe role's operation rather than a fifth role.
 - **A node is the thing on the canvas; a step is that node while the engine runs it.**
   Borrowed whole from the studio's specs, where the product draws the line. This corpus
   almost never needs the second word, because it speaks about what a node declares and
@@ -239,6 +271,8 @@ name they are holding.
 | `INode.loadOptions` | [author-time-resolution.md](author-time-resolution.md) |
 | `INode.resolveConfigSchema` | [author-time-resolution.md](author-time-resolution.md) |
 | `INode.resolveOutputs` | [author-time-resolution.md](author-time-resolution.md) |
+| `INodeContext.state` | [workflow-state.md](workflow-state.md) |
+| `INodeState` | [workflow-state.md](workflow-state.md) |
 | `isBlockedAddress` | [ssrf-guard.md](ssrf-guard.md) |
 | `maxBytesConfigField` | [response-reading.md](response-reading.md) |
 | `normalizeCredentialType` | [credential-type.md](credential-type.md) |
@@ -267,8 +301,10 @@ second question.** Some of it is: the `INode` and `ICredential` contract, `NodeE
 and the error contract, and the `rvnxx-nodes` CLI that every node package's build runs
 are the three entries in *What is not promised yet* above. The rest is not accounted
 for anywhere — `BaseCredential`, the `extract*` helpers, `clampResponseBytes`,
-`MANIFEST_VERSION` and the `DEFAULT_*` and `MAX_*` constants are exported, unpromised,
-and unrecorded. (The `MAX_*` figures are the ceilings `response-reading.md` AC-5 and
+`MANIFEST_VERSION`, the `DEFAULT_*` and `MAX_*` constants, and the `state-ref` setting with
+its `stateRole` are exported, unpromised, and unrecorded. (The last of those is unpromised
+on purpose and says so: [workflow-state.md](workflow-state.md) records in its gaps that
+nothing here holds what the marker means.) (The `MAX_*` figures are the ceilings `response-reading.md` AC-5 and
 `request-budget.md` AC-3 do promise — but promised as limits that hold, not as names a
 consumer reads.) That is the honest state rather than a tidy one: this table answers
 whether a name can be cited, not whether anybody has decided it should be.
