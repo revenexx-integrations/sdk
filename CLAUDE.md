@@ -10,11 +10,20 @@ npm run dev        # tsup watch mode
 npm test           # node --test via tsx over src/**/*.test.ts
 npm run lint       # biome check src (linter only — see below)
 npm run typecheck  # tsc --noEmit
+npm run spec:check # every promise in specs/ bound to the test that proves it
 ```
 
 The SDK ships unit tests (`src/*.test.ts`) — run them with `npm test`. `lint`,
 `typecheck`, `test` and `build` all run in the `test` job of `ci.yml`, which is a
-required status check.
+required status check. `spec:check` runs in a `spec` job of its own, so a spec failure
+reads as a spec failure rather than as a red test. `.github/rulesets/main.json` lists it
+beside `test` and `changeset`, but **that file is an import source, not the ruleset** —
+until it is applied to the live ruleset a red gate can still merge:
+
+```bash
+gh api -X PUT repos/revenexx-integrations/sdk/rulesets/18063253 \
+  --input .github/rulesets/main.json
+```
 
 ### biome: linter on, formatter off
 
@@ -46,6 +55,36 @@ See [`docs/security-scanning.md`](docs/security-scanning.md) for the scanners
 (gitleaks, osv-scanner) and [`docs/branch-protection.md`](docs/branch-protection.md)
 for the rulesets — which, unlike the sibling repos', are live, because this repo
 is public.
+
+## Skills
+
+[`.claude/skills/`](.claude/skills/README.md) carries three, and its README says which
+are ours and which are vendored. The one to know about before changing behaviour is
+**[`feature-spec`](.claude/skills/feature-spec/SKILL.md)** — promised behaviour lives in
+`specs/*.md`, and every promise is bound to the test that proves it. Install it, or
+update it, from the registry:
+
+```bash
+revenexx skills add revenexx/skills-catalog feature-spec
+```
+
+Its gate is installed: [`spec.config.json`](spec.config.json) declares the one layer
+this package has, `scripts/spec-check.mjs` enforces it, and [`specs/`](specs/README.md)
+holds the promises. **Change what this SDK promises its consumers → change the spec in
+the same commit, and the test with it.**
+
+`spec.config.json` carries the one thing this package decided differently from its
+siblings, in `$comment_audience`: a library has no screen, so the exported name *is*
+the address a consumer reaches a promise by, and a criterion may write `safeFetch`
+where a spec for a product with a UI would name a button. The machinery behind the
+name still belongs in `docs/`.
+
+[`specs/README.md`](specs/README.md) is the index, and it is the only place that says
+how much is promised — do not restate the count here, or the next spec falsifies this
+file. It also carries the register of what is *not* promised, which is where the two
+surfaces with no tests to point at are recorded: the node and credential contract, and
+the `rvnxx-nodes` CLI. The *Key design constraints* below are part of the first of those
+— they read as promises and are held by nothing yet.
 
 ## Architecture
 

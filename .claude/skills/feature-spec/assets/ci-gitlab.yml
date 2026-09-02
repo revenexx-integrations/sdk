@@ -1,0 +1,38 @@
+# Feature-spec gate. Written by the feature-spec skill's install script.
+#
+# This is a separate file rather than an edit to .gitlab-ci.yml, so nothing you wrote
+# is touched. Wire it in by adding to .gitlab-ci.yml:
+#
+#   include:
+#     - local: .gitlab-ci.spec-check.yml
+#
+# It runs `spec-check`, which asks each declared test runner what it collected and
+# compares that against the promises in the spec directory. Notes for editing:
+#
+#   * The runners have to be installed, because the gate shells out to them. That is
+#     why dependencies are installed here even though this job runs no tests of its
+#     own.
+#   * A node:test layer has no listing mode, so enumerating it RUNS the claiming
+#     tests. Whatever those tests need — a service, a fixture, an env var — has to be
+#     available in this job too.
+#   * `playwright test --list` collects without launching a browser, so no
+#     `playwright install` is needed for the gate alone.
+#   * A suite that declares a `container` has its listing run through `docker compose
+#     exec`, which needs the stack up. In CI it is usually cheaper to install the
+#     toolchain in the job and add `--native`, which forces every listing onto the
+#     host, than to start the stack here.
+#   * Never add `--since` to this job. That mode is a report, always exits 0, and
+#     would leave a green pipeline proving nothing.
+#
+# A job that exists is not yet a guarantee: unless the pipeline is required to
+# succeed before merge ("Pipelines must succeed" in the project's merge-request
+# settings), a merge request can merge while this is red.
+spec-check:
+  stage: test
+  image: node:lts
+  script:
+    - {{INSTALL}}
+    - {{RUN}}
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

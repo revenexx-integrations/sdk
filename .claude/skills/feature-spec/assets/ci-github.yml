@@ -1,0 +1,40 @@
+# Feature-spec gate. Written by the feature-spec skill's install script.
+#
+# It runs `spec-check`, which asks each declared test runner what it collected and
+# compares that against the promises in the spec directory. Notes for editing:
+#
+#   * The runners have to be installed, because the gate shells out to them. That is
+#     why dependencies are installed here even though this job runs no tests of its
+#     own.
+#   * A node:test layer has no listing mode, so enumerating it RUNS the claiming
+#     tests. Whatever those tests need — a service, a fixture, an env var — has to be
+#     available in this job too.
+#   * `playwright test --list` collects without launching a browser, so no
+#     `playwright install` is needed for the gate alone.
+#   * A suite that declares a `container` has its listing run through `docker compose
+#     exec`, which needs the stack up. In CI it is usually cheaper to install the
+#     toolchain in the job and add `--native`, which forces every listing onto the
+#     host, than to start the stack here.
+#   * Never add `--since` to this job. That mode is a report, always exits 0, and
+#     would leave a green check proving nothing.
+#
+# A job that exists is not yet a guarantee: unless `spec-check` is a REQUIRED status
+# check on the protected branch, a pull request can merge while it is red.
+name: spec-check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  spec-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+{{SETUP}}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - run: {{INSTALL}}
+      - run: {{RUN}}

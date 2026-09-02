@@ -45,6 +45,7 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "spec:check": "node scripts/spec-check.mjs",
     "lint": "biome check src",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build",
