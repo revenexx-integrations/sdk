@@ -14,6 +14,9 @@ export type ConfigType =
   | 'expression'
   | 'secret-ref'
   | 'credentials-ref'
+  // Names one of the workflow's declared state namespaces (PO-374). The value
+  // is the namespace NAME, which the node passes to `ctx.state.*`.
+  | 'state-ref'
   // A marker field: the flat set of fields that replaces it is resolved at
   // author time by the node's `resolveConfigSchema` callback (PO-143).
   | 'dynamic-schema';
@@ -123,6 +126,19 @@ export interface IConfigFieldBase {
    * a node that works with both an OAuth and an API-token credential).
    */
   credentialType?: string | string[];
+  /**
+   * Only meaningful when `type === 'state-ref'`: which kind of state namespace
+   * this field accepts (PO-374). The editor lists the workflow's declared
+   * namespaces of that role — and lets the author declare a new one without
+   * leaving the node — and the blob stores the chosen NAME.
+   *
+   * Declare the field rather than hardcoding a namespace name in `execute`: a
+   * literal is a contract nothing checks, and the mismatch surfaces as a 403 in
+   * the first production run rather than as an empty picker while authoring. It
+   * also narrows what the node may reach — a namespace is reachable only from
+   * the node whose config names it.
+   */
+  stateRole?: 'mapping' | 'cursor' | 'dedupe' | 'digest';
 }
 
 export interface IConfigField extends IConfigFieldBase {
@@ -177,6 +193,105 @@ export interface INodeContext {
    */
   credentials: {
     get(credentialsId: string): Promise<Record<string, unknown>>;
+  };
+  /**
+   * The tenant state store: what this workflow already knows from earlier runs
+   * (PO-374). Every call names a namespace the workflow declared in its
+   * `state[]` block; anything else is refused by the engine, so a node cannot
+   * reach state its workflow did not ask for.
+   */
+  state: INodeState;
+}
+
+/**
+ * The four things a workflow can remember between runs, and the reason each is
+ * its own operation rather than a generic get/set: the role decides *when* a
+ * write becomes visible, and that decision is the engine's to make, not the
+ * node author's.
+ *
+ * The four roles are named **mapping**, **cursor**, **dedupe** and **digest** —
+ * those are the values a `state-ref` field's `stateRole` takes. `claim` below is
+ * the *operation* on a dedupe namespace, not a role of its own.
+ *
+ * - **mapping** and **dedupe** take effect immediately. A correlation discarded
+ *   because the run failed afterwards is how the next run creates a duplicate
+ *   in the target system; a claim invisible to other runs protects against
+ *   nothing.
+ * - **cursor** and **digest** are staged and adopted only when the run
+ *   completes. A watermark that advances on a failed run leaves exactly the gap
+ *   it exists to prevent, and a digest may only count once the write it
+ *   describes actually went through.
+ *
+ * At author time — the editor's "test this node" button — the store is
+ * **read-only**: a rehearsal must not leave correlations behind that a later
+ * production run would treat as truth. The write calls reject there.
+ */
+export interface INodeState {
+  /** Correlate an id on each side of an integration (PIM article ↔ ERP number). */
+  mapping: {
+    /**
+     * The partner id of a correlation, or `null` when it is unknown — which is
+     * the usual way to decide between creating and updating in the target
+     * system.
+     *
+     * `side` says which side of the pair `key` is on, not which side to return:
+     * the default `'left'` matches `key` against the left id and answers with
+     * the right one, and `'right'` does the reverse. It never searches both, so
+     * a lookup on the wrong side answers `null` rather than falling back — and
+     * `null` on the create path is what makes the target record a second time.
+     */
+    get(namespace: string, key: string, side?: 'left' | 'right'): Promise<string | null>;
+    /**
+     * Record a correlation. Takes effect immediately, and re-pointing one side
+     * of an existing pair is refused: an id correlated two ways is always a bug,
+     * and no later sync can untangle it.
+     */
+    put(
+      namespace: string,
+      left: string,
+      right: string,
+      metadata?: Record<string, unknown>,
+    ): Promise<void>;
+  };
+  /** How far an incremental sync has read. */
+  cursor: {
+    /**
+     * The committed watermark — an arbitrary JSON value such as
+     * `{ updatedAfter }` or a provider page token — or `undefined` when the
+     * sync has never run. A value staged by *this* run is not visible yet.
+     */
+    get(namespace: string, partitionKey?: string): Promise<unknown>;
+    /**
+     * Stage a watermark. Adopted only if the run completes, so a failed run
+     * leaves the previous value in place and the next run picks the gap up.
+     * `partitionKey` separates e.g. one shop or company code from another.
+     */
+    set(namespace: string, value: unknown, partitionKey?: string): Promise<void>;
+  };
+  /**
+   * Claim a key for the duration of its TTL. `true` means this caller got it;
+   * `false` means the key is held and this delivery is a duplicate — the normal
+   * answer under at-least-once delivery, and a value to branch on rather than an
+   * error.
+   *
+   * **A claim outlives the attempt that made it.** The holder is not identified:
+   * a claim is taken over only once it has expired, so a retry of the very
+   * attempt that claimed the key — after a transient failure that happened
+   * *after* the claim — is also told `false`. Treating that as a duplicate drops
+   * the delivery for the rest of the TTL, which makes `ttlSeconds` the retry
+   * window as much as the duplicate-suppression window. Choose it against both,
+   * and do not claim earlier in the node than necessary.
+   *
+   * `ttlSeconds` defaults to 604800 (seven days) and is accepted between 1 and
+   * 31536000.
+   */
+  claim(namespace: string, key: string, opts?: { ttlSeconds?: number }): Promise<boolean>;
+  /** Skip expensive writes for entities that have not changed. */
+  digest: {
+    /** Whether the entity still carries this hash — i.e. the write can be skipped. */
+    unchanged(namespace: string, entityKey: string, digest: string): Promise<boolean>;
+    /** Stage a hash; adopted only if the run completes. Call it *after* the write. */
+    set(namespace: string, entityKey: string, digest: string): Promise<void>;
   };
 }
 
