@@ -1,3 +1,5 @@
+import type { Operator } from './operators.js';
+
 export type LocalizedString = string | Record<string, string>;
 
 export type DataType = 'any' | 'object' | 'array' | 'string' | 'number' | 'boolean';
@@ -88,6 +90,27 @@ export interface IConfigValidation {
   maxLength?: number;
 }
 
+/**
+ * A condition on another setting's value, deciding whether this one applies.
+ *
+ * One condition, one key, one operator — `showIf: { key: 'source', op:
+ * 'equals', value: 'field' }` reads as the sentence a node would otherwise
+ * write under the field. The driving key MUST be a literal (it may not set
+ * `expressionAllowed`), because applicability has to be decidable while the
+ * author is typing; the same limit `dependsOn` carries, for the same reason.
+ */
+export interface IShowIfCondition {
+  /** The `key` of another config field on the same node. */
+  key: string;
+  /** How to compare it — the shared comparison vocabulary, see `OPERATORS`. */
+  op: Operator;
+  /**
+   * What to compare it to. Left out by the four operators that read presence
+   * rather than content (`exists`, `notExists`, `isEmpty`, `isNotEmpty`).
+   */
+  value?: string | number | boolean;
+}
+
 export interface IConfigFieldBase {
   key: string;
   label: LocalizedString;
@@ -117,6 +140,20 @@ export interface IConfigFieldBase {
    * `expressionAllowed`), so its value is known at author time.
    */
   dependsOn?: string[];
+  /**
+   * When this field applies at all. The editor draws it only while the
+   * condition holds, so a node says once in its manifest what it would
+   * otherwise have to explain in prose under every affected field.
+   *
+   * Not to be confused with `dependsOn`, which sits beside it and does a
+   * different thing: `dependsOn` re-*resolves* a dynamic field's options when
+   * another field changes, and never decides whether the field is drawn.
+   *
+   * Left unset, the field always applies — so this is additive: a node that
+   * says nothing behaves as it always did, and so does an editor that does not
+   * know the key.
+   */
+  showIf?: IShowIfCondition;
   /**
    * Only meaningful when `type === 'credentials-ref'`: the namespaced slug(s) of
    * the credential type(s) this field accepts (e.g. `revenexx:smtp`). The editor

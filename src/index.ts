@@ -1,5 +1,7 @@
 export * from './types.js';
 export * from './localized.js';
+export * from './operators.js';
+export * from './conditions.js';
 export * from './credentialType.js';
 export * from './errors.js';
 export * from './extract.js';
