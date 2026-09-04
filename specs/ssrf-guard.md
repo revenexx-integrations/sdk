@@ -7,7 +7,7 @@ where:
   - isBlockedAddress — the address ruling, for a caller that already has one
 docs:
   - docs/overview.md
-updated: 2026-09-01
+updated: 2026-09-04
 ---
 
 # The SSRF guard
@@ -203,6 +203,8 @@ workflow.
 - **When** it is unset, or set to something that does not read as on
 - **Then** the guard applies in full
 - **And** it applies again as soon as the variable is removed, within the same process
+- **And** when it *is* deliberately on, the relaxation reaches the address a connection
+  lands on as well, so a developer's own service answers instead of losing its socket
 - **Because** this is the one switch that turns the guard off, so the failure that
   matters is it being on when nobody meant it — a stale value in an environment, a
   default copied out of the development stack
@@ -219,6 +221,32 @@ workflow.
   set means nothing
 - verify: unit
 
+### AC-17 — A call the guard approved reaches only an address the guard would approve
+
+- **Given** a name that answers with a public address while the target is being judged,
+  and with a private or reserved one when the connection for that hop is opened
+- **When** a node calls `safeFetch`
+- **Then** the connection is dropped before any of the request is written, the call
+  throws `BLOCKED_ADDRESS`, and whatever was listening on that address receives nothing
+- **Because** the name is resolved twice — once to judge the target and again to open
+  the connection — and here the person who supplies the URL also controls the DNS
+  behind it, so answering differently the second time is not an exotic attack but the
+  ordinary way past a check that only ever sees the first answer
+- **Pair** AC-2, reached the same way and ending in a response; the two differ only in
+  which address the connection lands on
+- verify: unit
+
+### AC-18 — Only the connections this package asked for are judged this way
+
+- **Given** a connection to a private address that no call to `safeFetch` asked for —
+  the worker's own traffic to an internal service, say
+- **When** it is opened while a call to another host is in flight
+- **Then** it is left alone and carries its request as usual
+- **Because** this package runs inside somebody else's process, and a judgement that
+  applied to every socket in it would cut the internal calls the worker is built on —
+  a guard that breaks its host is a guard somebody switches off
+- verify: unit
+
 ## Elsewhere
 
 - **What following a redirect does to the request** — how many hops are allowed, what a
@@ -232,17 +260,24 @@ workflow.
 
 **Known**
 
-- **The address a host resolves to is checked, and then resolved again when the
-  connection is opened.** Between those two moments an attacker's DNS can change its
-  answer, so a target that passed the guard can still connect somewhere private —
-  the DNS-rebinding race. Closing it needs the connected socket's address to be
-  inspected rather than a name resolved twice, which is
-  [PO-184](https://linear.app/revenexx/issue/PO-184). Until then this guard is a
-  central defence and not an isolation boundary.
+- **The handshake with a refused address has already happened.** A connection is
+  judged once it stands, so nothing of the request is written to a private address
+  (AC-17) — but the TCP handshake, and for an `https` target the TLS handshake, are
+  complete by then. Whoever aimed a call there still learns whether something answers
+  on that address and port, and a service that acts on a bare connection has acted.
+  Refusing before the handshake would take the address the judgement approved and open
+  the socket to exactly that, which is not something this package can ask for from
+  where it sits.
+- **A connection somebody else opened is not judged again.** Connections are pooled
+  per host, and only a new one is announced; if something else in the process reached
+  the same host first, a later call may travel on a connection this guard never saw.
+  Nothing here can tell that from a connection of its own.
 - **The guard assumes the worker opens its own connections.** If a global proxy
   dispatcher is ever installed, the target is resolved at the proxy instead and the
-  address this guard judged is no longer the one the bytes reach. Nothing detects
-  that from here; it is a property of how the worker is configured.
+  address this guard judged is no longer the one the bytes reach — and the connection
+  it would judge is the one to the proxy, so neither half of the guard sees the real
+  target. Nothing detects that from here; it is a property of how the worker is
+  configured.
 
 **Undecided**
 
@@ -267,6 +302,12 @@ workflow.
 - [PO-368](https://linear.app/revenexx/issue/PO-368) — backfilled this spec against the
   tests that already proved it, and installed the gate that now holds it
   - AC-11 through AC-16 came in a second pass, from proven behaviour the first pass left
-    unbound. At sixteen criteria this is the largest spec here; if it grows again, the
-    local-development relaxation (AC-10, AC-15) is the seam to split along — it is the one
-    subject here about operating this package rather than about what the guard refuses.
+    unbound. At eighteen criteria this is the largest spec here, and the seam to split
+    along is still the local-development relaxation (AC-10, AC-15) — the one subject here
+    about operating this package rather than about what the guard refuses. The split is
+    due; it is not a passenger PO-184 should have carried.
+- [PO-184](https://linear.app/revenexx/issue/PO-184) — the connect-time half: AC-17 and
+  AC-18, and the AC-15 promise that the local relaxation reaches it too. What had been the
+  first *Known* gap here — the guard checked one address and the connection resolved
+  another — is closed; what is left of it is the handshake that has already happened when
+  the connection is judged.

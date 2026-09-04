@@ -1,7 +1,18 @@
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { createRequire } from 'node:module';
+import type { AddressInfo } from 'node:net';
 import { test } from 'node:test';
 import { NodeError } from './errors.js';
-import { assertPublicUrl, isBlockedAddress, type LookupAddress } from './ssrf.js';
+import { safeFetch } from './fetch.js';
+import {
+  assertPublicUrl,
+  guardConnectionsTo,
+  isBlockedAddress,
+  type LookupAddress,
+  type LookupFn,
+  ssrfResolver,
+} from './ssrf.js';
 
 // ------------------------------------------------------------ isBlockedAddress
 
@@ -254,3 +265,124 @@ test('RVNXX_SSRF_ALLOW_PRIVATE with a falsy value keeps the guard active [@spec:
   withEnv('0', async () => {
     await assertBlocked(() => assertPublicUrl('http://127.0.0.1:3000/'));
   }));
+
+// --------------------------------------------------------- connect-time guard
+//
+// The tests below are the only ones in this suite that open a real socket. The
+// race they reproduce lives entirely between the guard's check and the connect,
+// so a stubbed transport cannot show it: it needs one name with two different
+// answers, and the second answer has to be the one a connection really uses.
+// No real name is resolved — both answers are scripted — and the only host
+// reached is a loopback server this file starts and stops.
+
+/** A loopback HTTP server that counts the requests that actually reach it. */
+async function loopbackServer(): Promise<{ port: number; hits: () => number; close: () => Promise<void> }> {
+  let hits = 0;
+  const server = createServer((_req, res) => {
+    hits++;
+    res.writeHead(200, { 'content-type': 'text/plain' });
+    res.end('reached');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  return {
+    port: (server.address() as AddressInfo).port,
+    hits: () => hits,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
+
+/** Swap the guard's own resolver for the duration of `fn` (see {@link ssrfResolver}). */
+async function withResolver(lookupFn: LookupFn, fn: () => Promise<void>): Promise<void> {
+  const prev = ssrfResolver.lookup;
+  ssrfResolver.lookup = lookupFn;
+  try {
+    await fn();
+  } finally {
+    ssrfResolver.lookup = prev;
+  }
+}
+
+/**
+ * Script what the *connection* resolves `host` to, which is a different question
+ * from what the guard's resolver answers: `net.connect` (and therefore the fetch
+ * undici opens) calls `dns.lookup` off the `node:dns` module object, so
+ * replacing it there is how a test gets a second, conflicting answer for one
+ * name — exactly the DNS-rebinding race, with both answers fixed in advance.
+ */
+function withConnectAddress(host: string, address: string, fn: () => Promise<void>): Promise<void> {
+  const dns = createRequire(import.meta.url)('node:dns') as {
+    lookup: (...args: any[]) => void;
+  };
+  const original = dns.lookup;
+  dns.lookup = (hostname: string, options: any, callback: any): void => {
+    if (hostname !== host) {
+      original(hostname, options, callback);
+      return;
+    }
+    const cb = typeof options === 'function' ? options : callback;
+    const all = typeof options === 'object' && options !== null && options.all === true;
+    process.nextTick(() => (all ? cb(null, [{ address, family: 4 }]) : cb(null, address, 4)));
+  };
+  return fn().finally(() => {
+    dns.lookup = original;
+  });
+}
+
+const REBINDING_HOST = 'rebind.test';
+
+// AC-17 — A call the guard approved does not reach an address the guard did not
+test('safeFetch refuses a target that resolved publicly at check time and connects privately [@spec:ssrf-guard:AC-17]', async () => {
+  const server = await loopbackServer();
+  try {
+    // The guard's check sees a public address; the connection lands on loopback.
+    await withResolver(lookup('93.184.216.34'), () =>
+      withConnectAddress(REBINDING_HOST, '127.0.0.1', async () => {
+        await assertBlocked(async () => {
+          await safeFetch(`http://${REBINDING_HOST}:${server.port}/`, { timeoutMs: 2_000 });
+        });
+      }),
+    );
+    assert.equal(server.hits(), 0, 'the request must never reach the host the connection landed on');
+  } finally {
+    await server.close();
+  }
+});
+
+// AC-18 — The connect-time guard judges only the connections this package asked for
+test('a connection this package did not ask for keeps its socket [@spec:ssrf-guard:AC-18]', async () => {
+  const server = await loopbackServer();
+  // The guard is engaged — for a different host. The worker this SDK runs in
+  // reaches internal services of its own on private addresses, and a guard that
+  // dropped those would sever them the moment any node made a request.
+  const release = guardConnectionsTo(new URL('http://guarded.test/'));
+  try {
+    await withConnectAddress('unrelated.test', '127.0.0.1', async () => {
+      const res = await globalThis.fetch(`http://unrelated.test:${server.port}/`);
+      assert.equal(res.status, 200);
+      assert.equal(await res.text(), 'reached');
+    });
+    assert.equal(server.hits(), 1, 'the unrelated connection must carry its request as usual');
+  } finally {
+    release();
+    await server.close();
+  }
+});
+
+// AC-15 — The local-development relaxation is off unless it is deliberately on
+test('RVNXX_SSRF_ALLOW_PRIVATE relaxes the connect-time guard too [@spec:ssrf-guard:AC-15]', async () => {
+  const server = await loopbackServer();
+  try {
+    await withEnv('1', () =>
+      withResolver(lookup('93.184.216.34'), () =>
+        withConnectAddress(REBINDING_HOST, '127.0.0.1', async () => {
+          const res = await safeFetch(`http://${REBINDING_HOST}:${server.port}/`, { timeoutMs: 2_000 });
+          assert.equal(res.status, 200);
+          assert.equal(await res.text(), 'reached');
+        }),
+      ),
+    );
+    assert.equal(server.hits(), 1, 'the dev stack must still reach its own services');
+  } finally {
+    await server.close();
+  }
+});

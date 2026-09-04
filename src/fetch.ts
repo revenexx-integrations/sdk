@@ -1,5 +1,5 @@
 import { NodeError } from './errors.js';
-import { assertPublicUrl } from './ssrf.js';
+import { assertPublicUrl, connectionRefusal, guardConnectionsTo } from './ssrf.js';
 import type { IConfigField } from './types.js';
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
@@ -65,6 +65,11 @@ async function timedFetch(
   try {
     return await fetch(url, { ...fetchOptions, signal });
   } catch (err) {
+    // A socket the connect-time guard dropped comes back as a generic
+    // `TypeError('fetch failed')` — unwrap it first, before the abort/timeout
+    // mapping, so a blocked target can never surface as a retryable TIMEOUT.
+    const blocked = connectionRefusal(err);
+    if (blocked) throw blocked;
     if (ctxSignal?.aborted) throw ctxSignal.reason;
     if (ac.signal.aborted) throw new NodeError('TIMEOUT', `Request timed out after ${effectiveMs}ms`);
     throw err;
@@ -126,7 +131,18 @@ async function guardedFetch(
   await guardUrl(currentUrl, ctxSignal, effectiveMs);
 
   for (let hop = 0; ; hop++) {
-    const res = await timedFetch(currentUrl, currentInit, ctxSignal, effectiveMs);
+    // The check above approved an address; this puts the address the socket
+    // actually reaches under the same judgement for as long as this hop is being
+    // opened, which is what closes the rebinding race between the two.
+    const release = guardConnectionsTo(
+      currentUrl instanceof URL ? currentUrl : new URL(currentUrl),
+    );
+    let res: Response;
+    try {
+      res = await timedFetch(currentUrl, currentInit, ctxSignal, effectiveMs);
+    } finally {
+      release();
+    }
 
     const location = res.headers.get('location');
     if (!REDIRECT_STATUSES.has(res.status) || !location) return res;
