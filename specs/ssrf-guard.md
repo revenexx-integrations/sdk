@@ -151,15 +151,16 @@ workflow.
 
 ### AC-11 — The refused set covers every shape a non-public address comes in
 
-- **Given** an address that is loopback, private, link-local, unique-local or the
-  unspecified address
+- **Given** an address that is loopback, private, carrier-grade NAT, link-local,
+  unique-local, multicast, broadcast, one of the transitional forms that carry one IP
+  version inside the other, or the unspecified address
 - **When** it is judged
 - **Then** it is refused, in either IP version and in the forms that embed one version
   inside the other
 - **And** an address just outside one of those ranges is allowed
-- **Because** the ranges are contiguous and the boundaries are where a hand-written
-  check goes wrong — one octet out and the cloud metadata address reads as public, or a
-  customer's real host becomes unreachable
+- **Because** the ranges are contiguous and the boundaries are where a range check goes
+  wrong — one octet out and the cloud metadata address reads as public, or a customer's
+  real host becomes unreachable
 - verify: unit
 
 ### AC-12 — A host that can be judged without asking DNS is judged without asking
@@ -247,6 +248,22 @@ workflow.
   a guard that breaks its host is a guard somebody switches off
 - verify: unit
 
+### AC-19 — Only public unicast is allowed, so a range no promise names is still refused
+
+- **Given** an address in a reserved range that no criterion here names — a
+  documentation range, a future-use range, or a range the address registry set aside
+  after this was written
+- **When** it is judged
+- **Then** it is refused
+- **Because** the refused set is stated the other way round: what is allowed is the
+  address space that is public unicast, and everything else is refused without anyone
+  having enumerated it. A list of refused ranges is only ever as complete as the last
+  person who remembered to extend it, and the ranges that were missing from this one
+  were missing for months
+- **Pair** AC-2, the same ruling on an address that *is* public unicast — the rule
+  refuses a range nobody named without refusing the ordinary internet
+- verify: unit
+
 ## Elsewhere
 
 - **What following a redirect does to the request** — how many hops are allowed, what a
@@ -279,14 +296,15 @@ workflow.
   target. Nothing detects that from here; it is a property of how the worker is
   configured.
 
+- **The classification is only as current as the version it travels with.** The ruling
+  defers to a vetted, maintained classification of the address space rather than to one
+  kept here, and that classification is pinned at a version. A range the address
+  registry sets aside after that version was published reads as ordinary unicast until
+  the pin moves forward. What is gone is the older, worse shape of this: a range that
+  was long since reserved and merely unlisted here read as public too.
+
 **Undecided**
 
-- **Which reserved ranges count is settled by hand, and the set is not complete.**
-  Carrier-grade NAT (`100.64.0.0/10`), the 6to4 and Teredo ranges and the broadcast
-  address are not among the ones refused today.
-  [PO-183](https://linear.app/revenexx/issue/PO-183) asks whether to keep extending
-  the list or hand the question to a library, and no promise here states which
-  ranges a caller may rely on until it is answered.
 - **What a refusal costs a running workflow is not promised anywhere.** A blocked
   target throws rather than routing to an error port, so whether an author sees a
   failed run or a branch they can handle is decided by each node rather than here.
@@ -306,6 +324,10 @@ workflow.
     along is still the local-development relaxation (AC-10, AC-15) — the one subject here
     about operating this package rather than about what the guard refuses. The split is
     due; it is not a passenger PO-184 should have carried.
+- [PO-183](https://linear.app/revenexx/issue/PO-183) — turned the refused set from a
+  list into a rule: AC-19, and the ranges AC-11 had left out. It closed the *Undecided*
+  gap that asked whether to keep extending the list or hand the question over, and left
+  behind the *Known* one that the answer is pinned at a version
 - [PO-184](https://linear.app/revenexx/issue/PO-184) — the connect-time half: AC-17 and
   AC-18, and the AC-15 promise that the local relaxation reaches it too. What had been the
   first *Known* gap here — the guard checked one address and the connection resolved

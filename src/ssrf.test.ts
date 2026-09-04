@@ -29,6 +29,11 @@ const BLOCKED_V4 = [
   '192.168.255.255', // 192.168/16
   '169.254.0.1',
   '169.254.169.254', // link-local incl. cloud metadata
+  '100.64.0.1',
+  '100.127.255.255', // 100.64/10 carrier-grade NAT
+  '224.0.0.1',
+  '239.255.255.255', // 224/4 multicast
+  '255.255.255.255', // broadcast
 ];
 
 const PUBLIC_V4 = [
@@ -40,6 +45,9 @@ const PUBLIC_V4 = [
   '192.167.255.255', // just below 192.168/16
   '169.253.255.255', // just below link-local
   '11.0.0.1',
+  '100.63.255.255', // just below 100.64/10
+  '100.128.0.1', // just above 100.64/10
+  '223.255.255.255', // just below 224/4 multicast
 ];
 
 for (const ip of BLOCKED_V4) {
@@ -63,6 +71,14 @@ const BLOCKED_V6 = [
   '0:0:0:0:0:ffff:7f00:1', // IPv4-mapped loopback, non-dotted form
   '::127.0.0.1', // deprecated IPv4-compatible loopback (dotted tail after ::)
   '::10.0.0.1', // deprecated IPv4-compatible private
+  'fec0::1', // deprecated site-local
+  'ff02::1', // multicast
+  '2002:7f00:0001::', // 6to4 carrying a loopback address
+  '2002:0808:0808::', // 6to4 at all — the whole transitional range is refused
+  '2001:0:0:0:0:0:7f00:1', // Teredo carrying a loopback address
+  '64:ff9b::7f00:1', // NAT64 well-known prefix carrying a loopback address
+  '::ffff:0:8.8.8.8', // IPv4-translated, not IPv4-mapped
+  '2001:db8::93.184.216.34', // documentation prefix, public-looking embedded IPv4
 ];
 
 const PUBLIC_V6 = [
@@ -70,7 +86,7 @@ const PUBLIC_V6 = [
   '2606:4700:4700::1111', // Cloudflare DNS
   '::ffff:93.184.216.34', // IPv4-mapped public
   '::93.184.216.34', // deprecated IPv4-compatible public (dotted tail after ::)
-  '2001:db8::93.184.216.34', // embedded IPv4 with a non-empty prefix
+  '2606:4700::93.184.216.34', // embedded IPv4 with a non-empty prefix
   'fe00::1', // just below fc00::/7
 ];
 
@@ -82,6 +98,17 @@ for (const ip of PUBLIC_V6) {
   // AC-2 — A public target is allowed through, by each of the three ways in
   test(`isBlockedAddress allows IPv6 ${ip} [@spec:ssrf-guard:AC-2] [@spec:ssrf-guard:AC-11]`, () => assert.equal(isBlockedAddress(ip), false));
 }
+
+// AC-19 — Only public unicast is allowed, so a range no promise names is still refused
+for (const ip of ['192.0.2.1', '198.51.100.1', '203.0.113.1', '240.0.0.1', '198.18.0.1', '2001:20::1']) {
+  test(`isBlockedAddress blocks the unnamed reserved range holding ${ip} [@spec:ssrf-guard:AC-19]`, () =>
+    assert.equal(isBlockedAddress(ip), true));
+}
+// AC-2 — A public target is allowed through, by each of the three ways in
+test('isBlockedAddress allows an ordinary public address under the same rule [@spec:ssrf-guard:AC-2] [@spec:ssrf-guard:AC-19]', () => {
+  assert.equal(isBlockedAddress('93.184.216.34'), false);
+  assert.equal(isBlockedAddress('2606:4700:4700::1111'), false);
+});
 
 // AC-9 — An address the guard cannot parse counts as blocked
 test('isBlockedAddress fails closed on an unparseable address [@spec:ssrf-guard:AC-9]', () => {
