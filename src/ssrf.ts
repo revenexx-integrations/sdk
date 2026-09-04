@@ -1,3 +1,4 @@
+import { subscribe } from 'node:diagnostics_channel';
 import { isIP } from 'node:net';
 import { NodeError } from './errors.js';
 
@@ -172,6 +173,119 @@ function blockedError(host: string, address: string): NodeError {
 }
 
 /**
+ * The connect-time half of the guard.
+ *
+ * `assertPublicUrl` judges the addresses a hostname resolves to; the connection
+ * is opened afterwards and resolves the name **again**, on its own. Between the
+ * two answers an attacker's DNS can change its mind — the DNS-rebinding race —
+ * and in this product the workflow author supplies both the URL and the DNS
+ * behind it, so that precondition is met by default. Nothing about the check can
+ * close it: the address it approved is simply not the address the socket uses.
+ *
+ * So the address the socket actually reached is judged too. undici publishes
+ * every connection it opens on the `undici:client:connected` diagnostics
+ * channel, synchronously, **before** the request is written to the socket; a
+ * subscriber that destroys the socket there refuses the target without a single
+ * request byte leaving the process. What remains is the TCP (and for `https:`
+ * the TLS) handshake, which has already happened by then — see the gap recorded
+ * in `specs/ssrf-guard.md`.
+ *
+ * Two properties keep this from being a process-wide policy, which it must not
+ * be: the worker legitimately talks to internal services of its own, and this is
+ * a library inside somebody else's process.
+ *
+ *   - **Only hosts a `safeFetch` call is currently reaching are judged.** A
+ *     connection to a host nobody registered is left alone.
+ *   - **The local-development relaxation applies here too**, or the dev stack's
+ *     own `localhost` targets would pass the check and then lose their socket.
+ */
+const guardedHosts = new Map<string, number>();
+let connectGuardInstalled = false;
+
+/** Lowercase a hostname and strip the brackets `URL.hostname` puts around IPv6 literals. */
+function normalizeHost(hostname: string): string {
+  const host = hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+  return host.toLowerCase();
+}
+
+/** The shape this guard reads off an `undici:client:connected` message. */
+interface ConnectedMessage {
+  connectParams?: { hostname?: string };
+  socket?: { remoteAddress?: string | undefined; destroy: (err?: Error) => void };
+}
+
+function connectBlockedError(host: string, address: string | undefined): NodeError {
+  if (host === address) {
+    // Literal-IP host: the caller typed this address, so echoing it leaks nothing.
+    return new NodeError('BLOCKED_ADDRESS', `Blocked connection to private or reserved address ${address}`, {
+      status: 0,
+    });
+  }
+  // As in `blockedError`: the address a hostname resolved to is an internal
+  // name→address mapping and stays in the server log (see AC-8).
+  console.warn(`[ssrf] dropped connection to ${host}: connected to private/reserved address ${address ?? 'unknown'}`);
+  return new NodeError(
+    'BLOCKED_ADDRESS',
+    `Blocked request to ${host}: the connection landed on a private or reserved address`,
+    { status: 0 },
+  );
+}
+
+function judgeConnection(message: unknown): void {
+  const { connectParams, socket } = (message ?? {}) as ConnectedMessage;
+  const hostname = connectParams?.hostname;
+  if (hostname == null || socket == null) return;
+  const host = normalizeHost(hostname);
+  if (!guardedHosts.has(host)) return; // not a connection this package asked for
+  if (guardRelaxedForLocalDev()) return;
+  const peer = socket.remoteAddress;
+  // An address we cannot read is treated like one we cannot parse: fail closed.
+  if (peer != null && !isBlockedAddress(peer)) return;
+  socket.destroy(connectBlockedError(host, peer));
+}
+
+/**
+ * Put `url`'s host under the connect-time guard and return the release for it.
+ * Ref-counted, so concurrent calls to one host do not release each other, and
+ * keyed by host alone rather than by host and port: a second connection to the
+ * same host while one is in flight is the same host either way.
+ *
+ * Deliberately **not** re-exported from `index.ts`. The guard is engaged by
+ * `safeFetch`, which is the one sanctioned way out to the network (PO-185); an
+ * exported handle would be a second one, and one that is easy to hold wrongly —
+ * the judgement it enables lasts exactly as long as the registration does.
+ */
+export function guardConnectionsTo(url: URL): () => void {
+  if (!connectGuardInstalled) {
+    connectGuardInstalled = true;
+    subscribe('undici:client:connected', judgeConnection);
+  }
+  const host = normalizeHost(url.hostname);
+  guardedHosts.set(host, (guardedHosts.get(host) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const count = (guardedHosts.get(host) ?? 1) - 1;
+    if (count > 0) guardedHosts.set(host, count);
+    else guardedHosts.delete(host);
+  };
+}
+
+/**
+ * The refusal this guard raised on a socket, as it comes back out of `fetch`.
+ * undici reports a destroyed connection as `TypeError('fetch failed')` carrying
+ * the destroy reason as its `cause`, so the caller sees a generic network
+ * failure — which `safeFetch` would then *retry*. Unwrap it, so a blocked target
+ * surfaces as the deterministic `BLOCKED_ADDRESS` it is.
+ */
+export function connectionRefusal(err: unknown): NodeError | undefined {
+  const cause = (err as { cause?: unknown } | null | undefined)?.cause;
+  if (cause instanceof NodeError && cause.code === 'BLOCKED_ADDRESS') return cause;
+  return undefined;
+}
+
+/**
  * Run `lookup(host)` but stop waiting as soon as `signal` aborts, rejecting with
  * the signal's abort reason. libuv's `getaddrinfo` (which `dns.lookup` uses) is
  * not cancellable, so a hung or hostile DNS response cannot be interrupted at the
@@ -206,8 +320,10 @@ async function resolveHost(lookup: LookupFn, host: string, signal?: AbortSignal)
  * rejects if **any** resolved address is private/reserved. Throws
  * `NodeError('BLOCKED_ADDRESS', …, { status: 0 })` on rejection.
  *
- * Best-effort by design: Node re-resolves the hostname when it actually connects,
- * so a DNS-rebinding race (TOCTOU) remains. See the SDK README.
+ * This is the pre-flight half of the guard: the connection that follows resolves
+ * the name again on its own, so `safeFetch` also judges the address the socket
+ * actually reached (PO-184). A caller that opens its own request after
+ * `assertPublicUrl` gets the check and not that second half.
  *
  * Pass `signal` (the per-request timeout/cancellation budget) so a hung or
  * hostile DNS resolve cannot block the guard past that budget — see
