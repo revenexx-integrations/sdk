@@ -1,4 +1,4 @@
 # Auto-request this owner as reviewer on every PR (incl. the changesets
 # "Version Packages" PR). main.json keeps require_code_owner_review: false,
 # so review is requested, not enforced.
-* @tilmannschaeferrevenexx
+* @christophervoitus
