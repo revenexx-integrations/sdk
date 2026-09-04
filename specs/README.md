@@ -38,8 +38,9 @@ What stays out is the machinery behind the name — that is `docs/`, and
 ### Acting as somebody's account
 
 - [`credentials.md`](credentials.md) — standing in for the person who owns the account:
-  what each credential kind hands a node, where a token endpoint may be reached, what a
-  rotated refresh token obliges, and what a refusal may repeat
+  what each credential kind hands a node, where a token endpoint may be reached, how much
+  of its answer is read, what a rotated refresh token obliges, and what a refusal may
+  repeat
 
 ### What a node reaches while it runs
 

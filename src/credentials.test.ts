@@ -178,6 +178,100 @@ test('postForm refuses a token endpoint that resolves to a private address [@spe
   assert.equal(calls, 0, 'the client secret must never reach the wire');
 });
 
+// PO-185: the size cap was the one protection `safeFetch` does not apply on the
+// caller's behalf — it hands back a `Response` and the reading is the caller's.
+// `postForm` read it with a bare `res.text()`, so the one answer this package
+// takes without a node's settings in front of it was the one with no limit on
+// it. The body here is well past the cap and never parsed: the read fails on
+// the bytes, before the shape is considered.
+// AC-13 — The answer from a token endpoint is read under a cap
+test('postForm refuses a token-endpoint answer past the cap [@spec:credentials:AC-13]', async (t) => {
+  stubFetch(t, { access_token: 'a'.repeat(2 * 1024 * 1024) });
+
+  await assert.rejects(
+    () => new BusinessCentralCredential().resolve(ctx(), { clientId: 'id', clientSecret: 'sec' }, null),
+    (err: unknown) => {
+      assert.ok(err instanceof NodeError, 'expected a NodeError');
+      assert.equal(err.code, 'RESPONSE_TOO_LARGE');
+      return true;
+    },
+  );
+});
+
+// PO-185: `postForm` passes `ctx.signal` and no budget of its own, so the
+// deadline is `safeFetch`'s default. The signal already ends a cancelled run;
+// what this guards is the run nobody cancels — a token endpoint that simply
+// never answers used to hold a resolve for as long as the workflow lived. No
+// spec claim: the budget itself is `request-budget.md`, and this asserts only
+// that the token exchange is inside it. Time is not waited for — `setTimeout`
+// fires immediately, the device that spec's AC-3 uses.
+test('postForm fails on the request budget when the token endpoint never answers', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const originalLookup = ssrfResolver.lookup;
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.fetch = (_url, opts) =>
+    new Promise((_resolve, reject) => {
+      opts?.signal?.addEventListener('abort', () =>
+        reject(new DOMException('The operation was aborted.', 'AbortError')),
+      );
+    });
+  ssrfResolver.lookup = async () => [{ address: '93.184.216.34', family: 4 }];
+  // @ts-expect-error partial overload patch
+  globalThis.setTimeout = (fn: () => void, _delay: number) => originalSetTimeout(fn, 0);
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    ssrfResolver.lookup = originalLookup;
+    globalThis.setTimeout = originalSetTimeout;
+  });
+
+  await assert.rejects(
+    () => new BusinessCentralCredential().resolve(ctx(), { clientId: 'id', clientSecret: 'sec' }, null),
+    (err: unknown) => {
+      assert.ok(err instanceof NodeError, 'expected a NodeError');
+      assert.equal(err.code, 'TIMEOUT');
+      return true;
+    },
+  );
+});
+
+// PO-185: a token endpoint answering 3xx used to be followed wherever it
+// pointed, because a raw `fetch` follows redirects itself and nothing looked at
+// the hop. Through `safeFetch` every hop is judged again, so a public host can
+// no longer hand the exchange on to an internal address. The call count is the
+// assertion: the second request must never be made. No spec claim — how a hop
+// is judged is `ssrf-guard.md` and `redirect-following.md`; this asserts only
+// that the token exchange is inside them.
+test('postForm does not follow a token-endpoint redirect to a private address', async (t) => {
+  let calls = 0;
+  const originalFetch = globalThis.fetch;
+  const originalLookup = ssrfResolver.lookup;
+  globalThis.fetch = async () => {
+    calls++;
+    return new Response(null, {
+      status: 302,
+      headers: { location: 'https://internal.example/token' },
+    });
+  };
+  ssrfResolver.lookup = async (hostname: string) =>
+    hostname === 'token.example'
+      ? [{ address: '93.184.216.34', family: 4 }]
+      : [{ address: '169.254.169.254', family: 4 }];
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    ssrfResolver.lookup = originalLookup;
+  });
+
+  await assert.rejects(
+    () => new BusinessCentralCredential().resolve(ctx(), { clientId: 'id', clientSecret: 'sec' }, null),
+    (err: unknown) => {
+      assert.ok(err instanceof NodeError, 'expected a NodeError');
+      assert.equal(err.code, 'BLOCKED_ADDRESS');
+      return true;
+    },
+  );
+  assert.equal(calls, 1, 'the hop must not be followed');
+});
+
 // ----------------------------------------------------- OAuth2 auth-code
 
 class AuthCodeCredential extends OAuth2AuthCodeCredential {
