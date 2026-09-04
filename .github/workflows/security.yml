@@ -1,0 +1,150 @@
+name: Security Scan
+
+# Proposed by the PO-279 security audit (revenexx/integrations,
+# docs/security/audit-2026-08.md). The full six-layer scanner lives there and
+# covers the whole studio vertical; this is the per-repo half — the two layers
+# that answer questions about this repository alone.
+#
+# NON-BLOCKING to start. Both steps report and pass, so landing this cannot
+# turn open PRs red. Make them fail once the baseline they report is clean or
+# explicitly accepted; the audit's own view is that a gate switched on before
+# that gets switched off within a week.
+#
+# Non-blocking is not the same as silent: each step writes its findings to the
+# run summary, because a finding that only exists in a job log is a finding
+# nobody reads. What non-blocking does *not* cover is a scan that failed to run
+# — a pull that 404s, a bad flag, an empty mount. Those exit non-zero and fail
+# the step, because a green "Scan" that scanned nothing is worse than no scan.
+#
+# Reproduce either step locally by running the same docker command.
+#
+# See docs/security-scanning.md.
+
+on:
+  pull_request:
+  # In the three sibling repos this trigger is load-bearing: they are private
+  # with rulesets that are not live, so a direct push to main is possible and
+  # never reaches pull_request. Here it is not — this repo is public, its four
+  # rulesets are active, and main.json has no bypass actors, so every commit on
+  # main arrives through a pull request that was already scanned.
+  #
+  # It is kept anyway, and deliberately not dressed up as more than it is: it
+  # guards against the *configuration* changing (a bypass actor added, a ruleset
+  # relaxed) rather than against a code path, and it keeps this file identical to
+  # the sibling repos' copies, which is worth more than the one run per merge it
+  # costs. What it does not do is catch a secret the pull_request run missed —
+  # squash puts a new commit on main, but its added lines are the ones already
+  # scanned on the branch.
+  push:
+    branches: [main]
+  schedule:
+    # Weekly. This is the run that matters: advisories land against unchanged
+    # code, so a scan that only fires on a lockfile change would never see them.
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # No credentials are needed after checkout, and leaving the token in
+          # .git/config lets any later step read it.
+          persist-credentials: false
+          # gitleaks scans the history, not the worktree. Without this the
+          # secrets step only sees the tip commit and reports a clean result it
+          # has not earned.
+          fetch-depth: 0
+
+      # Both images are pinned by digest for the same reason the action above is
+      # pinned by commit: a tag can be repointed by whoever controls the
+      # registry, and these containers run with this repository mounted.
+      # Unlike `uses:`, Dependabot does not read image references inside `run:`
+      # — these two digests are hand-maintained. Bump them together with the
+      # version in the step name, and take the new digest from `docker pull`.
+
+      # gitleaks walks the history reachable from the checked-out commit — on a
+      # pull request that is the merge commit, so main plus the branch. Commits
+      # that live only on some other unmerged branch are nobody's here.
+      - name: Secrets, across the checked-out history (gitleaks 8.28.0)
+        run: |
+          set -o pipefail
+          # gitleaks exits 0 when it finds nothing — including when there was
+          # nothing it could have found. A shallow checkout (fetch-depth left at
+          # its default, or the option above dropped) makes it report a clean
+          # history it never saw, and unlike osv-scanner it has no exit code that
+          # says so. This is the same false green the guard below rules out.
+          if [ "$(git rev-parse --is-shallow-repository)" != "false" ]; then
+            echo "::error::the checkout is shallow — gitleaks would report a clean history it has not seen"
+            exit 1
+          fi
+          code=0
+          docker run --rm -v "$PWD:/repo:ro" \
+            ghcr.io/gitleaks/gitleaks@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854 \
+            detect --source=/repo --redact --no-banner --no-color -v --exit-code=0 \
+            > "$RUNNER_TEMP/gitleaks.log" 2>&1 || code=$?
+          {
+            echo "### Secrets — gitleaks 8.28.0"
+            echo ''
+            echo '```'
+            cat "$RUNNER_TEMP/gitleaks.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/gitleaks.log"
+          # -v is what makes a finding actionable: without it 8.28.0 prints only
+          # "leaks found: N" and the summary names no file, line, commit or
+          # fingerprint — a finding nobody can act on, which is the thing this
+          # workflow's own doctrine rules out. --redact still masks the value.
+          # --exit-code=0 already turns "leaks found" into a 0, so anything left
+          # is gitleaks failing to run. The summary is written first, on purpose:
+          # that is the case where the output matters most.
+          if [ "$code" -ne 0 ]; then
+            echo "::error::gitleaks exited $code — the scan did not run"
+            exit "$code"
+          fi
+          # The shallow check above asks the runner about the runner's checkout.
+          # The container is handed a bind mount, and a mount that resolves to
+          # the wrong path is a directory gitleaks walks to the end: it reports
+          # "0 commits scanned", "no leaks found" and exits 0. This asserts the
+          # count instead of the exit code, which is the half gitleaks does
+          # report — osv-scanner's 128 says the same thing with a number.
+          scanned=$(sed -n 's/.*[[:space:]]\([0-9][0-9]*\) commits scanned\..*/\1/p' \
+            "$RUNNER_TEMP/gitleaks.log" | tail -1)
+          if [ -z "$scanned" ] || [ "$scanned" -eq 0 ]; then
+            echo "::error::gitleaks scanned ${scanned:-no} commits — the scan did not run"
+            exit 1
+          fi
+
+      - name: Dependency advisories (osv-scanner 2.2.3)
+        run: |
+          set -o pipefail
+          code=0
+          docker run --rm -v "$PWD:/src:ro" \
+            ghcr.io/google/osv-scanner@sha256:fca9be4446310094be881b63f6862879282647f121ad3326e91dd90afbf8ef50 \
+            scan source --recursive /src \
+            > "$RUNNER_TEMP/osv.log" 2>&1 || code=$?
+          {
+            echo "### Dependency advisories — osv-scanner 2.2.3"
+            echo ''
+            echo '```'
+            cat "$RUNNER_TEMP/osv.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/osv.log"
+          # Documented exit codes: 0 = packages scanned, nothing found; 1 =
+          # advisories found (reported, not fatal while this is non-blocking);
+          # 127 = scanner error; 128 = no packages found at all. The last one is
+          # the dangerous one — a mis-mounted path finds nothing and would
+          # otherwise pass as clean. `|| true` cannot tell these apart.
+          case "$code" in
+            0 | 1) ;;
+            *)
+              echo "::error::osv-scanner exited $code — the scan did not run"
+              exit "$code"
+              ;;
+          esac

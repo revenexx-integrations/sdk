@@ -7,6 +7,8 @@ import {
   OAuth2ClientCredentialsCredential,
   SimpleValueCredential,
 } from './credentials.js';
+import { NodeError } from './errors.js';
+import { ssrfResolver } from './ssrf.js';
 import type { ICredentialContext, ICredentialDescription, ICredentialField } from './types.js';
 
 type Config = Record<string, unknown>;
@@ -23,12 +25,24 @@ function describe(slug: string, authKind: ICredentialDescription['authKind'], fi
   return { slug, version: '1.0.0', name: slug, authKind, fields };
 }
 
-/** Stub a JSON token response and restore `fetch` after the test. */
+/**
+ * Stub a JSON token response and restore `fetch` after the test.
+ *
+ * `postForm` goes through `safeFetch` (PO-185), so the SSRF guard runs ahead of
+ * the request and would try to resolve the `*.example` token hosts below. That
+ * TLD is reserved and never resolves, so the guard — not the assertion under
+ * test — would decide every one of these tests. `ssrfResolver.lookup` is
+ * injectable for exactly this: point it at a public address so the guard passes
+ * on its own terms rather than being bypassed. The guard itself always runs.
+ */
 function stubFetch(t: TestContext, body: Record<string, unknown>, status = 200): void {
-  const original = globalThis.fetch;
+  const originalFetch = globalThis.fetch;
+  const originalLookup = ssrfResolver.lookup;
   globalThis.fetch = async () => new Response(JSON.stringify(body), { status });
+  ssrfResolver.lookup = async () => [{ address: '93.184.216.34', family: 4 }];
   t.after(() => {
-    globalThis.fetch = original;
+    globalThis.fetch = originalFetch;
+    ssrfResolver.lookup = originalLookup;
   });
 }
 
@@ -41,14 +55,16 @@ class SmtpCredential extends SimpleValueCredential {
   ]);
 }
 
-test('SimpleValueCredential.resolve passes config through unchanged', async () => {
+// AC-1 — A credential that only carries settings hands them on unchanged
+test('SimpleValueCredential.resolve passes config through unchanged [@spec:credentials:AC-1]', async () => {
   const result = await new SmtpCredential().resolve(ctx(), { host: 'h', port: 25 }, null);
 
   assert.deepEqual(result.credentials, { host: 'h', port: 25 });
   assert.equal(result.expiresAt, undefined);
 });
 
-test('BaseCredential.test fails when a required field is missing', async () => {
+// AC-2 — A credential missing a required setting fails its test
+test('BaseCredential.test fails when a required field is missing [@spec:credentials:AC-2]', async () => {
   const result = await new SmtpCredential().test(ctx(), { host: 'h' });
 
   assert.equal(result.ok, false);
@@ -62,13 +78,15 @@ class DeeplCredential extends ApiKeyCredential {
   ]);
 }
 
-test('ApiKeyCredential.resolve returns the apiKey shape', async () => {
+// AC-3 — A key credential hands the key on under one agreed name, or refuses
+test('ApiKeyCredential.resolve returns the apiKey shape [@spec:credentials:AC-3]', async () => {
   const result = await new DeeplCredential().resolve(ctx(), { apiKey: 'abc' }, null);
 
   assert.deepEqual(result.credentials, { apiKey: 'abc' });
 });
 
-test('ApiKeyCredential.resolve throws when the key is missing', async () => {
+// AC-3 — A key credential hands the key on under one agreed name, or refuses
+test('ApiKeyCredential.resolve throws when the key is missing [@spec:credentials:AC-3]', async () => {
   await assert.rejects(() => new DeeplCredential().resolve(ctx(), {}, null));
 });
 
@@ -76,7 +94,8 @@ class BasicCredential extends BasicAuthCredential {
   readonly description = describe('revenexx:basic', 'basic');
 }
 
-test('BasicAuthCredential.resolve returns username/password', async () => {
+// AC-4 — A username-and-password credential hands both on
+test('BasicAuthCredential.resolve returns username/password [@spec:credentials:AC-4]', async () => {
   const result = await new BasicCredential().resolve(ctx(), { username: 'u', password: 'p' }, null);
 
   assert.deepEqual(result.credentials, { username: 'u', password: 'p' });
@@ -104,7 +123,8 @@ class BusinessCentralCredential extends OAuth2ClientCredentialsCredential {
   }
 }
 
-test('OAuth2ClientCredentialsCredential mints an access token with expiry', async (t) => {
+// AC-5 — A client-credentials account is exchanged for a token that says when it expires
+test('OAuth2ClientCredentialsCredential mints an access token with expiry [@spec:credentials:AC-5]', async (t) => {
   stubFetch(t, { access_token: 'tok', token_type: 'Bearer', expires_in: 3600 });
 
   const result = await new BusinessCentralCredential().resolve(
@@ -117,12 +137,45 @@ test('OAuth2ClientCredentialsCredential mints an access token with expiry', asyn
   assert.ok(result.expiresAt, 'expiresAt should be derived from expires_in');
 });
 
-test('OAuth2ClientCredentialsCredential.test returns ok on a successful mint', async (t) => {
+// AC-5 — A client-credentials account is exchanged for a token that says when it expires
+test('OAuth2ClientCredentialsCredential.test returns ok on a successful mint [@spec:credentials:AC-5]', async (t) => {
   stubFetch(t, { access_token: 'tok', expires_in: 3600 });
 
   const result = await new BusinessCentralCredential().test(ctx(), { clientId: 'id', clientSecret: 'sec' });
 
   assert.equal(result.ok, true);
+});
+
+// PO-185: `postForm` used a raw `fetch`, so the SSRF guard never saw the token
+// endpoint — and that endpoint comes from credential config, not from a
+// constant. This asserts the guard now runs *before* the request: no fetch may
+// be attempted at all when the host resolves somewhere private. The assertion is
+// the call count, not just the rejection — a guard that blocks after the secret
+// is already on the wire is no guard.
+// AC-6 — A token endpoint taken from configuration is judged before the secret is sent
+test('postForm refuses a token endpoint that resolves to a private address [@spec:credentials:AC-6]', async (t) => {
+  let calls = 0;
+  const originalFetch = globalThis.fetch;
+  const originalLookup = ssrfResolver.lookup;
+  globalThis.fetch = async () => {
+    calls++;
+    return new Response('{}', { status: 200 });
+  };
+  ssrfResolver.lookup = async () => [{ address: '169.254.169.254', family: 4 }];
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    ssrfResolver.lookup = originalLookup;
+  });
+
+  await assert.rejects(
+    () => new BusinessCentralCredential().resolve(ctx(), { clientId: 'id', clientSecret: 'sec' }, null),
+    (err: unknown) => {
+      assert.ok(err instanceof NodeError, 'expected a NodeError');
+      assert.equal(err.code, 'BLOCKED_ADDRESS');
+      return true;
+    },
+  );
+  assert.equal(calls, 0, 'the client secret must never reach the wire');
 });
 
 // ----------------------------------------------------- OAuth2 auth-code
@@ -151,7 +204,8 @@ class AuthCodeCredential extends OAuth2AuthCodeCredential {
   }
 }
 
-test('OAuth2AuthCodeCredential.buildAuthorizeUrl includes PKCE + state', async () => {
+// AC-7 — An authorisation link carries the proof the callback will be checked against
+test('OAuth2AuthCodeCredential.buildAuthorizeUrl includes PKCE + state [@spec:credentials:AC-7]', async () => {
   const { authorizeUrl, codeVerifier } = await new AuthCodeCredential().buildAuthorizeUrl(
     ctx(),
     {},
@@ -167,7 +221,8 @@ test('OAuth2AuthCodeCredential.buildAuthorizeUrl includes PKCE + state', async (
   assert.ok(codeVerifier);
 });
 
-test('OAuth2AuthCodeCredential.exchangeCode returns a refresh token', async (t) => {
+// AC-8 — Exchanging the code yields something the next run can use
+test('OAuth2AuthCodeCredential.exchangeCode returns a refresh token [@spec:credentials:AC-8]', async (t) => {
   stubFetch(t, { access_token: 'a', refresh_token: 'r', expires_in: 3600 });
 
   const { durableCreds } = await new AuthCodeCredential().exchangeCode(
@@ -179,7 +234,8 @@ test('OAuth2AuthCodeCredential.exchangeCode returns a refresh token', async (t) 
   assert.equal(durableCreds['refreshToken'], 'r');
 });
 
-test('OAuth2AuthCodeCredential.resolve refreshes and persists a rotated token', async (t) => {
+// AC-9 — A refresh token replaced during a refresh is written down, not just used
+test('OAuth2AuthCodeCredential.resolve refreshes and persists a rotated token [@spec:credentials:AC-9]', async (t) => {
   stubFetch(t, { access_token: 'a2', refresh_token: 'r2', expires_in: 3600 });
 
   let persisted: Record<string, unknown> | undefined;
@@ -195,8 +251,19 @@ test('OAuth2AuthCodeCredential.resolve refreshes and persists a rotated token', 
   assert.deepEqual(persisted, { refreshToken: 'r2' });
 });
 
-test('OAuth2AuthCodeCredential.resolve throws when there is no refresh token', async () => {
-  await assert.rejects(() => new AuthCodeCredential().resolve(ctx(), {}, null));
+// AC-10 — Resolving with no refresh token fails rather than returning nothing
+test('OAuth2AuthCodeCredential.resolve throws when there is no refresh token [@spec:credentials:AC-10]', async () => {
+  // Assert the REASON, not just that it rejects: without the guard clause the
+  // resolve goes on to post a refresh with no token, which fails against the
+  // network anyway — so a bare `rejects` passes with the clause deleted.
+  await assert.rejects(
+    () => new AuthCodeCredential().resolve(ctx(), {}, null),
+    (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assert.match(err.message, /no refresh_token/);
+      return true;
+    },
+  );
 });
 
 // auth-code test() validates the full code-exchange config (incl. clientSecret)
@@ -228,18 +295,21 @@ class StrictAuthCodeCredential extends OAuth2AuthCodeCredential {
   }
 }
 
-test('OAuth2AuthCodeCredential.test fails when clientSecret is missing', async () => {
+// AC-11 — A credential test says which setting is at fault, and passes when complete
+test('OAuth2AuthCodeCredential.test fails when clientSecret is missing [@spec:credentials:AC-11]', async () => {
   const result = await new StrictAuthCodeCredential().test(ctx(), { clientId: 'id' });
   assert.equal(result.ok, false);
   assert.match(String(result.message), /clientSecret/);
 });
 
-test('OAuth2AuthCodeCredential.test passes with a complete config', async () => {
+// AC-11 — A credential test says which setting is at fault, and passes when complete
+test('OAuth2AuthCodeCredential.test passes with a complete config [@spec:credentials:AC-11]', async () => {
   const result = await new StrictAuthCodeCredential().test(ctx(), { clientId: 'id', clientSecret: 'sec' });
   assert.equal(result.ok, true);
 });
 
-test('token-endpoint errors surface OAuth fields but never the raw body', async (t) => {
+// AC-12 — A refusal from the token endpoint names the OAuth fields and nothing else
+test('token-endpoint errors surface OAuth fields but never the raw body [@spec:credentials:AC-12]', async (t) => {
   // Body includes a field that must NOT leak into the error message.
   stubFetch(t, { error: 'invalid_client', error_description: 'bad creds', leaked_secret: 'DO_NOT_LEAK' }, 400);
 

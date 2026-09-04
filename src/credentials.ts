@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { safeFetch } from './fetch.js';
 import type {
   ICredential,
   ICredentialContext,
@@ -79,7 +80,25 @@ export abstract class BaseCredential implements ICredential {
     return { ok: true };
   }
 
-  /** POST `application/x-www-form-urlencoded` and parse a JSON token response. */
+  /**
+   * POST `application/x-www-form-urlencoded` and parse a JSON token response.
+   *
+   * Goes through {@link safeFetch}, not a raw `fetch` (PO-185). The token
+   * endpoint is not a constant: `tokenUrl(config)` derives it from credential
+   * config, i.e. from a value someone types into a credential form. A raw fetch
+   * would happily POST the client secret at `http://169.254.169.254/…` or any
+   * other internal address, which is precisely what `assertPublicUrl` exists to
+   * prevent. Every OAuth token exchange in this file — client-credentials,
+   * auth-code, refresh — funnels through here, so this is the one call site that
+   * has to hold.
+   *
+   * Two behaviours safeFetch adds, both wanted here: a request budget
+   * (`DEFAULT_TIMEOUT_MS`) on top of `ctx.signal`, and manual redirect handling
+   * that re-checks each hop and drops `Authorization` across an origin boundary.
+   * Note that a 301/302 answer to this POST is downgraded to a bodiless GET —
+   * per the redirect rules, not a quirk of ours. Real token endpoints do not
+   * redirect; one that does was never going to complete the exchange anyway.
+   */
   protected async postForm(
     ctx: ICredentialContext,
     url: string,
@@ -93,7 +112,7 @@ export abstract class BaseCredential implements ICredential {
       }
     }
 
-    const res = await fetch(url, {
+    const res = await safeFetch(url, {
       method: 'POST',
       signal: ctx.signal,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', ...headers },

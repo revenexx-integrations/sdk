@@ -76,6 +76,24 @@ enforcement needs GitHub Team/Enterprise *or* a public repo; going public unlock
 it). Keep these files in sync with the live rulesets — they remain the source of
 truth and the import sources for the UI.
 
+## Security scanning
+
+A third workflow, `Security Scan`
+([`.github/workflows/security.yml`](../.github/workflows/security.yml)), runs
+gitleaks and osv-scanner over this repository. It is deliberately **not** in the
+required-status-check list above — it reports and passes for now — and it pins
+every action and both scanner images.
+[security-scanning.md](security-scanning.md) carries the exit-code contract, the
+two hand-maintained digests and the baseline.
+
+Two things follow from this repo being public, and they are the opposite of the
+sibling node packages' situation. The rulesets here are **live**, so adding
+`Scan` to `required_status_checks` above would genuinely gate merges the moment
+it is imported — which is why it is a deliberate later step, not an oversight.
+And GitHub **code scanning is available** (free for public repos), so findings
+could go to the Security tab rather than only to the run summary; that page
+explains why they do not yet.
+
 ## Release GitHub App
 
 The release workflow (`.github/workflows/publish.yml`) mints a token from a

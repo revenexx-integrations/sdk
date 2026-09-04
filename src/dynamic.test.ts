@@ -46,7 +46,8 @@ const apiNode: INode = {
   },
 };
 
-test('extractManifest carries the dynamic markers into the description', () => {
+// AC-1 — What a node marks as resolved survives into the manifest
+test('extractManifest carries the dynamic markers into the description [@spec:author-time-resolution:AC-1]', () => {
   const manifest = extractManifest(apiNode);
 
   assert.equal(manifest.config?.[0].dynamic, true);
@@ -67,7 +68,8 @@ test('author-time resolvers are callable and return the grammar shapes', async (
   assert.equal(outputs?.[0].name, 'created');
 });
 
-test('a plain static node need not implement the author-time resolvers', () => {
+// AC-2 — A node that resolves nothing offers no resolvers
+test('a plain static node need not implement the author-time resolvers [@spec:author-time-resolution:AC-2]', () => {
   const staticNode: INode = {
     description: {
       slug: 'revenexx:noop',

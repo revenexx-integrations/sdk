@@ -5,7 +5,8 @@ import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, test } from 'node:test';
 import { collectImageSources, copyImages } from './images.js';
 
-test('collectImageSources returns the unique src across nodes, credentials, templates', () => {
+// AC-1 — Every declared picture is collected once, wherever it was declared
+test('collectImageSources returns the unique src across nodes, credentials, templates [@spec:node-images:AC-1]', () => {
   const sources = collectImageSources({
     nodes: [{ images: [{ src: 'images/a.png', alt: 'a', category: 'screenshot' }] }],
     credentials: [{ images: [{ src: 'images/b.svg', alt: 'b', category: 'logo' }] }],
@@ -17,7 +18,8 @@ test('collectImageSources returns the unique src across nodes, credentials, temp
   assert.deepEqual([...sources].sort(), ['images/a.png', 'images/b.svg']);
 });
 
-test('collectImageSources is empty when nothing declares images', () => {
+// AC-2 — A package declaring nothing collects nothing
+test('collectImageSources is empty when nothing declares images [@spec:node-images:AC-2]', () => {
   assert.deepEqual(collectImageSources({ nodes: [{}], credentials: [{}], templates: [{}] }), []);
 });
 
@@ -31,7 +33,8 @@ afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('copyImages copies declared files into dist preserving the sub-path', () => {
+// AC-3 — A declared file is copied into the build under the path it was declared as
+test('copyImages copies declared files into dist preserving the sub-path [@spec:node-images:AC-3]', () => {
   fs.mkdirSync(resolve(root, 'images'), { recursive: true });
   fs.writeFileSync(resolve(root, 'images', 'screenshot.png'), 'PNGDATA');
   const outDir = resolve(root, 'dist');
@@ -63,7 +66,8 @@ function copyImagesCapturingWarnings(sources: string[], outDir: string, rootDir:
   return warnings;
 }
 
-test('copyImages warns and does not throw when a declared file is missing', () => {
+// AC-4 — A declared file that is not there is reported, and the build goes on
+test('copyImages warns and does not throw when a declared file is missing [@spec:node-images:AC-4]', () => {
   const outDir = resolve(root, 'dist');
 
   let warnings: string[] = [];
@@ -75,7 +79,8 @@ test('copyImages warns and does not throw when a declared file is missing', () =
   assert.ok(warnings.some((w) => w.includes('images/missing.png')));
 });
 
-test('copyImages warns and skips an absolute src instead of escaping dist/', () => {
+// AC-5 — A path that would reach outside the package is refused
+test('copyImages warns and skips an absolute src instead of escaping dist/ [@spec:node-images:AC-5]', () => {
   const outDir = resolve(root, 'dist');
 
   const warnings = copyImagesCapturingWarnings(['/etc/passwd'], outDir, root);
@@ -84,7 +89,8 @@ test('copyImages warns and skips an absolute src instead of escaping dist/', () 
   assert.ok(warnings.some((w) => w.includes('unsafe') && w.includes('/etc/passwd')));
 });
 
-test('copyImages warns and skips a src that escapes the package root via ..', () => {
+// AC-5 — A path that would reach outside the package is refused
+test('copyImages warns and skips a src that escapes the package root via .. [@spec:node-images:AC-5]', () => {
   const outDir = resolve(root, 'dist');
 
   const warnings = copyImagesCapturingWarnings(['../../secret.png'], outDir, root);
@@ -92,7 +98,8 @@ test('copyImages warns and skips a src that escapes the package root via ..', ()
   assert.ok(warnings.some((w) => w.includes('unsafe') && w.includes('../../secret.png')));
 });
 
-test('copyImages warns and skips when src points at a directory', () => {
+// AC-6 — A declaration pointing at something that is not a file is refused
+test('copyImages warns and skips when src points at a directory [@spec:node-images:AC-6]', () => {
   fs.mkdirSync(resolve(root, 'images'), { recursive: true });
   const outDir = resolve(root, 'dist');
 

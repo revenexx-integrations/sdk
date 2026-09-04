@@ -32,10 +32,12 @@ const PUBLIC_V4 = [
 ];
 
 for (const ip of BLOCKED_V4) {
-  test(`isBlockedAddress blocks IPv4 ${ip}`, () => assert.equal(isBlockedAddress(ip), true));
+  // AC-11 — The refused set covers every shape a non-public address comes in
+  test(`isBlockedAddress blocks IPv4 ${ip} [@spec:ssrf-guard:AC-11]`, () => assert.equal(isBlockedAddress(ip), true));
 }
 for (const ip of PUBLIC_V4) {
-  test(`isBlockedAddress allows IPv4 ${ip}`, () => assert.equal(isBlockedAddress(ip), false));
+  // AC-2 — A public target is allowed through, by each of the three ways in
+  test(`isBlockedAddress allows IPv4 ${ip} [@spec:ssrf-guard:AC-2] [@spec:ssrf-guard:AC-11]`, () => assert.equal(isBlockedAddress(ip), false));
 }
 
 const BLOCKED_V6 = [
@@ -62,13 +64,16 @@ const PUBLIC_V6 = [
 ];
 
 for (const ip of BLOCKED_V6) {
-  test(`isBlockedAddress blocks IPv6 ${ip}`, () => assert.equal(isBlockedAddress(ip), true));
+  // AC-11 — The refused set covers every shape a non-public address comes in
+  test(`isBlockedAddress blocks IPv6 ${ip} [@spec:ssrf-guard:AC-11]`, () => assert.equal(isBlockedAddress(ip), true));
 }
 for (const ip of PUBLIC_V6) {
-  test(`isBlockedAddress allows IPv6 ${ip}`, () => assert.equal(isBlockedAddress(ip), false));
+  // AC-2 — A public target is allowed through, by each of the three ways in
+  test(`isBlockedAddress allows IPv6 ${ip} [@spec:ssrf-guard:AC-2] [@spec:ssrf-guard:AC-11]`, () => assert.equal(isBlockedAddress(ip), false));
 }
 
-test('isBlockedAddress fails closed on an unparseable address', () => {
+// AC-9 — An address the guard cannot parse counts as blocked
+test('isBlockedAddress fails closed on an unparseable address [@spec:ssrf-guard:AC-9]', () => {
   assert.equal(isBlockedAddress('not-an-ip'), true);
   assert.equal(isBlockedAddress('999.999.999.999'), true);
 });
@@ -87,12 +92,14 @@ async function assertBlocked(fn: () => Promise<void>): Promise<void> {
   });
 }
 
-test('assertPublicUrl rejects non-HTTP(S) protocols', async () => {
+// AC-4 — Only http and https targets are accepted
+test('assertPublicUrl rejects non-HTTP(S) protocols [@spec:ssrf-guard:AC-4]', async () => {
   await assertBlocked(() => assertPublicUrl('ftp://example.com/x', { lookup: lookup('93.184.216.34') }));
   await assertBlocked(() => assertPublicUrl('file:///etc/passwd', { lookup: lookup('93.184.216.34') }));
 });
 
-test('assertPublicUrl rejects localhost by name without resolving', async () => {
+// AC-12 — A host that can be judged without asking DNS is judged without asking
+test('assertPublicUrl rejects localhost by name without resolving [@spec:ssrf-guard:AC-12]', async () => {
   let resolved = false;
   const spyLookup = async (): Promise<LookupAddress[]> => {
     resolved = true;
@@ -103,7 +110,8 @@ test('assertPublicUrl rejects localhost by name without resolving', async () => 
   assert.equal(resolved, false, 'localhost must be rejected before DNS');
 });
 
-test('assertPublicUrl checks a literal-IP host directly (no DNS)', async () => {
+// AC-12 — A host that can be judged without asking DNS is judged without asking
+test('assertPublicUrl checks a literal-IP host directly (no DNS) [@spec:ssrf-guard:AC-12]', async () => {
   let resolved = false;
   const spyLookup = async (): Promise<LookupAddress[]> => {
     resolved = true;
@@ -118,13 +126,15 @@ test('assertPublicUrl checks a literal-IP host directly (no DNS)', async () => {
   assert.equal(resolved, false);
 });
 
-test('assertPublicUrl rejects when any resolved address is private', async () => {
+// AC-3 — One private address among the answers is enough to refuse the host
+test('assertPublicUrl rejects when any resolved address is private [@spec:ssrf-guard:AC-3]', async () => {
   // A hostname that resolves to both a public and a private address must be
   // rejected — DNS-rebinding-style split answers must not pass.
   await assertBlocked(() => assertPublicUrl('https://mixed.example/', { lookup: lookup('93.184.216.34', '10.0.0.5') }));
 });
 
-test('assertPublicUrl does not leak the resolved private IP in the error surfaced to the caller', async () => {
+// AC-8 — A refusal never discloses the address a hostname resolved to
+test('assertPublicUrl does not leak the resolved private IP in the error surfaced to the caller [@spec:ssrf-guard:AC-8]', async () => {
   await assert.rejects(
     () => assertPublicUrl('https://internal.example/', { lookup: lookup('10.0.0.5') }),
     (err: unknown) => {
@@ -136,7 +146,8 @@ test('assertPublicUrl does not leak the resolved private IP in the error surface
   );
 });
 
-test('assertPublicUrl still reports a blocked literal-IP host in the error (no leak)', async () => {
+// AC-8 — A refusal never discloses the address a hostname resolved to
+test('assertPublicUrl still reports a blocked literal-IP host in the error (no leak) [@spec:ssrf-guard:AC-8]', async () => {
   await assert.rejects(
     () => assertPublicUrl('http://10.0.0.5/'),
     (err: unknown) => {
@@ -147,15 +158,18 @@ test('assertPublicUrl still reports a blocked literal-IP host in the error (no l
   );
 });
 
-test('assertPublicUrl allows a host that resolves only to public addresses', async () => {
+// AC-2 — A public target is allowed through, by each of the three ways in
+test('assertPublicUrl allows a host that resolves only to public addresses [@spec:ssrf-guard:AC-2]', async () => {
   await assertPublicUrl('https://api.example/', { lookup: lookup('93.184.216.34', '2001:4860:4860::8888') });
 });
 
-test('assertPublicUrl rejects an unresolvable host', async () => {
+// AC-13 — A host that resolves to nothing is refused
+test('assertPublicUrl rejects an unresolvable host [@spec:ssrf-guard:AC-13]', async () => {
   await assertBlocked(() => assertPublicUrl('https://nx.example/', { lookup: async () => [] }));
 });
 
-test('assertPublicUrl catches a decimal-encoded literal via the resolver (getaddrinfo normalisation)', async () => {
+// AC-14 — An address written in a form the guard does not recognise is still caught
+test('assertPublicUrl catches a decimal-encoded literal via the resolver (getaddrinfo normalisation) [@spec:ssrf-guard:AC-14]', async () => {
   // http://2130706433/ is 127.0.0.1 written as a 32-bit integer. It is not a
   // recognised IP literal, so it goes through DNS — where getaddrinfo (modelled
   // here) normalises it to loopback, which the guard then blocks.
@@ -177,7 +191,8 @@ async function withEnv(value: string | undefined, fn: () => Promise<void>): Prom
   }
 }
 
-test('RVNXX_SSRF_ALLOW_PRIVATE=1 relaxes the guard for local development', () =>
+// AC-15 — The local-development relaxation is off unless it is deliberately on
+test('RVNXX_SSRF_ALLOW_PRIVATE=1 relaxes the guard for local development [@spec:ssrf-guard:AC-15]', () =>
   withEnv('1', async () => {
     // Private literal IP, localhost by name, and a private-resolving host all pass.
     await assertPublicUrl('http://127.0.0.1:3000/');
@@ -185,7 +200,8 @@ test('RVNXX_SSRF_ALLOW_PRIVATE=1 relaxes the guard for local development', () =>
     await assertPublicUrl('https://intranet.example/', { lookup: lookup('10.0.0.5') });
   }));
 
-test('RVNXX_SSRF_ALLOW_PRIVATE still enforces the http(s)-only protocol allowlist', () =>
+// AC-10 — The local-development opt-out never relaxes the protocol allowlist
+test('RVNXX_SSRF_ALLOW_PRIVATE still enforces the http(s)-only protocol allowlist [@spec:ssrf-guard:AC-10]', () =>
   withEnv('1', async () => {
     // The dev opt-out relaxes only the private-range checks; a non-http(s)
     // protocol is a correctness invariant that stays rejected even when set.
@@ -193,7 +209,8 @@ test('RVNXX_SSRF_ALLOW_PRIVATE still enforces the http(s)-only protocol allowlis
     await assertBlocked(() => assertPublicUrl('ftp://127.0.0.1/x'));
   }));
 
-test('assertPublicUrl aborts the DNS resolve when its signal fires', async () => {
+// AC-16 — The guard gives up when the call it belongs to is cancelled
+test('assertPublicUrl aborts the DNS resolve when its signal fires [@spec:ssrf-guard:AC-16]', async () => {
   const ac = new AbortController();
   // A resolver that never settles — only the signal can end the wait.
   const hangingLookup: (host: string) => Promise<LookupAddress[]> = () => new Promise(() => {});
@@ -207,7 +224,8 @@ test('assertPublicUrl aborts the DNS resolve when its signal fires', async () =>
   );
 });
 
-test('assertPublicUrl rejects immediately when its signal is already aborted', async () => {
+// AC-16 — The guard gives up when the call it belongs to is cancelled
+test('assertPublicUrl rejects immediately when its signal is already aborted [@spec:ssrf-guard:AC-16]', async () => {
   const ac = new AbortController();
   ac.abort(new Error('already gone'));
   let resolved = false;
@@ -225,12 +243,14 @@ test('assertPublicUrl rejects immediately when its signal is already aborted', a
   assert.equal(resolved, false, 'an already-aborted signal must short-circuit before DNS');
 });
 
-test('the guard is restored once RVNXX_SSRF_ALLOW_PRIVATE is unset', () =>
+// AC-15 — The local-development relaxation is off unless it is deliberately on
+test('the guard is restored once RVNXX_SSRF_ALLOW_PRIVATE is unset [@spec:ssrf-guard:AC-15]', () =>
   withEnv(undefined, async () => {
     await assertBlocked(() => assertPublicUrl('http://127.0.0.1:3000/'));
   }));
 
-test('RVNXX_SSRF_ALLOW_PRIVATE with a falsy value keeps the guard active', () =>
+// AC-15 — The local-development relaxation is off unless it is deliberately on
+test('RVNXX_SSRF_ALLOW_PRIVATE with a falsy value keeps the guard active [@spec:ssrf-guard:AC-15]', () =>
   withEnv('0', async () => {
     await assertBlocked(() => assertPublicUrl('http://127.0.0.1:3000/'));
   }));

@@ -128,12 +128,122 @@ interface INodeContext {
   credentials: {
     get(credentialsId: string): Promise<Record<string, unknown>>;
   };
+  state: INodeState;
 }
 ```
 
 - `signal` — provided by the engine whenever a workflow run is cancelled or times out. Nodes MUST propagate it to any I/O they perform (`fetch`, database queries, `setTimeout`-based loops). Check `signal.aborted` at the start of long operations and throw an `AbortError` or simply let the downstream I/O reject. For HTTP requests, use the [`safeFetch` helper](#safefetch) instead of calling `fetch` directly.
 - `secrets.get(key)` resolves an **opaque** secret string by the key stored in a `secret-ref` config field.
 - `credentials.get(credentialsId)` resolves the **structured** access data of a credential instance referenced by a `credentials-ref` config field (e.g. `{ host, port, user, password }` or `{ accessToken }`). The runtime fulfils it from the credentials broker; for token-based types it always returns a currently-valid token, so call it at execution time rather than caching the result.
+- `state` is what the workflow already knows from earlier runs — see [`INodeState`](#inodestate) below.
+
+---
+
+### `INodeState`
+
+Without it a node is amnesiac: every run starts from nothing and has to
+re-derive what happened last time from the target system, or write its
+bookkeeping back into somebody else's data model. The store gives a workflow
+four things it can remember, and the role of a namespace decides **when a write
+becomes visible** — which is why these are four operations and not one
+`get`/`set`.
+
+Name the namespace through a `state-ref` config field rather than hardcoding it.
+A literal would be a contract nothing checks — the author has to type the same
+word into the workflow's State dialog, and the mismatch shows up as a 403 in the
+first production run. The field gives them a picker instead, and narrows what the
+node may reach: **a namespace is reachable only from the node whose config names
+it**, so a node that declares no `state-ref` field reaches nothing at all and
+every state call is refused.
+
+Each example below therefore carries the config field it reads its namespace
+from, and passes that value to every call — including the writes. The reach is
+per node rather than per call, so a stray literal that happens to match a
+sibling field's value still resolves, which is what makes the mistake surface
+late rather than immediately.
+
+```ts
+config: [
+  { key: 'articleMap', label: 'Article mapping', type: 'state-ref', stateRole: 'mapping' },
+]
+
+// Create or update? The question every ERP/PIM sync opens with. One `const`, so
+// the read and the write cannot drift onto different namespaces.
+const articleMap = inputs.articleMap as string;
+const known = await ctx.state.mapping.get(articleMap, `pim:${id}`);
+
+if (known === null) {
+  const erpId = await createInErp(payload);
+  await ctx.state.mapping.put(articleMap, `pim:${id}`, `erp:${erpId}`);
+} else {
+  await updateInErp(known, payload);
+}
+```
+
+```ts
+config: [
+  { key: 'customerCursor', label: 'Customer cursor', type: 'state-ref', stateRole: 'cursor' },
+]
+
+// Incremental sync: read from the watermark, advance it at the end.
+const customerCursor = inputs.customerCursor as string;
+const since = await ctx.state.cursor.get(customerCursor) as { updatedAfter?: string } | undefined;
+const page = await crm.customers({ updatedAfter: since?.updatedAfter });
+
+// Only advance on a page that held something. An `undefined` watermark does not
+// survive the hop to the store — it arrives as `{}`, and the next run reads no
+// `updatedAfter` and resyncs everything, which is the one thing a cursor exists
+// to prevent.
+if (page.maxUpdatedAt) {
+  await ctx.state.cursor.set(customerCursor, { updatedAfter: page.maxUpdatedAt });
+}
+```
+
+```ts
+config: [
+  { key: 'orderDedupe', label: 'Processed orders', type: 'state-ref', stateRole: 'dedupe' },
+]
+
+// At-least-once delivery: the second copy of this event stops here. Pick the TTL
+// with care: it is how long a duplicate is suppressed, and — because a claim
+// outlives the attempt that made it — also how long a retried attempt is told it
+// lost. A week covers Stripe's redelivery window; it also means a node that
+// fails after claiming stays silent for a week. See `claim` in `src/types.ts`.
+const orderDedupe = inputs.orderDedupe as string;
+if (!(await ctx.state.claim(orderDedupe, event.id, { ttlSeconds: 604800 }))) {
+  return { outputs: {}, branch: 'duplicate' };
+}
+```
+
+```ts
+config: [
+  { key: 'articleHash', label: 'Article digest', type: 'state-ref', stateRole: 'digest' },
+]
+
+// 40 000 articles, 300 of them actually changed.
+const articleHash = inputs.articleHash as string;
+if (await ctx.state.digest.unchanged(articleHash, `article:${id}`, hash)) {
+  return { outputs: { skipped: true } };
+}
+await writeToErp(payload);
+await ctx.state.digest.set(articleHash, `article:${id}`, hash);
+```
+
+| Operation | Visible | Why |
+|-----------|---------|-----|
+| `mapping.put` | immediately | If the run creates the record and *then* fails, a discarded correlation makes the next run create it twice |
+| `claim` | immediately, to every run | A claim invisible to parallel runs protects against nothing |
+| `cursor.set` | when the run completes | A watermark that advances on a failed run leaves exactly the gap it exists to prevent |
+| `digest.set` | when the run completes | A hash may only count once the write it describes went through |
+
+Two rules worth knowing before you reach for it:
+
+- **Namespaces must be declared.** A workflow lists what it may touch in its
+  `state[]` block (name, role, and `private` — the default — or `shared`). An
+  undeclared namespace is not merely undocumented; the engine refuses it.
+- **Author time is read-only.** Testing a node in the editor is a rehearsal, so
+  the write calls reject there: a correlation created by a test click would be
+  indistinguishable from one a production run made.
 
 ---
 
@@ -289,6 +399,47 @@ Describes a user-configurable input on the node. Rendered as a form field in the
 | `expression` | Expression editor |
 | `secret-ref` | Secret-key picker — value is an opaque tenant secret key, resolved via `ctx.secrets.get()` at runtime |
 | `credentials-ref` | Credential picker filtered by `credentialType` — value is a credential instance id, resolved via `ctx.credentials.get()` at runtime |
+| `state-ref` | State-namespace picker filtered by `stateRole` — one of `mapping`, `cursor`, `dedupe`, `digest`. The value is the namespace NAME, passed to `ctx.state.*` at runtime. `dedupe` is the role behind `ctx.state.claim()`, which is the operation's name rather than the role's |
+
+#### `showIf` — when a field applies, and how it differs from `dependsOn`
+
+The two sit next to each other on a field and are easy to mistake for one another.
+They answer different questions:
+
+| | Question | Effect |
+|---|---|---|
+| `showIf` | Does this field apply at all? | The editor draws it, or does not |
+| `dependsOn` | Whose change invalidates what this field resolved? | The editor re-resolves `loadOptions` / `resolveConfigSchema`, and clears the stale value |
+
+```ts
+{ key: 'source', label: 'Source', type: 'select', options: [
+    { value: 'now',   label: { en: 'Now',        de: 'Jetzt' } },
+    { value: 'field', label: { en: 'From field', de: 'Aus Feld' } },
+] },
+{ key: 'path', label: 'Path to the date', type: 'string',
+  showIf: { key: 'source', op: 'equals', value: 'field' } },
+```
+
+- `op` is one of `OPERATORS`, the same fourteen a condition node offers an author:
+  `equals`, `notEquals`, `contains`, `notContains`, `startsWith`, `endsWith`,
+  `greaterThan`, `greaterThanOrEqual`, `lessThan`, `lessThanOrEqual`, `exists`,
+  `notExists`, `isEmpty`, `isNotEmpty`. What each means is `evaluate`, and the answer
+  table in `src/operators.test.ts` is the canonical statement of it.
+- `value` is left out by the four that read presence rather than content (`exists`,
+  `notExists`, `isEmpty`, `isNotEmpty`).
+- The driving `key` must be a **literal** — a field that sets `expressionAllowed` may
+  not be named by a condition, because applicability has to be decidable while the
+  author is typing. The platform's manifest constraints refuse it.
+- **A hidden field's value is cleared**, the same cascade `dependsOn` already runs.
+  Switching away from a choice and back does not bring the old value with it.
+- Ask `settingApplies(field, config)` for the answer rather than reading `showIf`
+  yourself — a field with no condition always applies, and that default is what makes
+  the key additive.
+
+Do not reach for `dynamic-schema` to hide a declared field. It resolves a whole field
+set from somewhere the node cannot know at build time; used for a condition it puts a
+sandbox round trip, a loading state and a Retry button behind the question *should this
+text box be drawn*.
 
 ---
 

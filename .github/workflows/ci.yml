@@ -15,16 +15,24 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
+
+      # `biome check src` — the linter only (see biome.json). Its reason for
+      # existing is noRestrictedGlobals on `fetch`: this is the package that
+      # defines safeFetch/assertPublicUrl, and PO-185 was a raw fetch here that
+      # only a scanner in another repository caught. This step is the enforcement
+      # point on the commit that writes the next one.
+      - name: Lint
+        run: npm run lint
 
       - name: Typecheck
         run: npm run typecheck
@@ -34,6 +42,36 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # The spec gate: every promise in specs/ bound to the test that proves it, in both
+  # directions. Its own job on purpose — a spec failure has to read as a spec failure
+  # and not as a red test. Needs no build: it reads the runner's own listing.
+  #
+  # That listing is a RUN here, because node:test has no --list mode: enumerating the
+  # suite executes the claiming tests through scripts/spec-claims-reporter.mjs. So a
+  # red proof takes the listing down with it and the gate reports coverage as unknown
+  # rather than absent — the same failure surfaces twice, once in `test` and once here.
+  spec:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check specs against tests
+        run: npm run spec:check
 
   changeset:
     # Enforce that every PR carries a changeset (hard gate; add it as a required
@@ -47,12 +85,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '24'
           cache: 'npm'

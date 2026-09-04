@@ -1,3 +1,7 @@
 node_modules/
 dist/
 *.tgz
+
+# Backups left by break-and-prove runs against the spec gate
+*.redbak
+*.bak

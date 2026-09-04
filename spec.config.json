@@ -1,0 +1,47 @@
+{
+  "$comment": "Everything project-specific about the feature-spec gate lives here; the format rules and the workflow are project-agnostic and live in the `feature-spec` skill, which is also what runs them: `/feature-spec <ticket|spec path|feature area>`. The skill came from the Skill Registry (`revenexx skills add revenexx/skills-catalog feature-spec`) at 1.0.0, and `scripts/spec-check.mjs` is byte-identical to `.claude/skills/feature-spec/assets/spec-check.mjs`, so a fix in the catalogue travels by copying the file again. Only this config differs, and every difference is a comment below.",
+
+  "specDir": "specs",
+
+  "$comment_audience": "Who the promises here are made to. Not read by the gate — it is the declaration that settles which vocabulary a promise may be stated in, and it is a fourth shape beside the three the skill names. This package has no screen and no human consumer: what consumes it is other code, in four node packages and the worker, through a published version rather than a checkout. So the exported name IS the address a consumer reaches the promise by — the same role a route plays for an integrator — and a spec that refused to write `safeFetch` would have to say `the fetch helper the SDK offers`, which costs every reader a translation and hides whether the thing has a name at all. What that does NOT license is the machinery behind the name: how a hostname is resolved, which resolver holder the tests swap, how a socket is opened. That half goes to the docs/ companion, and the implementation ban stays checked by `implementationPattern`.",
+  "audience": "an integration node author calling this package's exports: the exported name, the options it takes and the error code it throws are the product's vocabulary and belong in a criterion — the resolution and transport machinery behind them is implementation and belongs in the docs/ companion",
+
+  "$comment_ticketPattern": "Shape of a ticket id in this project's tracker — Linear, team Product Engineering (`PO-…`). The pattern stays as wide as the catalogue's rather than being narrowed to `PO`, because a spec may legitimately cite a ticket from another team, and `AC-<n>` is reserved for this format's own criterion ids and is never read as a ticket.",
+  "ticketPattern": "[A-Z][A-Z0-9]*-\\d+",
+
+  "$comment_implementationPattern": "What counts as naming the implementation in a spec. The catalogue's default, unchanged: this package is TypeScript and emits `.js`, `.cjs` and `.d.ts`, so every extension the default lists is one a spec here has as little business naming. It is left at the default deliberately rather than narrowed the way a sibling narrowed it — nothing is bought by removing `.vue` from a pattern that will never meet one, and a deviation costs a reader the question of why. Bare identifiers are not matched by it, which is what makes the `audience` declaration above possible: `safeFetch` in a criterion is the address, `src/fetch.ts` is the implementation, and only the second is a path.",
+  "implementationPattern": "(?:\\bsrc/\\S+|\\b[\\w./-]+\\.(?:vue|tsx|ts|mjs|cjs|jsx|js)(?![\\w-]))",
+
+  "companions": [],
+
+  "$comment_houseRules": "`README.md`, whose four sections below the inventory and the register are the additions this package keeps. Two of them are its own: `audience` states the coarse vocabulary boundary — which words a promise may be written in at all — and it cannot state the finer one a library needs, which is *Words these specs use* (which of two defensible words to reach for when nothing on a screen decides it) and *The surfaces, and what the product calls them* (which exported name a promise is looked up by). The other two are the skill's canonical sections rather than this package's invention: *How a spec is cut here* records the granularity calls so the next author inherits them, and *How this stays true* restates for a reader who arrives without the skill what the gate holds. None of the four restates a key in this file, which is the limit a house-rules file may not cross. Kept in the index rather than in a file of its own, so it needs no `companions` entry: the index is exempt from the spec shape already.",
+  "houseRules": "README.md",
+
+  "$comment_indexRegister": "Heading of the section in the index that records surfaces carrying no promise yet. In this package a \"surface\" is one export or one closely-bound family of exports that a node author reaches for by name — see `specs/README.md`. Each row names the ticket that will promise it, and a ticket named there must not already be history in a spec's `## Tickets`.",
+  "indexRegister": "What is not promised yet",
+
+  "$comment_indexAsides": "The index's non-inventory sections beside the register, by heading. The inventory check reads the index as everything except these and `indexRegister`, because a spec's entry has to be an entry of its own — and every one of these sections cites specs by link, so without the subtraction a bullet in the words section or a row in the surface register would count as a spec's inventory row and let the real one be deleted in silence. These four are the catalogue default verbatim and they are the headings this index actually uses; rename one here and this list has to come along, because a heading that is not found is skipped and that section is read as inventory again. That is why an entry in those sections opens on bold text or on a name rather than on a link — the convention is what holds when the config has drifted, and it is how the surface register keeps the exported name in its first column and the spec in its second.",
+  "indexAsides": [
+    "How a spec is cut here",
+    "Words these specs use",
+    "The surfaces, and what the product calls them",
+    "How this stays true"
+  ],
+
+  "$comment_formDebt": "The ratchet the catalogue needed for a corpus that predated the rule. This corpus was written after it, so the figure starts at zero and the ratchet is an outright gate: any `## Gaps` entry sitting outside the three bold labels (`Undecided` / `Known` / `Unreachable`) is simply new, and gets fixed rather than counted.",
+  "formDebt": {
+    "unlabelledGaps": 0
+  },
+
+  "$comment_ceiling": "What this package's harness cannot reach at any layer, and therefore the rule that routes a promise out of `unit` and into `manual` or `todo`. It is not a redefinition of what `unit` means — that is the same everywhere — it is the local limit, and here it is sharp: the guard's own tests inject the resolver and stub the transport, so nothing in this suite ever resolves a real name or opens a real socket. What the guard does with an address it was handed is therefore provable; what happens at connect time, after it has approved one, is not.",
+  "ceiling": "no test here resolves a real hostname or opens a real socket — the resolver is injected and the transport is stubbed — so a criterion about what happens at connect time, or about bytes actually reaching a host, is `manual` with a reason or `todo` with a ticket, never `unit`",
+
+  "$comment_suites": "One suite, not two. This is a library: no application stands up around it, so `unit` is the only layer that exists here and `feature` and `e2e` are not omissions. The tests are `node --test` over TypeScript via tsx, and node:test has no listing mode — so the suite is enumerated by RUNNING it through the bundled reporter, which prints the flat `[{ name, file }]` array the `vitest` adapter reads. Three consequences, all of them normal for this adapter: only the claiming tests run, a claiming test that FAILS takes the listing down and coverage reads as unknown rather than absent, and the glob must stay quoted or node reads it as a file name and collects nothing. `--import tsx` is this repository's addition to the catalogue's command and is not optional: the test files are TypeScript and node cannot load them without it. The quoting is the second deviation: the catalogue writes the pattern and the glob in single quotes, and the gate runs a suite through the platform shell — `cmd.exe` passes single quotes through literally, so on Windows neither the filter nor the glob would bind and `spec:check` would report a listing failure rather than run. Double quotes behave the same in `sh` and are stripped by `cmd.exe`, which is why `npm test` in this package already writes its glob that way. The quotes themselves stay: without them the shell expands the glob and node reads the first match as its only file.",
+  "suites": {
+    "unit": {
+      "adapter": "vitest",
+      "command": "node --import tsx --test --test-reporter=./scripts/spec-claims-reporter.mjs --test-name-pattern=\"@spec:\" \"src/**/*.test.ts\"",
+      "runHint": "node --import tsx --test --test-name-pattern=\"@spec:<feature>\" \"src/**/*.test.ts\""
+    }
+  }
+}
