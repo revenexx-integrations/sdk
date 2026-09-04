@@ -15,7 +15,8 @@ repository alone.
 > **Read this page rather than the sibling packages'.** `integrations-nodes-core`,
 > `-business-central` and `-pipedrive` carry a copy, and three of its load-bearing
 > claims are false here: this repo is **public**, so its rulesets are live *and*
-> GitHub code scanning is available; it has **no runtime dependencies at all**;
+> GitHub code scanning is available; it has exactly **one runtime dependency**
+> (`ipaddr.js`) rather than the siblings' trees;
 > and its required checks are named `test` and `changeset`, not `ci`/`spec`.
 
 ## What runs, and when

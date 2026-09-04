@@ -4,9 +4,10 @@ The shared TypeScript contract library for **Revenexx integration nodes**. It
 defines the interfaces every integration node and credential must implement, and
 ships the small helper toolchain the node registry uses to build manifests.
 
-It has **no runtime dependencies** and contains no business logic beyond the
-manifest helpers — it exists purely to share one contract between the node
-packages and the workflow engine that runs them.
+It carries **one runtime dependency** — `ipaddr.js`, which the SSRF guard defers
+its address classification to (PO-183) — and no business logic beyond the manifest
+helpers: it exists purely to share one contract between the node packages and the
+workflow engine that runs them.
 
 ```
 integrations-node-sdk          ← this package (types & helpers only)
@@ -34,7 +35,7 @@ configuration or auth token needed.
 | `credentialType` | `normalizeCredentialType` — normalise a credential-type reference (`string \| string[] \| undefined`) to `string[]`. |
 | `errors` | `NodeError` — typed error class for unexpected/system-level failures thrown inside `execute`. |
 | `fetch` | `safeFetch` and the `read*` body helpers — timeout, retry, response size-cap, unified error form, and an always-on **SSRF guard** (blocks private/loopback/link-local/metadata targets, re-checked on every redirect hop). Prefer it over raw `fetch`. See [`docs/overview.md`](docs/overview.md#safefetch). |
-| `ssrf` | `assertPublicUrl` / `isBlockedAddress` — the SSRF guard that backs `safeFetch`, exported for reuse. These two are the pre-flight check; `safeFetch` additionally judges the address each connection lands on, so a DNS answer that changes between check and connect gets no request (PO-184). Errors surface as `NodeError('BLOCKED_ADDRESS')`. Set `RVNXX_SSRF_ALLOW_PRIVATE=1` (off by default; local dev only) to reach `localhost`/internal targets while testing — see [`docs/overview.md`](docs/overview.md#ssrf-guard). |
+| `ssrf` | `assertPublicUrl` / `isBlockedAddress` — the SSRF guard that backs `safeFetch`, exported for reuse. An address is refused unless `ipaddr.js` calls its range `unicast`, so reserved bands nobody enumerated are refused too (PO-183). These two are the pre-flight check; `safeFetch` additionally judges the address each connection lands on, so a DNS answer that changes between check and connect gets no request (PO-184). Errors surface as `NodeError('BLOCKED_ADDRESS')`. Set `RVNXX_SSRF_ALLOW_PRIVATE=1` (off by default; local dev only) to reach `localhost`/internal targets while testing — see [`docs/overview.md`](docs/overview.md#ssrf-guard). |
 | `extract` | `extractManifest` / `extractManifests` (nodes) and `extractCredentialManifest` / `extractCredentialManifests` (credentials) — pull descriptions off instances without executing them. |
 | `manifest` | `buildManifest` / `MANIFEST_VERSION` — wrap node, credential and template descriptions in the `{ manifestVersion, nodes, credentials, templates }` envelope the registry expects. |
 

@@ -11,7 +11,7 @@ integrations-node-sdk          (this package — types & helpers only)
                                   no SDK dependency, couples via manifestVersion)
 ```
 
-The SDK has **no runtime dependencies** and no logic beyond the manifest helpers. It exists solely to share the contract between node packages and the workflow engine. The worker does not depend on the SDK package — it consumes the published manifest and couples to the SDK only through the manifest schema version (`manifestVersion`).
+The SDK has **one runtime dependency** (`ipaddr.js`, for the SSRF guard's address classification) and no logic beyond the manifest helpers. It exists solely to share the contract between node packages and the workflow engine. The worker does not depend on the SDK package — it consumes the published manifest and couples to the SDK only through the manifest schema version (`manifestVersion`).
 
 ## Package contents
 

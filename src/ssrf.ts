@@ -1,5 +1,6 @@
 import { subscribe } from 'node:diagnostics_channel';
 import { isIP } from 'node:net';
+import ipaddr from 'ipaddr.js';
 import { NodeError } from './errors.js';
 
 /**
@@ -32,105 +33,48 @@ export const ssrfResolver: { lookup: LookupFn } = {
   },
 };
 
-/** Parse a canonical dotted-quad IPv4 literal into its four octets, or `null`. */
-function parseIpv4(input: string): [number, number, number, number] | null {
-  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(input);
-  if (!m) return null;
-  const octets = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
-  if (octets.some((n) => n > 255)) return null;
-  return octets as [number, number, number, number];
+/** Narrow a parsed address to its IPv6 shape, which alone carries an embedded v4. */
+function isIPv6(addr: ipaddr.IPv4 | ipaddr.IPv6): addr is ipaddr.IPv6 {
+  return addr.kind() === 'ipv6';
 }
 
 /**
- * Expand an IPv6 literal (incl. `::` compression and an embedded IPv4 tail like
- * `::ffff:127.0.0.1`) into its eight 16-bit hextets, or `null` if unparseable.
+ * The one range name the address classification hands back that a request may be
+ * steered to. The ruling is kept as the complement of this rather than as a list of
+ * refused ranges, so a range the classification learns about later is refused
+ * without anybody here having to notice that it exists.
  */
-function expandIpv6(input: string): number[] | null {
-  // Drop any zone id (`fe80::1%eth0`).
-  let s = input;
-  const zone = s.indexOf('%');
-  if (zone !== -1) s = s.slice(0, zone);
-
-  // Rewrite an embedded IPv4 tail (`::ffff:1.2.3.4`, `::1.2.3.4`,
-  // `2001:db8::1.2.3.4`, …) as two hex groups, so the `::`-compression and
-  // group-split logic below handles every embedded form uniformly. Keeping the
-  // separating colon in place (`slice(0, idx + 1)`) preserves a preceding `::`.
-  if (s.includes('.')) {
-    const idx = s.lastIndexOf(':');
-    if (idx === -1) return null;
-    const v4 = parseIpv4(s.slice(idx + 1));
-    if (!v4) return null;
-    const hi = ((v4[0] << 8) | v4[1]).toString(16);
-    const lo = ((v4[2] << 8) | v4[3]).toString(16);
-    s = `${s.slice(0, idx + 1)}${hi}:${lo}`;
-  }
-
-  const halves = s.split('::');
-  if (halves.length > 2) return null;
-
-  const parseGroups = (part: string): number[] =>
-    part === '' ? [] : part.split(':').map((h) => (/^[0-9a-fA-F]{1,4}$/.test(h) ? parseInt(h, 16) : Number.NaN));
-
-  const head = parseGroups(halves[0] ?? '');
-  const back = halves.length === 2 ? parseGroups(halves[1] ?? '') : null;
-
-  const declared = [...head, ...(back ?? [])];
-  if (declared.some((h) => !Number.isInteger(h) || h < 0 || h > 0xffff)) return null;
-
-  let hextets: number[];
-  if (back === null) {
-    hextets = head;
-  } else {
-    const zeros = 8 - (head.length + back.length);
-    if (zeros < 1) return null; // `::` must stand in for at least one zero group
-    hextets = [...head, ...new Array<number>(zeros).fill(0), ...back];
-  }
-  return hextets.length === 8 ? hextets : null;
-}
-
-function isBlockedIpv4(o: [number, number, number, number]): boolean {
-  const [a, b] = o;
-  return (
-    a === 0 || // 0.0.0.0/8 "this network" (incl. 0.0.0.0)
-    a === 127 || // 127.0.0.0/8 loopback
-    a === 10 || // 10.0.0.0/8 private
-    (a === 172 && b >= 16 && b <= 31) || // 172.16.0.0/12 private
-    (a === 192 && b === 168) || // 192.168.0.0/16 private
-    (a === 169 && b === 254) // 169.254.0.0/16 link-local (incl. metadata 169.254.169.254)
-  );
-}
+const PUBLIC_RANGE = 'unicast';
 
 /**
  * Return `true` when `ip` (a literal IPv4/IPv6 address) points at a private,
- * loopback, link-local or otherwise non-public target that a server-side fetch
- * must never be steered to. IPv4-mapped/-compatible IPv6 addresses are unwrapped
- * and re-checked against the IPv4 rules. An address we cannot parse is treated as
- * blocked (fail-closed).
+ * loopback, link-local, carrier-grade NAT, multicast, broadcast, transitional or
+ * otherwise reserved target that a server-side fetch must never be steered to.
+ *
+ * The verdict is an allow-list of one: the address is refused unless the
+ * classification calls it public unicast. IPv4-mapped and the deprecated
+ * IPv4-compatible IPv6 forms are unwrapped and their embedded address judged
+ * instead, so a public host stays reachable when it is written that way. An address
+ * we cannot parse is treated as blocked (fail-closed).
+ *
+ * Promised behaviour: specs/ssrf-guard.md (AC-9, AC-11, AC-19).
  */
 export function isBlockedAddress(ip: string): boolean {
-  const v4 = parseIpv4(ip);
-  if (v4) return isBlockedIpv4(v4);
-
-  const h = expandIpv6(ip);
-  if (!h) return true; // fail-closed: an unparseable address is never "public"
-
-  // ::  (unspecified) and ::1 (loopback)
-  if (h.every((x) => x === 0)) return true;
-  if (h.slice(0, 7).every((x) => x === 0) && h[7] === 1) return true;
-
-  // IPv4-mapped (::ffff:a.b.c.d) and deprecated IPv4-compatible (::a.b.c.d):
-  // unwrap the embedded v4 and apply the v4 rules.
-  const embedsV4 =
-    h[0] === 0 && h[1] === 0 && h[2] === 0 && h[3] === 0 && h[4] === 0 && (h[5] === 0xffff || h[5] === 0);
-  if (embedsV4) {
-    return isBlockedIpv4([h[6]! >> 8, h[6]! & 0xff, h[7]! >> 8, h[7]! & 0xff]);
+  let addr: ipaddr.IPv4 | ipaddr.IPv6;
+  try {
+    addr = ipaddr.parse(ip);
+  } catch {
+    return true; // fail-closed: an unparseable address is never "public"
   }
 
-  // fc00::/7 unique-local, fe80::/10 link-local
-  if ((h[0]! & 0xfe00) === 0xfc00) return true;
-  if ((h[0]! & 0xffc0) === 0xfe80) return true;
+  // `::ffff:a.b.c.d` and the deprecated `::a.b.c.d` carry the v4 address that decides
+  // the verdict; the wrapper is a range of its own and never unicast, so the embedded
+  // address has to be unwrapped and judged in its place.
+  if (isIPv6(addr) && addr.isIPv4MappedAddress()) {
+    return addr.toIPv4Address().range() !== PUBLIC_RANGE;
+  }
 
-  return false;
+  return addr.range() !== PUBLIC_RANGE;
 }
 
 /**
