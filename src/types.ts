@@ -179,8 +179,26 @@ export interface IConfigFieldBase {
 }
 
 export interface IConfigField extends IConfigFieldBase {
-  properties?: IConfigFieldBase[];
-  items?: IConfigFieldBase;
+  /**
+   * The sub-settings of a field that holds a group of them (`type: 'object'`).
+   *
+   * A full `IConfigField`, not the base: a sub-setting declares itself the same
+   * way a top-level one does — its own `options`, `default`, `required`,
+   * `description`, `showIf` — and the manifest schema and the engine's config
+   * walker both read it that way. Typed as the base, a node declaring anything
+   * richer than a bare text field here had to cast (PO-436).
+   */
+  properties?: IConfigField[];
+  /**
+   * What one entry of a list field (`type: 'array'`) looks like. `items.type:
+   * 'object'` plus `items.properties` is the repeating row every mapping-style
+   * setting is built from.
+   *
+   * Full `IConfigField` for the same reason as `properties`, and this is the one
+   * that bit: a row's setting is drawn from what it declares, so a choice inside
+   * a row needs its `options` to survive the type.
+   */
+  items?: IConfigField;
 }
 
 export interface INodeDescription {
