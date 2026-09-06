@@ -179,8 +179,28 @@ export interface IConfigFieldBase {
 }
 
 export interface IConfigField extends IConfigFieldBase {
-  properties?: IConfigFieldBase[];
-  items?: IConfigFieldBase;
+  /**
+   * The sub-settings of a field that holds a group of them (`type: 'object'`).
+   *
+   * A full `IConfigField`, not the base. `IConfigFieldBase` already carries
+   * `options`, `default`, `required`, `description` and `showIf`, so those were
+   * never what a nested setting was missing — `properties` and `items` were: the
+   * base has neither, so a sub-setting could not itself group or repeat without
+   * a cast. The manifest schema permits that nesting and the engine's config
+   * walker reads nested fields as first-class; the type was the only place
+   * stopping at one level (PO-436).
+   */
+  properties?: IConfigField[];
+  /**
+   * What one entry of a list field (`type: 'array'`) looks like.
+   *
+   * Full `IConfigField` for the same reason as `properties`, and this is the one
+   * that bit: `items.type: 'object'` plus `items.properties` is the repeating row
+   * every mapping-style setting is built from, and `items` typed as the base had
+   * no `properties` to give it. `SwitchNode` in integrations-nodes-core ends its
+   * items block with `as IConfigField` for exactly that reason.
+   */
+  items?: IConfigField;
 }
 
 export interface INodeDescription {
