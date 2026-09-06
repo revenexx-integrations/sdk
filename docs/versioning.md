@@ -110,12 +110,17 @@ versions not already in the registry.
 
 > **Branch protection is not bypassed by the workflow.** The version bump still
 > reaches `main` only through the (bot-authored) “Version Packages” PR that a human
-> approves and merges — the App is not a bypass actor on the main-branch ruleset.
-> Only the *tag* push uses the admin bypass. (The ruleset does list two human bypass
-> actors; check with
-> `gh api repos/revenexx-integrations/sdk/rulesets/18063253 --jq .bypass_actors`
-> rather than assuming, because it decides who can merge a PR that nobody else has
-> approved — and an author cannot approve their own.)
+> approves and merges: the main-branch ruleset's bypass list holds human users, no
+> App identity. Only the *tag* push uses a bypass, and on the separate release-tag
+> ruleset.
+>
+> Who is on that list matters well beyond releases — it is also who can merge a PR
+> that nobody else has approved, and an author cannot approve their own. Read it,
+> rather than assuming from this document:
+>
+> ```bash
+> gh api repos/revenexx-integrations/sdk/rulesets/18063253 --jq '.bypass_actors'
+> ```
 
 ### Release tags are created in CI
 
