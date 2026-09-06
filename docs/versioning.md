@@ -170,12 +170,27 @@ what ships.** `npm pack` copies the SDK out of the repo's `node_modules` into th
 tarball, so the version that reaches a workflow is whatever was installed at pack
 time — not what the range in `package.json` says. Consequences:
 
-- **Within a major, no version string changes.** Every node package is on
-  `^1.0.0`, so `1.1.0` is already in range. Running `npm install` and committing
-  the refreshed `package-lock.json` *is* the upgrade. Editing `package.json` when
-  the range already covers the new version accomplishes nothing.
-- Below `1.0.0` this was not true — `^0.15.0` does not accept `0.16.0`, and each
-  minor needed an explicit edit. That trap is gone above the leading one.
+- **The lockfile is the upgrade — and `npm install` does not perform it.** Every
+  node package is on `^1.x`, so a new minor is already in range, but `npm
+  install` honours an existing lockfile and leaves the pinned version where it
+  is. CI honours it absolutely: all of them run `npm ci`. The command is
+
+  ```bash
+  npm update @revenexx/integrations-node-sdk
+  ```
+
+  (or an explicit `npm install @revenexx/integrations-node-sdk@^1.1.0`), and the
+  refreshed `package-lock.json` is what you commit. Nothing goes red if you skip
+  it — the package simply keeps shipping the old SDK.
+- **Raise the caret when the code has come to need the new version.** Not in
+  order to *get* it, the range already covers it, but because the floor has
+  become true: a package that drops a workaround the new type made unnecessary
+  no longer compiles against the old version, and a range that still admits it is
+  wrong — quietly, because the lockfile hides it until somebody installs without
+  one. `integrations-nodes-core` moved to `^1.1.0` on exactly that reasoning
+  after dropping its `as IConfigField` casts.
+- Below `1.0.0` none of this applied the same way: `^0.15.0` does not accept
+  `0.16.0` at all, so every minor forced an edit and the question never came up.
 - **A green build is not evidence the new SDK shipped.** A node package compiles
   fine against the old copy; the tarball just carries the old copy too.
   `npm ls @revenexx/integrations-node-sdk` before `npm pack` is the check.
@@ -184,19 +199,22 @@ time — not what the range in `package.json` says. Consequences:
 
 ### Steps 3–5, locally
 
-`integrations/scripts/update-dev.sh` is the whole chain in one command. Step 5 of
-that script walks every folder under `components/integrations/`, takes the ones
-whose `build` runs `rvnxx-nodes manifest`, and does `npm install && npm run build
-&& npm pack` plus an upload to
-`POST /api/v1/admin/orgs/{org}/node-packages`; its step 7 then runs
-`workflows:build-bundles`. It picks the node repos up by that build script, so a
-new node repo is included without editing the script.
+`integrations/scripts/update-dev.sh` is steps 3–5 in one command. Its step 5
+walks every folder under `components/integrations/`, takes the ones whose `build`
+runs `rvnxx-nodes manifest`, and does `npm install && npm run build && npm pack`
+plus an upload to `POST /api/v1/admin/orgs/{org}/node-packages`; its step 7 then
+runs `workflows:build-bundles`. It finds the node repos by that build script, so
+a new one is included without editing it.
+
+**It will not move a pinned SDK, though** — it runs `npm install`, which honours
+the lockfile. Rebuild and re-register, yes; upgrade, no. Do that first, and
+deliberately:
 
 For a single package, by hand:
 
 ```bash
 cd ~/rvnxx/components/integrations/core
-npm install                                    # pulls the new SDK into node_modules
+npm update @revenexx/integrations-node-sdk     # `npm install` would not move it
 npm ls @revenexx/integrations-node-sdk         # confirm the version you expect
 npm run build                                  # dist/ + dist/manifest.json
 git add package-lock.json && git commit        # the lockfile is the record
