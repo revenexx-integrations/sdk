@@ -3,10 +3,20 @@
 `@revenexx/integrations-node-sdk` is the shared type surface between
 the components in the integrations stack that build against it:
 
-- `integrations-nodes-core` (and any sibling node packages) implement
-  `INode` from this SDK.
-- `integrations-ui` reads `IConfigField` (and related types)
-  to render config editors.
+- The **node packages** implement `INode` from this SDK and bundle it into
+  the tarball they ship: `integrations-nodes-core`, `business-central`,
+  `deepl` (own repo, `revenexx-integrations/deepl`), `pipedrive`,
+  `example-node` — plus `integrations-node-devkit`, which builds against it.
+- `@revenexx/studio-integrations` (the studio UI) does **not** depend on the
+  package, and this is deliberate: the SDK's entry point re-exports the SSRF
+  guard and pulls Node built-ins with it, which cannot go into a browser
+  bundle. The parts the editor needs — the `IConfigField` shape, the `showIf`
+  comparison vocabulary — are mirrored by hand in `src/runtime/types/` and
+  `src/runtime/utils/settingCondition.ts`. So a type change the editor has to
+  honour reaches it as a **separate, hand-written** change, never as a
+  dependency bump, and nothing checks that the copy still matches. The note
+  atop `settingCondition.ts` names the three implementations that have to
+  agree.
 
 `integrations-worker` is **not** an SDK consumer: it never imports the
 SDK and does not depend on the package. It loads registered node
@@ -98,9 +108,14 @@ fires. The package is scoped, so it publishes with public access (`access: "publ
 in `.changeset/config.json`). `changeset publish` is idempotent — it only publishes
 versions not already in the registry.
 
-> **Branch protection is not bypassed.** The version bump still reaches `main` only
-> through the (bot-authored) “Version Packages” PR that a human approves and merges
-> — `main.json` has no bypass actor. Only the *tag* push uses the admin bypass.
+> **Branch protection is not bypassed by the workflow.** The version bump still
+> reaches `main` only through the (bot-authored) “Version Packages” PR that a human
+> approves and merges — the App is not a bypass actor on the main-branch ruleset.
+> Only the *tag* push uses the admin bypass. (The ruleset does list two human bypass
+> actors; check with
+> `gh api repos/revenexx-integrations/sdk/rulesets/18063253 --jq .bypass_actors`
+> rather than assuming, because it decides who can merge a PR that nobody else has
+> approved — and an author cannot approve their own.)
 
 ### Release tags are created in CI
 
@@ -116,40 +131,114 @@ git tag -a "@revenexx/integrations-node-sdk@$V" -m "@revenexx/integrations-node-
 git push --follow-tags
 ```
 
-Pick the bump in step `npx changeset` per the SemVer table above. After the SDK
-release, bump the dependency in every consumer that builds against the SDK and
-re-publish (nodes-core) or rebuild (ui):
-
-- `integrations-nodes-core/package.json`
-- `integrations-ui/package.json` (if it imports the SDK)
-
-Run `npm install` in each to refresh the lockfile. `integrations-worker` has no
-SDK dependency, so it is **not** bumped here — it only needs a coordinated
-change when the manifest schema version (`manifestVersion`) changes. This
-cross-repo step is **not** automated by the SDK's publish workflow.
+Pick the bump in step `npx changeset` per the SemVer table above. The npm publish
+is where this repo's job ends — and where
+[the next section](#from-an-sdk-merge-to-a-running-workflow) begins. Nothing beyond
+it is automated by this workflow.
 
 The SDK is published to the public npm registry (`registry.npmjs.org`) under the
 `@revenexx` scope. Since it lives on the default registry, consumers need no
 `.npmrc` scope mapping or auth token to install it — a plain `npm install
 @revenexx/integrations-node-sdk` resolves it.
 
+## From an SDK merge to a running workflow
+
+A published SDK version changes nothing on its own. It is a type surface: no
+running process loads it, and no workflow sees it until a **node package** has
+been rebuilt against it, re-registered, and pulled into a bundle. Six steps, in
+four repos, and only the first two are automated.
+
+| # | Where | What happens | Automated? |
+|---|---|---|---|
+| 1 | this repo | Merge the feature PR (with its changeset) → the workflow opens/updates the **“Version Packages”** PR | yes |
+| 2 | this repo | Merge **“Version Packages”** → `changeset publish` → npm + release tag | yes |
+| 3 | each node repo | `npm install` picks the new SDK up, `npm run build` rebuilds `dist/` and `dist/manifest.json` | **no** |
+| 4 | each node repo | Changeset → “Version Packages” → merge → `v{version}` tag → the Console re-registers the tarball | tag→registration: yes |
+| 5 | `integrations` | `workflows:build-bundles` recompiles every workflow bundle against the new tarball | **no** |
+| 6 | worker pool | Downloads the new bundles by content hash on the next run | yes |
+
+### Step 3 — the step that actually carries the change
+
+Every node package declares the SDK twice: once as a caret range in
+`dependencies`, and once by name in `bundledDependencies`. **The second one is
+what ships.** `npm pack` copies the SDK out of the repo's `node_modules` into the
+tarball, so the version that reaches a workflow is whatever was installed at pack
+time — not what the range in `package.json` says. Consequences:
+
+- **Within a major, no version string changes.** Every node package is on
+  `^1.0.0`, so `1.1.0` is already in range. Running `npm install` and committing
+  the refreshed `package-lock.json` *is* the upgrade. Editing `package.json` when
+  the range already covers the new version accomplishes nothing.
+- Below `1.0.0` this was not true — `^0.15.0` does not accept `0.16.0`, and each
+  minor needed an explicit edit. That trap is gone above the leading one.
+- **A green build is not evidence the new SDK shipped.** A node package compiles
+  fine against the old copy; the tarball just carries the old copy too.
+  `npm ls @revenexx/integrations-node-sdk` before `npm pack` is the check.
+- The install root sets one SDK version for every package installed together —
+  see [Consumer pinning strategy](#consumer-pinning-strategy).
+
+### Steps 3–5, locally
+
+`integrations/scripts/update-dev.sh` is the whole chain in one command. Step 5 of
+that script walks every folder under `components/integrations/`, takes the ones
+whose `build` runs `rvnxx-nodes manifest`, and does `npm install && npm run build
+&& npm pack` plus an upload to
+`POST /api/v1/admin/orgs/{org}/node-packages`; its step 7 then runs
+`workflows:build-bundles`. It picks the node repos up by that build script, so a
+new node repo is included without editing the script.
+
+For a single package, by hand:
+
+```bash
+cd ~/rvnxx/components/integrations/core
+npm install                                    # pulls the new SDK into node_modules
+npm ls @revenexx/integrations-node-sdk         # confirm the version you expect
+npm run build                                  # dist/ + dist/manifest.json
+git add package-lock.json && git commit        # the lockfile is the record
+```
+
+…then release the node package normally (changeset → “Version Packages” → tag);
+`docs/publishing.md` in that repo owns the rest.
+
+### What does *not* have to happen
+
+- **`integrations-worker` is never bumped.** It has no SDK dependency and never
+  imports it. Node code reaches it inside content-addressed bundles that bake in
+  their own SDK copy, so the worker's only coupling is the manifest **schema**
+  version (`manifestVersion`) — a separate axis from this package's semver. A
+  type-only change that leaves the manifest shape intact never reaches it.
+- **`studio-integrations` is never bumped either** — but for the opposite reason,
+  and it is the one that bites. It does not depend on the SDK at all (see the top
+  of this document), so a change to a type the editor renders is *invisible* to it
+  until somebody edits the mirrored copy by hand. Ask, for every change to
+  `IConfigField`: does the editor have to draw this differently? If yes, that is a
+  second PR in a second repo, and no build will remind you.
+- **Already-registered workflows are not re-pinned.** A `nodeVersion` in a
+  workflow blob selects the manifest an author sees, not an implementation kept
+  running — every workflow gets the newly registered bytes on its next bundle
+  build. `docs/publishing.md` in `integrations-nodes-core` spells this out.
+
 ## Consumer pinning strategy
 
-| Consumer                       | Pin style              | Why                                                                                       |
-| ------------------------------ | ---------------------- | ----------------------------------------------------------------------------------------- |
-| `integrations-nodes-core`      | `peerDependencies` + `devDependencies` caret | Keeps a single SDK copy per install root while still building locally. |
-| `integrations-ui`              | Caret (`"^x.y.z"`)     | UI follows the latest minor automatically; majors are an explicit upgrade.                |
+| Consumer | Pin style | Why |
+| --- | --- | --- |
+| node packages (`core`, `business-central`, `deepl`, `pipedrive`, `example-node`) | Caret (`^1.0.0`) in `dependencies` **and** the package name in `bundledDependencies` | Follows the latest minor on the next `npm install`; the bundled copy is what ships in the tarball. |
+| `integrations-node-devkit` | `>=1.0.0` | A build-time tool, deliberately loose so it works against whatever SDK the package under test uses. |
+| `studio-integrations` | none — types mirrored by hand | The SDK entry point pulls Node built-ins and cannot enter a browser bundle. |
+| `integrations-worker` | none | Consumes the published manifest; couples via `manifestVersion`, a separate axis from this package's semver. |
 
-`integrations-worker` has no SDK dependency to pin — it consumes the
-published manifest, so its only coupling to the SDK is the manifest
-`manifestVersion`, a separate version axis from the SDK's semver.
+**No node package peers the SDK any more** — it is an ordinary `dependency`
+that is additionally bundled, so each registered package carries its own copy
+and two packages built against different SDK minors coexist without a shared
+floor to negotiate. Only `integrations-node-devkit` still peers it, and loosely
+(`>=1.0.0`), because it is a build-time tool that has to work against whatever
+SDK the package under test brought.
 
-The install root sets the hard floor: when several node packages are
-installed together, `npm install --omit=dev` resolves a single SDK
-version for all of them, so their `peerDependencies` ranges must
-overlap. A package built against `0.5.x` cannot be co-installed with
-one that only accepts `0.4.x` — the floor is the most conservative peer
-range in that root.
+The flip side is that an old SDK can sit in a registered tarball indefinitely
+and nothing reports it: there is no resolution step that would notice. What a
+given package shipped is readable from its tarball's
+`node_modules/@revenexx/integrations-node-sdk/package.json`, and locally from
+`npm ls @revenexx/integrations-node-sdk` in that repo.
 
 ## Breaking change checklist
 
@@ -157,9 +246,17 @@ When you have to ship a major:
 
 1. Open an issue or RFC describing the breaking change + migration steps.
 2. Bump SDK major and publish.
-3. Bump SDK in `integrations-nodes-core`, adjust every node implementation, register a new major of nodes-core (via the Console / `update-dev.sh`).
-4. Bump SDK in `integrations-ui` if it consumes the changed types, rebuild + redeploy.
+3. Bump the SDK in **every** node package — `integrations-nodes-core`,
+   `business-central`, `deepl`, `pipedrive`, `example-node` — adjust every node
+   implementation, and register a new major of each (via the Console /
+   `update-dev.sh`). A major *does* need the caret edited by hand: `^1.x` will
+   not take `2.0.0`.
+4. Update `studio-integrations` by hand wherever it mirrors a changed type
+   (`src/runtime/types/`, `src/runtime/utils/settingCondition.ts`), rebuild +
+   release the module. Nothing there fails to compile if you skip this.
 5. Re-register every previously-registered third-party node package against the new major; or document the floor for which packages remain supported.
+6. Rebuild bundles (`workflows:build-bundles`) so running workflows pick the new
+   tarballs up.
 
 `integrations-worker` is deliberately absent from this list: an SDK
 major does not touch it. The worker only needs a coordinated change
@@ -170,13 +267,14 @@ There is currently no automated cross-repo CI guard against an SDK
 major being merged without a matching consumer PR — be deliberate
 about the ordering.
 
-## Pre-1.0 stance
+## How `1.0.0` happened
 
-The SDK is currently in the `0.x` range, which means by SemVer convention
-**every minor bump is allowed to break consumers**. We keep this pre-1.0
-window short and stay disciplined about following the matrix above as
-if we were already at 1.x; the only real difference is the leading
-zero in the version.
+Through the `0.x` range, SemVer convention allowed every minor bump to break
+consumers. The policy was to ignore that licence and follow the matrix above as
+if the leading zero were not there. The one `0.x`-era rule still worth
+remembering is the caret: `^0.15.0` did not accept `0.16.0`, so every SDK minor
+needed an explicit version edit in every consumer. Above `1.0.0` it does not,
+which is why step 3 of the rollout is an `npm install` and not an edit.
 
 `1.0.0` was originally planned for the point at which the type surface stopped
 shifting weekly. It arrived earlier and for a different reason: PO-374 added
@@ -191,5 +289,9 @@ and the matrix keeps applying unchanged above the leading one.
 - [`overview.md`](overview.md) — the type surface the SDK exposes.
 - `docs/adding-a-node.md` in the `integrations-nodes-core` repo — the
   consumer perspective.
-- `docs/node-package-resolution.md` in the `integrations-worker` repo —
-  how registered node packages are resolved and run.
+- `docs/publishing.md` in the `integrations-nodes-core` repo — steps 3–5 above
+  from the node package's side: tarball shape, org namespace, re-registration.
+- `docs/architecture/node-packages.md` and `docs/architecture/node-bundles.md`
+  in the `integrations` repo — how a registered tarball becomes the bundle the
+  worker pool runs. (The worker lives in that repo under `worker/`; there is no
+  separate `integrations-worker` repository.)
