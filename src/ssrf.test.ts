@@ -274,6 +274,14 @@ test('RVNXX_SSRF_ALLOW_PRIVATE with a falsy value keeps the guard active [@spec:
 // answers, and the second answer has to be the one a connection really uses.
 // No real name is resolved — both answers are scripted — and the only host
 // reached is a loopback server this file starts and stops.
+//
+// All three reach that server over `http:`, so the `https:` path through the same
+// branch — where the peer address has to be readable off a `TLSSocket` for the
+// fail-closed side not to fire — is not covered here. Covering it needs a
+// certificate the client trusts, or verification turned off, and this package has
+// no `undici` dependency to scope either to a single request: the only handles are
+// a certificate fixture in the repository or a process-wide
+// `NODE_TLS_REJECT_UNAUTHORIZED=0`. An untested path, not a known defect.
 
 /** A loopback HTTP server that counts the requests that actually reach it. */
 async function loopbackServer(): Promise<{ port: number; hits: () => number; close: () => Promise<void> }> {
@@ -348,7 +356,14 @@ test('safeFetch refuses a target that resolved publicly at check time and connec
   }
 });
 
-// AC-18 — The connect-time guard judges only the connections this package asked for
+// AC-18 — The connect-time guard judges only the targets this package is reaching
+//
+// These two are the sanctioned raw-fetch tests in this package: what AC-18
+// promises is that a connection *nobody here asked for* keeps its socket, and only
+// a connection nobody here asked for can show that. Note that neither raw call is
+// what `noRestrictedGlobals` looks at — that rule matches the bare `fetch`
+// identifier, and `globalThis.fetch` is the member form. `biome.json` restricts
+// that form separately, and these two lines are the only places allowed to hold it.
 test('a connection this package did not ask for keeps its socket [@spec:ssrf-guard:AC-18]', async () => {
   const server = await loopbackServer();
   // The guard is engaged — for a different host. The worker this SDK runs in
@@ -357,11 +372,33 @@ test('a connection this package did not ask for keeps its socket [@spec:ssrf-gua
   const release = guardConnectionsTo(new URL('http://guarded.test/'));
   try {
     await withConnectAddress('unrelated.test', '127.0.0.1', async () => {
+      // biome-ignore lint/nursery/noJsRestrictedProperties: AC-18 needs a connection safeFetch did not ask for; see the note above
       const res = await globalThis.fetch(`http://unrelated.test:${server.port}/`);
       assert.equal(res.status, 200);
       assert.equal(await res.text(), 'reached');
     });
     assert.equal(server.hits(), 1, 'the unrelated connection must carry its request as usual');
+  } finally {
+    release();
+    await server.close();
+  }
+});
+
+// AC-18 — The connect-time guard judges only the targets this package is reaching
+test('a connection to another port on the same host keeps its socket [@spec:ssrf-guard:AC-18]', async () => {
+  const server = await loopbackServer();
+  // Same host, a port no call here is reaching. One private service per host is not
+  // how a worker is laid out: the host that serves a node's webhook and the host
+  // that serves the worker's own internal API are routinely the same name.
+  const release = guardConnectionsTo(new URL(`http://shared.test:${server.port + 1}/`));
+  try {
+    await withConnectAddress('shared.test', '127.0.0.1', async () => {
+      // biome-ignore lint/nursery/noJsRestrictedProperties: AC-18 needs a connection safeFetch did not ask for; see the note above
+      const res = await globalThis.fetch(`http://shared.test:${server.port}/`);
+      assert.equal(res.status, 200);
+      assert.equal(await res.text(), 'reached');
+    });
+    assert.equal(server.hits(), 1, 'a port nothing here is reaching must carry its request as usual');
   } finally {
     release();
     await server.close();

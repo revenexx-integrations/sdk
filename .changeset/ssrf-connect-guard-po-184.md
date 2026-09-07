@@ -26,14 +26,23 @@ whoever aimed the call there. `specs/ssrf-guard.md` records that, and the
 worker's network egress policy remains the layer that does not depend on this
 code being right.
 
-Three things a consumer can observe, which is why this is not a patch:
+Four things a consumer can observe, which is why this is not a patch:
 
 - A call that only got through by rebinding now throws. No consumer could have
   depended on that without depending on a bypass of a documented refusal.
 - The first `safeFetch` call installs a `diagnostics_channel` subscriber in the
-  host process. It judges only hosts a `safeFetch` call is currently reaching, so
-  the worker's own connections to internal services are untouched — that promise
-  has a test of its own.
+  host process. It judges only the **host and port** a `safeFetch` call is
+  currently reaching, so the worker's own connections to internal services are
+  untouched — that promise has two tests of its own, one for another host and one
+  for another port on the same host. What it cannot do is tell whose connection a
+  socket is: the announcement names the target, not the caller. A connection
+  somebody else opens to a target a call is reaching is judged too, and
+  `specs/ssrf-guard.md` records that.
+- The subscriber logs one warning, once per process, if it is ever handed a
+  message it cannot read — the shape of that message belongs to Node's bundled
+  undici, and a rename would otherwise take this half of the guard away in
+  silence. The suite now runs on every Node major `engines` claims for the same
+  reason.
 - `RVNXX_SSRF_ALLOW_PRIVATE` now relaxes both halves. Without that the local
   stack would pass the check and then lose its sockets.
 

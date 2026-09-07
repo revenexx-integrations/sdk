@@ -7,7 +7,7 @@ where:
   - isBlockedAddress — the address ruling, for a caller that already has one
 docs:
   - docs/overview.md
-updated: 2026-09-04
+updated: 2026-09-07
 ---
 
 # The SSRF guard
@@ -236,15 +236,19 @@ workflow.
   which address the connection lands on
 - verify: unit
 
-### AC-18 — Only the connections this package asked for are judged this way
+### AC-18 — A connection to a target no call is reaching is left alone
 
 - **Given** a connection to a private address that no call to `safeFetch` asked for —
   the worker's own traffic to an internal service, say
-- **When** it is opened while a call to another host is in flight
+- **When** it is opened while a call is in flight to another host, or to another port
+  on the same host
 - **Then** it is left alone and carries its request as usual
 - **Because** this package runs inside somebody else's process, and a judgement that
   applied to every socket in it would cut the internal calls the worker is built on —
   a guard that breaks its host is a guard somebody switches off
+- **Note** the scope is the target, host and port together, and not the caller: what
+  is promised is that a target nothing here is reaching is untouched, which is
+  narrower than "only our own connections" — see the gap that records the difference
 - verify: unit
 
 ## Elsewhere
@@ -272,11 +276,31 @@ workflow.
   per host, and only a new one is announced; if something else in the process reached
   the same host first, a later call may travel on a connection this guard never saw.
   Nothing here can tell that from a connection of its own.
+- **And the mirror image: a connection somebody else opens to a target a call *is*
+  reaching is judged as ours, and dropped.** The announcement carries the target, not
+  the caller, so host and port together are as narrow as the scope can be made
+  (AC-18). While a call to `host:port` is in flight, another connection in the process
+  to that same `host:port` is judged by the same rule — and if it lands somewhere
+  private it loses its socket, on a call that never went through `safeFetch`. It takes
+  a target that passed the pre-flight check, so it resolved public at that moment,
+  which is what keeps it narrow; what makes it awkward is the attribution, since the
+  refusal reaches that caller as the `fetch failed` undici reports a dropped socket as.
+- **A connection that completes after the call it belongs to is not judged.** The
+  registration lasts as long as the call, not as long as the connect: a fetch that
+  times out while its socket is still being opened releases its target, and the
+  connect that lands afterwards finds nothing registered. The handshake with that
+  address has then happened unjudged. Whether the unjudged socket can go on to carry
+  a request depends on undici not pooling a socket whose fetch was aborted mid-connect
+  — which it does not today, and which nothing here pins.
 - **The guard assumes the worker opens its own connections.** If a global proxy
   dispatcher is ever installed, the target is resolved at the proxy instead and the
   address this guard judged is no longer the one the bytes reach — and the connection
   it would judge is the one to the proxy, so neither half of the guard sees the real
-  target. Nothing detects that from here; it is a property of how the worker is
+  target. It can also fail the other way, into an outage rather than a hole: the
+  connect-time half refuses a peer address it cannot read, and a connection over a
+  Unix socket has no peer address at all, so every call through such a dispatcher
+  would be refused. Which of the two a given proxy produces is not verified here.
+  Nothing detects either from this side; it is a property of how the worker is
   configured.
 
 **Undecided**
@@ -311,3 +335,9 @@ workflow.
   first *Known* gap here — the guard checked one address and the connection resolved
   another — is closed; what is left of it is the handshake that has already happened when
   the connection is judged.
+  - Review narrowed AC-18: it was titled as though the judgement applied to this
+    package's own connections, which is not something the announcement can tell. The scope
+    is the target — host and port — and the difference between that and "ours" is now a
+    gap of its own, beside the two other residuals the review turned up: a connect that
+    lands after its call released, and a proxy dispatcher refusing every call rather than
+    weakening the check.

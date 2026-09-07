@@ -7,6 +7,8 @@ on:
   pull_request:
 
 jobs:
+  # The full pipeline on the newest supported Node. The suite alone runs on the
+  # older supported majors in `engines` below.
   test:
     runs-on: ubuntu-latest
 
@@ -42,6 +44,50 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # The suite on the other Node majors `engines.node` claims (`>=20.3.0`), because
+  # `test` above pins one. Its own job, and not a matrix on `test`, purely so the
+  # check context stays `test` — a matrix renames it to `test (24)` and the live
+  # ruleset (see docs/branch-protection.md) requires the old name, which would then
+  # never report.
+  #
+  # This exists for the connect-time half of the SSRF guard. That half reads fields
+  # off an undici diagnostics message, and the shape of that message is Node's to
+  # change: on a Node whose undici renamed them the guard goes quiet, and
+  # `specs/ssrf-guard.md` AC-17 is the canary that catches it. A canary that only
+  # ever ran on one of three supported majors is not watching the other two.
+  engines:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['20', '22']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Not `npm test`, and the reason is Node 20: `node --test` only learned to
+      # expand a glob itself in 21, and `npm test` keeps its pattern quoted so that
+      # it also binds under `cmd.exe` (spec.config.json records why). On 20 the
+      # quoted pattern is read as a literal filename and nothing is collected — not
+      # a red suite, an empty one. Here the runner is bash, so the shell expands it
+      # and every file is passed by name.
+      - name: Test
+        run: node --import tsx --test src/*.test.ts
 
   # The spec gate: every promise in specs/ bound to the test that proves it, in both
   # directions. Its own job on purpose — a spec failure has to read as a spec failure

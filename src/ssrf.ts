@@ -194,12 +194,15 @@ function blockedError(host: string, address: string): NodeError {
  * be: the worker legitimately talks to internal services of its own, and this is
  * a library inside somebody else's process.
  *
- *   - **Only hosts a `safeFetch` call is currently reaching are judged.** A
- *     connection to a host nobody registered is left alone.
+ *   - **Only targets a `safeFetch` call is currently reaching are judged.** A
+ *     connection to a host:port nobody registered is left alone. This is scoping,
+ *     not attribution: nothing in the message says which caller opened the socket,
+ *     so a connection *somebody else* opens to the very target a call is reaching
+ *     is judged as ours — recorded as a gap in `specs/ssrf-guard.md`.
  *   - **The local-development relaxation applies here too**, or the dev stack's
  *     own `localhost` targets would pass the check and then lose their socket.
  */
-const guardedHosts = new Map<string, number>();
+const guardedTargets = new Map<string, number>();
 let connectGuardInstalled = false;
 
 /** Lowercase a hostname and strip the brackets `URL.hostname` puts around IPv6 literals. */
@@ -208,13 +211,59 @@ function normalizeHost(hostname: string): string {
   return host.toLowerCase();
 }
 
+/**
+ * The key a registration and a connection meet under: host **and** port, because
+ * a target is a host and a port and nothing narrower is available to scope by. An
+ * absent port means the scheme's default on both sides — `URL.port` is `''` for a
+ * default port and undici passes that same `''` through as `connectParams.port`,
+ * so the two agree today; normalising both anyway keeps them agreeing if a future
+ * undici fills the default in.
+ */
+function targetKey(hostname: string, port: string, protocol: string): string {
+  const host = normalizeHost(hostname);
+  const effective = port === '' ? (protocol === 'https:' ? '443' : '80') : port;
+  return `${host}:${effective}`;
+}
+
 /** The shape this guard reads off an `undici:client:connected` message. */
 interface ConnectedMessage {
-  connectParams?: { hostname?: string };
+  connectParams?: { hostname?: string; port?: string; protocol?: string };
   socket?: { remoteAddress?: string | undefined; destroy: (err?: Error) => void };
 }
 
+/**
+ * A `connected` message this guard cannot read is a message it cannot attribute:
+ * without the target there is no way to tell a connection a `safeFetch` call is
+ * making from one the host process made, and refusing both is the process-wide
+ * policy this must not become. So the socket is let through — the one place here
+ * that fails open, and the reason it says so out loud. If undici ever renames
+ * these fields the connect-time half goes quiet, and this line is what tells the
+ * operator that it did. `specs/ssrf-guard.md` AC-17 is the other half of that
+ * canary: it reproduces the race end to end, and CI runs it on every Node major
+ * `engines` claims.
+ */
+let unreadableMessageLogged = false;
+function reportUnreadableMessage(): void {
+  if (unreadableMessageLogged) return;
+  unreadableMessageLogged = true;
+  console.warn(
+    '[ssrf] undici:client:connected published a message this guard cannot read: the connect-time half of the SSRF guard is not judging connections. The pre-flight check still applies.',
+  );
+}
+
 function connectBlockedError(host: string, address: string | undefined): NodeError {
+  if (address == null) {
+    // Fail-closed on an unreadable peer, which is not the same finding as a private
+    // one and must not be reported as though it were. Reachable when the host
+    // process installs its own dispatcher: a connection over a Unix socket has no
+    // `remoteAddress` at all. See the gap in `specs/ssrf-guard.md`.
+    console.warn(`[ssrf] dropped connection to ${host}: the address it landed on could not be read`);
+    return new NodeError(
+      'BLOCKED_ADDRESS',
+      `Blocked request to ${host}: the address the connection landed on could not be read`,
+      { status: 0 },
+    );
+  }
   if (host === address) {
     // Literal-IP host: the caller typed this address, so echoing it leaks nothing.
     return new NodeError('BLOCKED_ADDRESS', `Blocked connection to private or reserved address ${address}`, {
@@ -223,7 +272,7 @@ function connectBlockedError(host: string, address: string | undefined): NodeErr
   }
   // As in `blockedError`: the address a hostname resolved to is an internal
   // name→address mapping and stays in the server log (see AC-8).
-  console.warn(`[ssrf] dropped connection to ${host}: connected to private/reserved address ${address ?? 'unknown'}`);
+  console.warn(`[ssrf] dropped connection to ${host}: connected to private/reserved address ${address}`);
   return new NodeError(
     'BLOCKED_ADDRESS',
     `Blocked request to ${host}: the connection landed on a private or reserved address`,
@@ -234,21 +283,33 @@ function connectBlockedError(host: string, address: string | undefined): NodeErr
 function judgeConnection(message: unknown): void {
   const { connectParams, socket } = (message ?? {}) as ConnectedMessage;
   const hostname = connectParams?.hostname;
-  if (hostname == null || socket == null) return;
-  const host = normalizeHost(hostname);
-  if (!guardedHosts.has(host)) return; // not a connection this package asked for
+  const port = connectParams?.port;
+  const protocol = connectParams?.protocol;
+  // Every field is read before anything is judged: a message missing one of them
+  // is a message whose target we do not know — see `reportUnreadableMessage`.
+  if (hostname == null || port == null || protocol == null || typeof socket?.destroy !== 'function') {
+    reportUnreadableMessage();
+    return;
+  }
+  if (!guardedTargets.has(targetKey(hostname, port, protocol))) return; // not a target we are reaching
   if (guardRelaxedForLocalDev()) return;
   const peer = socket.remoteAddress;
   // An address we cannot read is treated like one we cannot parse: fail closed.
   if (peer != null && !isBlockedAddress(peer)) return;
-  socket.destroy(connectBlockedError(host, peer));
+  socket.destroy(connectBlockedError(normalizeHost(hostname), peer));
 }
 
 /**
- * Put `url`'s host under the connect-time guard and return the release for it.
- * Ref-counted, so concurrent calls to one host do not release each other, and
- * keyed by host alone rather than by host and port: a second connection to the
- * same host while one is in flight is the same host either way.
+ * Put `url`'s host **and port** under the connect-time guard and return the
+ * release for it. Ref-counted, so concurrent calls to one target do not release
+ * each other. Host and port together are as narrow as the scope can be made: the
+ * `connected` message carries the target and not the caller, so this says which
+ * connections are *candidates* for judgement, never which one is ours.
+ *
+ * The window is the call, not the connection. A connect that completes after the
+ * release — the fetch it belonged to having already timed out or aborted — finds
+ * its target unregistered and is not judged; see the gap in
+ * `specs/ssrf-guard.md`.
  *
  * Deliberately **not** re-exported from `index.ts`. The guard is engaged by
  * `safeFetch`, which is the one sanctioned way out to the network (PO-185); an
@@ -260,15 +321,15 @@ export function guardConnectionsTo(url: URL): () => void {
     connectGuardInstalled = true;
     subscribe('undici:client:connected', judgeConnection);
   }
-  const host = normalizeHost(url.hostname);
-  guardedHosts.set(host, (guardedHosts.get(host) ?? 0) + 1);
+  const key = targetKey(url.hostname, url.port, url.protocol);
+  guardedTargets.set(key, (guardedTargets.get(key) ?? 0) + 1);
   let released = false;
   return () => {
     if (released) return;
     released = true;
-    const count = (guardedHosts.get(host) ?? 1) - 1;
-    if (count > 0) guardedHosts.set(host, count);
-    else guardedHosts.delete(host);
+    const count = (guardedTargets.get(key) ?? 1) - 1;
+    if (count > 0) guardedTargets.set(key, count);
+    else guardedTargets.delete(key);
   };
 }
 

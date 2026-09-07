@@ -15,15 +15,25 @@ thereby fire an `npm publish`. The two rulesets close both gaps.
 
 | File | Target | What it enforces |
 | --- | --- | --- |
-| [`main.json`](../.github/rulesets/main.json) | default branch (`main`) | PR required (1 approval, dismiss stale, resolve conversations, squash/rebase only), required status checks `test` + `changeset` + up-to-date, linear history, no force-push, no deletion |
+| [`main.json`](../.github/rulesets/main.json) | default branch (`main`) | PR required (1 approval, dismiss stale, resolve conversations, squash/rebase only), required status checks `test` + `engines (20)` + `engines (22)` + `spec` + `changeset` + up-to-date, linear history, no force-push, no deletion |
 | [`release-tags.json`](../.github/rulesets/release-tags.json) | tags `@revenexx/integrations-node-sdk@*` | only **bypass actors** may create/update/delete release tags → protects the publish trigger (Repository admin **and** the release GitHub App are bypass actors) |
 | [`branch-names.json`](../.github/rulesets/branch-names.json) | all branches **except** the allowed prefixes | restricts branch **creation**: only `feature/`, `hotfix/`, `bugfix/`, `chore/`, `release/`, `changeset-release/` (single segment each) and `dependabot/` (any depth) branches may be created (no bypass) |
 | [`release-branches.json`](../.github/rulesets/release-branches.json) | branches `release/*` and `chore/*` | restricts `release/` and `chore/` branch **creation** to **repository admins** (the stand-in for "org members" — see note) |
 
-The required status checks `test` and `changeset` are job names in
-`.github/workflows/ci.yml`. `changeset` fails any PR that changes a package without
-adding a changeset file (it self-skips on the `changeset-release/*` PR, whose
-changesets are already consumed).
+The required status checks are job names in `.github/workflows/ci.yml`: `test` (the
+full pipeline on the newest supported Node), `engines (20)` / `engines (22)` (the
+suite on the older majors `engines.node` claims — one context per matrix entry, so
+each is named separately), `spec` (every promise in `specs/` bound to a test) and
+`changeset`, which fails any PR that changes a package without adding a changeset
+file (it self-skips on the `changeset-release/*` PR, whose changesets are already
+consumed).
+
+> **A context this file adds is not required until the live ruleset is edited.**
+> The JSON here is an import source; a check nobody has added to the live ruleset
+> can go red and still merge. Conversely, a context you rename here and in
+> `ci.yml` leaves the live ruleset waiting on a name that will never report, which
+> blocks every PR — which is why the matrix sits in a job of its own rather than
+> turning `test` into `test (24)`.
 
 ### Branch naming convention
 
