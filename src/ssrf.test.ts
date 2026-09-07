@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import { test } from 'node:test';
+import ipaddr from 'ipaddr.js';
 import { NodeError } from './errors.js';
 import { safeFetch } from './fetch.js';
 import {
@@ -29,6 +30,11 @@ const BLOCKED_V4 = [
   '192.168.255.255', // 192.168/16
   '169.254.0.1',
   '169.254.169.254', // link-local incl. cloud metadata
+  '100.64.0.1',
+  '100.127.255.255', // 100.64/10 carrier-grade NAT
+  '224.0.0.1',
+  '239.255.255.255', // 224/4 multicast
+  '255.255.255.255', // broadcast
 ];
 
 const PUBLIC_V4 = [
@@ -40,6 +46,9 @@ const PUBLIC_V4 = [
   '192.167.255.255', // just below 192.168/16
   '169.253.255.255', // just below link-local
   '11.0.0.1',
+  '100.63.255.255', // just below 100.64/10
+  '100.128.0.1', // just above 100.64/10
+  '223.255.255.255', // just below 224/4 multicast
 ];
 
 for (const ip of BLOCKED_V4) {
@@ -63,6 +72,16 @@ const BLOCKED_V6 = [
   '0:0:0:0:0:ffff:7f00:1', // IPv4-mapped loopback, non-dotted form
   '::127.0.0.1', // deprecated IPv4-compatible loopback (dotted tail after ::)
   '::10.0.0.1', // deprecated IPv4-compatible private
+  'fec0::1', // deprecated site-local
+  'ff02::1', // multicast
+  '2002:7f00:0001::', // 6to4 carrying a loopback address
+  '2002:0808:0808::', // 6to4 at all — the whole transitional range is refused
+  '2001:0:0:0:0:0:7f00:1', // Teredo carrying a loopback address
+  '64:ff9b::7f00:1', // NAT64 well-known prefix carrying a loopback address
+  '64:ff9b::10.0.0.1', // NAT64 carrying a private address, dotted tail
+  '::ffff:0:8.8.8.8', // IPv4-translated, not IPv4-mapped
+  '2001:db8::93.184.216.34', // documentation prefix, public-looking embedded IPv4
+  '1fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff', // just below the allocated 2000::/3
 ];
 
 const PUBLIC_V6 = [
@@ -70,8 +89,9 @@ const PUBLIC_V6 = [
   '2606:4700:4700::1111', // Cloudflare DNS
   '::ffff:93.184.216.34', // IPv4-mapped public
   '::93.184.216.34', // deprecated IPv4-compatible public (dotted tail after ::)
-  '2001:db8::93.184.216.34', // embedded IPv4 with a non-empty prefix
-  'fe00::1', // just below fc00::/7
+  '2606:4700::93.184.216.34', // embedded IPv4 with a non-empty prefix
+  '64:ff9b::93.184.216.34', // NAT64 well-known prefix carrying a public address
+  '2000::1', // the bottom of the allocated 2000::/3
 ];
 
 for (const ip of BLOCKED_V6) {
@@ -82,6 +102,58 @@ for (const ip of PUBLIC_V6) {
   // AC-2 — A public target is allowed through, by each of the three ways in
   test(`isBlockedAddress allows IPv6 ${ip} [@spec:ssrf-guard:AC-2] [@spec:ssrf-guard:AC-11]`, () => assert.equal(isBlockedAddress(ip), false));
 }
+
+// AC-19 — Only public unicast is allowed, so a range no promise names is still refused
+for (const ip of ['192.0.2.1', '198.51.100.1', '203.0.113.1', '240.0.0.1', '198.18.0.1', '2001:20::1']) {
+  test(`isBlockedAddress blocks the unnamed reserved range holding ${ip} [@spec:ssrf-guard:AC-19]`, () =>
+    assert.equal(isBlockedAddress(ip), true));
+}
+// The IPv6 bands nobody has been allocated. These are the ones the classification
+// calls `unicast` by *default* — it has no special range for them — so a rule that
+// only asked for that name would call every one of them public. AC-19 is the promise
+// that it does not; these are its controls.
+for (const ip of ['1000::1', '4000::1', '8000::1', 'c000::1', 'fe00::1']) {
+  test(`isBlockedAddress blocks unallocated IPv6 ${ip}, which the classification defaults to unicast [@spec:ssrf-guard:AC-19]`, () =>
+    assert.equal(isBlockedAddress(ip), true));
+}
+// AC-2 — A public target is allowed through, by each of the three ways in
+test('isBlockedAddress allows an ordinary public address under the same rule [@spec:ssrf-guard:AC-2] [@spec:ssrf-guard:AC-19]', () => {
+  assert.equal(isBlockedAddress('93.184.216.34'), false);
+  assert.equal(isBlockedAddress('2606:4700:4700::1111'), false);
+});
+
+// The rule leans on three things the address classification does not promise in its
+// README, and a minor bump could change any of them quietly. Each is asserted here
+// directly, so a bump reads as the assumption it broke rather than as a matrix of
+// addresses that mysteriously changed sides. The dependency is pinned exactly for the
+// same reason; these are what make moving the pin a decision somebody sees.
+//
+// AC-11 — The refused set covers every shape a non-public address comes in
+test('the classification still names the range every public address shares [@spec:ssrf-guard:AC-11]', () => {
+  // Were `unicast` renamed or subdivided, every address would be refused: fail-closed,
+  // but a total outbound outage rather than a range check going one way or the other.
+  assert.equal(ipaddr.parse('93.184.216.34').range(), 'unicast');
+  assert.equal(ipaddr.parse('2606:4700:4700::1111').range(), 'unicast');
+});
+// AC-11 — The refused set covers every shape a non-public address comes in
+test('the classification still folds the deprecated IPv4-compatible form into the mapped one [@spec:ssrf-guard:AC-11]', () => {
+  // `::a.b.c.d` is its own (deprecated) form, and it is judged by the embedded address
+  // only because the parser normalises it as though the `ffff` were written. Nothing
+  // says it must keep doing that. If it stops, `::127.0.0.1` is no longer unwrapped —
+  // which the positive rule then refuses rather than lets through, so the cost is a
+  // public host written that way becoming unreachable, and this is where it says so.
+  const compatible = ipaddr.parse('::127.0.0.1');
+  assert.equal(compatible.range(), 'ipv4Mapped');
+  assert.equal(compatible.toString(), '::ffff:7f00:1');
+});
+// AC-19 — Only public unicast is allowed, so a range no promise names is still refused
+test('the classification still names the NAT64 well-known prefix, which is unwrapped rather than refused [@spec:ssrf-guard:AC-19]', () => {
+  // `64:ff9b::/96` is the one refused-looking range that is unwrapped instead, because
+  // on an IPv6-only network with DNS64 it is what every IPv4-only host resolves to.
+  // Were the range to lose this name, the prefix would stop being unwrapped and fall
+  // to the positive rule — refusing every IPv4-only host on such a network.
+  assert.equal(ipaddr.parse('64:ff9b::93.184.216.34').range(), 'rfc6052');
+});
 
 // AC-9 — An address the guard cannot parse counts as blocked
 test('isBlockedAddress fails closed on an unparseable address [@spec:ssrf-guard:AC-9]', () => {

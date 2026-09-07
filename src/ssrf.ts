@@ -1,5 +1,6 @@
 import { subscribe } from 'node:diagnostics_channel';
 import { isIP } from 'node:net';
+import ipaddr from 'ipaddr.js';
 import { NodeError } from './errors.js';
 
 /**
@@ -32,105 +33,92 @@ export const ssrfResolver: { lookup: LookupFn } = {
   },
 };
 
-/** Parse a canonical dotted-quad IPv4 literal into its four octets, or `null`. */
-function parseIpv4(input: string): [number, number, number, number] | null {
-  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(input);
-  if (!m) return null;
-  const octets = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
-  if (octets.some((n) => n > 255)) return null;
-  return octets as [number, number, number, number];
+/** Narrow a parsed address to its IPv6 shape, which alone carries an embedded v4. */
+function isIPv6(addr: ipaddr.IPv4 | ipaddr.IPv6): addr is ipaddr.IPv6 {
+  return addr.kind() === 'ipv6';
 }
 
 /**
- * Expand an IPv6 literal (incl. `::` compression and an embedded IPv4 tail like
- * `::ffff:127.0.0.1`) into its eight 16-bit hextets, or `null` if unparseable.
+ * The one range name the address classification hands back that a request may be
+ * steered to. The ruling is kept as the complement of this rather than as a list of
+ * refused ranges, so a range the classification learns about later is refused
+ * without anybody here having to notice that it exists.
  */
-function expandIpv6(input: string): number[] | null {
-  // Drop any zone id (`fe80::1%eth0`).
-  let s = input;
-  const zone = s.indexOf('%');
-  if (zone !== -1) s = s.slice(0, zone);
+const PUBLIC_RANGE = 'unicast';
 
-  // Rewrite an embedded IPv4 tail (`::ffff:1.2.3.4`, `::1.2.3.4`,
-  // `2001:db8::1.2.3.4`, …) as two hex groups, so the `::`-compression and
-  // group-split logic below handles every embedded form uniformly. Keeping the
-  // separating colon in place (`slice(0, idx + 1)`) preserves a preceding `::`.
-  if (s.includes('.')) {
-    const idx = s.lastIndexOf(':');
-    if (idx === -1) return null;
-    const v4 = parseIpv4(s.slice(idx + 1));
-    if (!v4) return null;
-    const hi = ((v4[0] << 8) | v4[1]).toString(16);
-    const lo = ((v4[2] << 8) | v4[3]).toString(16);
-    s = `${s.slice(0, idx + 1)}${hi}:${lo}`;
-  }
+/**
+ * IANA's global unicast allocation, and the reason the range name above is not the
+ * whole rule for IPv6.
+ *
+ * `unicast` is the classification's **default** verdict, not a determination: it is
+ * what comes back for an address no special range matched. For IPv4 that is the same
+ * thing, since the space is fully allocated and what is left over is what a host may
+ * be reached at. IPv6 is mostly *unallocated*, so the default reads `unicast` across
+ * `::/3`, `4000::/2`, `8000::/1` and `fe00::/9` — reserved space that a defaulting
+ * rule calls public. So the IPv6 half is asked positively instead: an address is
+ * public only if it sits inside the block IANA has actually handed out.
+ *
+ * The direction of the residual is the point. Space allocated outside `2000::/3`
+ * later reads as refused until this constant moves, which costs reachability and not
+ * safety — the opposite of what defaulting to `unicast` costs.
+ */
+const GLOBAL_UNICAST_V6 = ipaddr.parseCIDR('2000::/3');
 
-  const halves = s.split('::');
-  if (halves.length > 2) return null;
+/**
+ * The range names of the IPv6 forms that carry an IPv4 address in their low 32 bits.
+ * Each is a range of its own and so never `unicast`, and none of them sits inside
+ * `2000::/3` either — so without unwrapping, the rule above would refuse them on the
+ * wrapper and never look at the address that actually decides the verdict.
+ *
+ * `ipv4Mapped` covers `::ffff:a.b.c.d` and, because the parser normalises it to the
+ * mapped form, the deprecated IPv4-compatible `::a.b.c.d` as well. `rfc6052` is the
+ * NAT64 well-known prefix `64:ff9b::/96`, which is live infrastructure rather than a
+ * legacy transition: on an IPv6-only network with DNS64, this is the form every
+ * IPv4-only host resolves to, and refusing the prefix outright would refuse them all.
+ */
+const V4_EMBEDDING_RANGES = new Set(['ipv4Mapped', 'rfc6052']);
 
-  const parseGroups = (part: string): number[] =>
-    part === '' ? [] : part.split(':').map((h) => (/^[0-9a-fA-F]{1,4}$/.test(h) ? parseInt(h, 16) : Number.NaN));
-
-  const head = parseGroups(halves[0] ?? '');
-  const back = halves.length === 2 ? parseGroups(halves[1] ?? '') : null;
-
-  const declared = [...head, ...(back ?? [])];
-  if (declared.some((h) => !Number.isInteger(h) || h < 0 || h > 0xffff)) return null;
-
-  let hextets: number[];
-  if (back === null) {
-    hextets = head;
-  } else {
-    const zeros = 8 - (head.length + back.length);
-    if (zeros < 1) return null; // `::` must stand in for at least one zero group
-    hextets = [...head, ...new Array<number>(zeros).fill(0), ...back];
-  }
-  return hextets.length === 8 ? hextets : null;
-}
-
-function isBlockedIpv4(o: [number, number, number, number]): boolean {
-  const [a, b] = o;
-  return (
-    a === 0 || // 0.0.0.0/8 "this network" (incl. 0.0.0.0)
-    a === 127 || // 127.0.0.0/8 loopback
-    a === 10 || // 10.0.0.0/8 private
-    (a === 172 && b >= 16 && b <= 31) || // 172.16.0.0/12 private
-    (a === 192 && b === 168) || // 192.168.0.0/16 private
-    (a === 169 && b === 254) // 169.254.0.0/16 link-local (incl. metadata 169.254.169.254)
-  );
+/**
+ * Pull the IPv4 address out of the low 32 bits of an IPv6 address in one of
+ * {@link V4_EMBEDDING_RANGES}. Not `toIPv4Address()`, which is defined only for the
+ * mapped form and throws on the NAT64 prefix.
+ */
+function embeddedIpv4(addr: ipaddr.IPv6): ipaddr.IPv4 | ipaddr.IPv6 {
+  return ipaddr.fromByteArray(addr.toByteArray().slice(12));
 }
 
 /**
  * Return `true` when `ip` (a literal IPv4/IPv6 address) points at a private,
- * loopback, link-local or otherwise non-public target that a server-side fetch
- * must never be steered to. IPv4-mapped/-compatible IPv6 addresses are unwrapped
- * and re-checked against the IPv4 rules. An address we cannot parse is treated as
+ * loopback, link-local, carrier-grade NAT, multicast, broadcast, reserved,
+ * unallocated or otherwise non-public target that a server-side fetch must never be
+ * steered to.
+ *
+ * The verdict is an allow-list: the address is refused unless the classification
+ * calls its range public unicast and — for IPv6, where that verdict is a default
+ * rather than a determination — it also sits inside the block IANA has allocated
+ * (see {@link GLOBAL_UNICAST_V6}). The IPv6 forms that embed an IPv4 address are
+ * unwrapped and the embedded address judged in its place, so a public host stays
+ * reachable when it is written that way. An address we cannot parse is treated as
  * blocked (fail-closed).
+ *
+ * Promised behaviour: specs/ssrf-guard.md (AC-9, AC-11, AC-19).
  */
 export function isBlockedAddress(ip: string): boolean {
-  const v4 = parseIpv4(ip);
-  if (v4) return isBlockedIpv4(v4);
-
-  const h = expandIpv6(ip);
-  if (!h) return true; // fail-closed: an unparseable address is never "public"
-
-  // ::  (unspecified) and ::1 (loopback)
-  if (h.every((x) => x === 0)) return true;
-  if (h.slice(0, 7).every((x) => x === 0) && h[7] === 1) return true;
-
-  // IPv4-mapped (::ffff:a.b.c.d) and deprecated IPv4-compatible (::a.b.c.d):
-  // unwrap the embedded v4 and apply the v4 rules.
-  const embedsV4 =
-    h[0] === 0 && h[1] === 0 && h[2] === 0 && h[3] === 0 && h[4] === 0 && (h[5] === 0xffff || h[5] === 0);
-  if (embedsV4) {
-    return isBlockedIpv4([h[6]! >> 8, h[6]! & 0xff, h[7]! >> 8, h[7]! & 0xff]);
+  let addr: ipaddr.IPv4 | ipaddr.IPv6;
+  try {
+    addr = ipaddr.parse(ip);
+  } catch {
+    return true; // fail-closed: an unparseable address is never "public"
   }
 
-  // fc00::/7 unique-local, fe80::/10 link-local
-  if ((h[0]! & 0xfe00) === 0xfc00) return true;
-  if ((h[0]! & 0xffc0) === 0xfe80) return true;
+  if (isIPv6(addr)) {
+    // The wrapper never decides the verdict; the address it carries does.
+    if (V4_EMBEDDING_RANGES.has(addr.range())) return embeddedIpv4(addr).range() !== PUBLIC_RANGE;
+    // Unallocated IPv6 defaults to `unicast`, so being public has to be asked for.
+    if (!addr.match(GLOBAL_UNICAST_V6)) return true;
+  }
 
-  return false;
+  return addr.range() !== PUBLIC_RANGE;
 }
 
 /**
