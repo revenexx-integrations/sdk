@@ -6,7 +6,7 @@ where:
   - maxBytesConfigField — the setting a node offers its author for the size cap
 docs:
   - docs/overview.md
-updated: 2026-09-01
+updated: 2026-09-07
 ---
 
 # Reading what came back
@@ -20,7 +20,8 @@ made the call.
 
 So an answer is read through a cap rather than swallowed, and the cap is enforced as
 the bytes arrive rather than after. Where the host declares a length up front the
-answer is refused before its body is touched at all. Above every cap a node or a
+answer is refused before its body is downloaded at all, and a refusal on either road
+lets go of the connection rather than leaving it held. Above every cap a node or a
 workflow author can set sits a hard ceiling that neither can raise. On top of that
 sits the small question of what the bytes *are* — text, or the JSON the host claims
 they are — and a claim that turns out to be false is reported as such rather than
@@ -54,9 +55,9 @@ quietly handed on as text.
 
 - **Given** a host that declares up front a length beyond the cap
 - **When** the answer is read
-- **Then** it is refused without its body being touched at all
-- **Because** the declaration is free to check and the body is not; refusing on it
-  costs nothing and saves the transfer
+- **Then** it is refused without its body being downloaded
+- **Because** the declaration is free to check and the transfer is not; refusing on
+  it costs nothing and saves the transfer
 - **Pair** AC-1
 - verify: unit
 
@@ -139,6 +140,18 @@ quietly handed on as text.
   setting
 - verify: unit
 
+### AC-12 — An answer refused for its size lets go of its connection
+
+- **Given** an answer refused for its size — on the length the host declared up
+  front, or on the bytes that kept arriving past the cap
+- **When** the refusal surfaces
+- **Then** the body is discarded rather than left hanging, so the connection is
+  released
+- **Because** the caller has stopped reading either way, and a body neither read nor
+  discarded holds a connection open in a worker every workflow shares — which is the
+  cost the cap exists to prevent, arriving by the other road
+- verify: unit
+
 ## Elsewhere
 
 - **How long a request may take and how often it is tried** is
@@ -146,6 +159,9 @@ quietly handed on as text.
   here bounds the answer.
 - **Whether the request could be made at all** is
   [`ssrf-guard.md`](ssrf-guard.md).
+- **The same letting-go on the way out of a redirect** is
+  [`redirect-following.md`](redirect-following.md), whose 3xx body is never read at
+  all. AC-12 here is the reading side of the same care.
 
 ## Gaps
 
@@ -169,3 +185,6 @@ quietly handed on as text.
   helpers: AC-1 through AC-11
 - [PO-368](https://linear.app/revenexx/issue/PO-368) — backfilled this spec against the
   tests that already proved it
+- [PO-185](https://linear.app/revenexx/issue/PO-185) — AC-12, and the narrowing of AC-3
+  that came with it: the declared-length refusal was the one exit from a read that
+  left the connection held

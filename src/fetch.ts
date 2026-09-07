@@ -246,7 +246,8 @@ function tooLargeError(status: number, bytes: number, maxBytes: number): NodeErr
  * The `Content-Length` header is used as a fast-reject (bail before downloading
  * anything), but the limit is *also* enforced while streaming, since the header
  * can be absent or lie. On overrun the stream is cancelled and a
- * `NodeError('RESPONSE_TOO_LARGE', …, { status })` is thrown.
+ * `NodeError('RESPONSE_TOO_LARGE', …, { status })` is thrown. Both refusal paths
+ * cancel the body first, so neither leaves the connection held.
  */
 export async function readArrayBuffer(
   res: Response,
@@ -257,6 +258,13 @@ export async function readArrayBuffer(
   const cap = clampResponseBytes(maxBytes);
   const declared = Number(res.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > cap) {
+    // We refuse on the declaration and never read this body, so release the
+    // socket before throwing — the same reason guardedFetch cancels a 3xx body
+    // ahead of its throw paths. Without this the fast-reject is the one exit
+    // from a read that leaves the connection held, which matters most for the
+    // callers that take an answer on every run in the shared worker.
+    // Best-effort: a cancel that rejects must not mask RESPONSE_TOO_LARGE.
+    await res.body?.cancel().catch(() => {});
     throw tooLargeError(res.status, declared, cap);
   }
 

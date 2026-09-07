@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { safeFetch } from './fetch.js';
+import { readText, safeFetch } from './fetch.js';
 import type {
   ICredential,
   ICredentialContext,
@@ -58,6 +58,19 @@ export interface OAuthTokenResponse {
 }
 
 /**
+ * Byte cap on a token-endpoint answer.
+ *
+ * Deliberately far below the package default: everything an OAuth token
+ * response may contain is a small JSON object, and an id_token carrying a fat
+ * claim set is still tens of kilobytes. A megabyte is roughly fifty times the
+ * largest honest answer, which is the right shape for a limit that exists to
+ * stop a host — or something answering in its place — from deciding how much
+ * memory a resolve costs. Not a setting: no node and no workflow author is in
+ * front of this call, so there is nobody to offer it to.
+ */
+const MAX_TOKEN_RESPONSE_BYTES = 1024 * 1024;
+
+/**
  * The base for every credential type. Stores the published description and
  * provides a small HTTP helper. `resolve` is abstract; `test` defaults to a
  * presence check and should be overridden where a real connection test exists.
@@ -98,6 +111,12 @@ export abstract class BaseCredential implements ICredential {
    * Note that a 301/302 answer to this POST is downgraded to a bodiless GET —
    * per the redirect rules, not a quirk of ours. Real token endpoints do not
    * redirect; one that does was never going to complete the exchange anyway.
+   *
+   * The third protection is the caller's own: safeFetch hands back a `Response`
+   * and reading it is not its job, so the answer goes through {@link readText}
+   * under {@link MAX_TOKEN_RESPONSE_BYTES} rather than a bare `res.text()`.
+   * Both branches below read that same string, so the cap covers the refusal as
+   * well as the token — an error body is the less predictable of the two.
    */
   protected async postForm(
     ctx: ICredentialContext,
@@ -119,7 +138,7 @@ export abstract class BaseCredential implements ICredential {
       body,
     });
 
-    const text = await res.text();
+    const text = await readText(res, MAX_TOKEN_RESPONSE_BYTES);
     if (!res.ok) {
       // Surface only the standard OAuth error fields (RFC 6749 §5.2), never the
       // raw body — token endpoints can echo request params or diagnostics that
