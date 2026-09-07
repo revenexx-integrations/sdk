@@ -184,6 +184,11 @@ test('postForm refuses a token endpoint that resolves to a private address [@spe
 // takes without a node's settings in front of it was the one with no limit on
 // it. The body here is well past the cap and never parsed: the read fails on
 // the bytes, before the shape is considered.
+//
+// Both statuses are asserted because the criterion promises both: the read runs
+// ahead of the ok/not-ok split, so a refusal is capped on the same line a token
+// is. Holding only the token half would let a later change move a read onto the
+// success branch and leave the refusal uncapped with the AC still green.
 // AC-13 — The answer from a token endpoint is read under a cap
 test('postForm refuses a token-endpoint answer past the cap [@spec:credentials:AC-13]', async (t) => {
   stubFetch(t, { access_token: 'a'.repeat(2 * 1024 * 1024) });
@@ -198,6 +203,20 @@ test('postForm refuses a token-endpoint answer past the cap [@spec:credentials:A
   );
 });
 
+// AC-13 — The answer from a token endpoint is read under a cap
+test('postForm refuses an oversized token-endpoint refusal too [@spec:credentials:AC-13]', async (t) => {
+  stubFetch(t, { error: 'invalid_client', error_description: 'x'.repeat(2 * 1024 * 1024) }, 400);
+
+  await assert.rejects(
+    () => new BusinessCentralCredential().resolve(ctx(), { clientId: 'id', clientSecret: 'sec' }, null),
+    (err: unknown) => {
+      assert.ok(err instanceof NodeError, 'expected a NodeError, not the plain OAuth-error Error');
+      assert.equal(err.code, 'RESPONSE_TOO_LARGE');
+      return true;
+    },
+  );
+});
+
 // PO-185: `postForm` passes `ctx.signal` and no budget of its own, so the
 // deadline is `safeFetch`'s default. The signal already ends a cancelled run;
 // what this guards is the run nobody cancels — a token endpoint that simply
@@ -205,16 +224,25 @@ test('postForm refuses a token-endpoint answer past the cap [@spec:credentials:A
 // spec claim: the budget itself is `request-budget.md`, and this asserts only
 // that the token exchange is inside it. Time is not waited for — `setTimeout`
 // fires immediately, the device that spec's AC-3 uses.
+//
+// Which timer won has to be asserted, not assumed. The patched `setTimeout` is
+// process-wide, so the guard's DNS-resolve timer fires immediately as well, and
+// that one raises `TIMEOUT` too — the code alone cannot tell the two apart. The
+// message names the budget that ended the call, and the call count proves the
+// request was made at all rather than the guard timing out ahead of it.
 test('postForm fails on the request budget when the token endpoint never answers', async (t) => {
+  let calls = 0;
   const originalFetch = globalThis.fetch;
   const originalLookup = ssrfResolver.lookup;
   const originalSetTimeout = globalThis.setTimeout;
-  globalThis.fetch = (_url, opts) =>
-    new Promise((_resolve, reject) => {
+  globalThis.fetch = (_url, opts) => {
+    calls++;
+    return new Promise((_resolve, reject) => {
       opts?.signal?.addEventListener('abort', () =>
         reject(new DOMException('The operation was aborted.', 'AbortError')),
       );
     });
+  };
   ssrfResolver.lookup = async () => [{ address: '93.184.216.34', family: 4 }];
   // @ts-expect-error partial overload patch
   globalThis.setTimeout = (fn: () => void, _delay: number) => originalSetTimeout(fn, 0);
@@ -229,9 +257,11 @@ test('postForm fails on the request budget when the token endpoint never answers
     (err: unknown) => {
       assert.ok(err instanceof NodeError, 'expected a NodeError');
       assert.equal(err.code, 'TIMEOUT');
+      assert.match(err.message, /Request timed out/, 'the request budget, not the DNS-resolve budget');
       return true;
     },
   );
+  assert.equal(calls, 1, 'the request must have been made for its budget to be what ended it');
 });
 
 // PO-185: a token endpoint answering 3xx used to be followed wherever it

@@ -25,3 +25,11 @@ that ships today comes near it.
 
 The RFC 6749 §5.2 error extraction is unchanged: a failure still carries only
 `error` and `error_description`, never the raw body.
+
+Alongside it, `readArrayBuffer`'s `Content-Length` fast-reject now discards the
+body before it throws, so a refused answer releases its connection instead of
+leaving it held. That exit was the only one out of a read that did not — the
+streaming overrun cancels, and `safeFetch` already cancels a redirect body ahead
+of every throw path — and it was unreachable until now, because `res.text()`
+always consumed the body on its way to the same failure. Routing `postForm`
+through a capped read is what reaches it, on the call this changeset is about.

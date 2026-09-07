@@ -23,8 +23,9 @@ What stays out is the machinery behind the name — that is `docs/`, and
   attempt may take, how often it is retried, how cancellation ends it, and how both
   budgets reach a workflow author as bounded settings
 - [`response-reading.md`](response-reading.md) — reading what came back: the byte cap
-  and where it is enforced, what is parsed as JSON and what is not, and the ceiling
-  neither a node nor a workflow author can raise
+  and where it is enforced, what is parsed as JSON and what is not, the connection a
+  refused answer lets go of, and the ceiling neither a node nor a workflow author can
+  raise
 - [`redirect-following.md`](redirect-following.md) — what a redirect does to the
   request: how many hops are allowed, what an unreadable target costs, and how the
   method and body change on the way
