@@ -39,6 +39,7 @@ function delayedFetch(delayMs: number, status = 200): typeof globalThis.fetch {
 
 // Helper: restore global fetch after each patched test.
 function withFetch(mock: typeof globalThis.fetch, fn: () => Promise<void>): Promise<void> {
+  // biome-ignore lint/nursery/noJsRestrictedProperties: saving the global to restore it after the test — the seam that installs the mock, not a request
   const orig = globalThis.fetch;
   globalThis.fetch = mock;
   return fn().finally(() => {

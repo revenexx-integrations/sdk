@@ -17,8 +17,9 @@ What stays out is the machinery behind the name — that is `docs/`, and
 ### Reaching a host
 
 - [`ssrf-guard.md`](ssrf-guard.md) — what a request is allowed to reach: which targets
-  are refused before a request is made, how each redirect hop is judged again, and what
-  a refusal is allowed to tell the caller
+  are refused before a request is made, how the address a connection lands on is judged
+  too, how each redirect hop is judged again, and what a refusal is allowed to tell the
+  caller
 - [`request-budget.md`](request-budget.md) — what one request may cost: how long an
   attempt may take, how often it is retried, how cancellation ends it, and how both
   budgets reach a workflow author as bounded settings

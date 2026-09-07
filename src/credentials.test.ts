@@ -36,6 +36,7 @@ function describe(slug: string, authKind: ICredentialDescription['authKind'], fi
  * on its own terms rather than being bypassed. The guard itself always runs.
  */
 function stubFetch(t: TestContext, body: Record<string, unknown>, status = 200): void {
+  // biome-ignore lint/nursery/noJsRestrictedProperties: saving the global to restore it after the test — the seam that installs the mock, not a request
   const originalFetch = globalThis.fetch;
   const originalLookup = ssrfResolver.lookup;
   globalThis.fetch = async () => new Response(JSON.stringify(body), { status });
@@ -155,6 +156,7 @@ test('OAuth2ClientCredentialsCredential.test returns ok on a successful mint [@s
 // AC-6 — A token endpoint taken from configuration is judged before the secret is sent
 test('postForm refuses a token endpoint that resolves to a private address [@spec:credentials:AC-6]', async (t) => {
   let calls = 0;
+  // biome-ignore lint/nursery/noJsRestrictedProperties: saving the global to restore it after the test — the seam that installs the mock, not a request
   const originalFetch = globalThis.fetch;
   const originalLookup = ssrfResolver.lookup;
   globalThis.fetch = async () => {

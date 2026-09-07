@@ -41,6 +41,25 @@
           }
         }
       },
+      "nursery": {
+        "noJsRestrictedProperties": {
+          "level": "error",
+          "options": {
+            "entries": [
+              {
+                "object": "globalThis",
+                "property": "fetch",
+                "message": "Use safeFetch() from src/fetch.ts. noRestrictedGlobals sees the bare `fetch` identifier only, so this is the member form of the same bypass (PO-184 review)."
+              },
+              {
+                "object": "global",
+                "property": "fetch",
+                "message": "Use safeFetch() from src/fetch.ts. noRestrictedGlobals sees the bare `fetch` identifier only, so this is the member form of the same bypass (PO-184 review)."
+              }
+            ]
+          }
+        }
+      },
       "complexity": {
         "noForEach": "off",
         "useLiteralKeys": "off",
