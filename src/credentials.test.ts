@@ -234,6 +234,7 @@ test('postForm refuses an oversized token-endpoint refusal too [@spec:credential
 // request was made at all rather than the guard timing out ahead of it.
 test('postForm fails on the request budget when the token endpoint never answers', async (t) => {
   let calls = 0;
+  // biome-ignore lint/nursery/noJsRestrictedProperties: saving the global to restore it after the test — the seam that installs the mock, not a request
   const originalFetch = globalThis.fetch;
   const originalLookup = ssrfResolver.lookup;
   const originalSetTimeout = globalThis.setTimeout;
@@ -275,6 +276,7 @@ test('postForm fails on the request budget when the token endpoint never answers
 // that the token exchange is inside them.
 test('postForm does not follow a token-endpoint redirect to a private address', async (t) => {
   let calls = 0;
+  // biome-ignore lint/nursery/noJsRestrictedProperties: saving the global to restore it after the test — the seam that installs the mock, not a request
   const originalFetch = globalThis.fetch;
   const originalLookup = ssrfResolver.lookup;
   globalThis.fetch = async () => {
