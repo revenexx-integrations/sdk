@@ -1,5 +1,153 @@
 # @revenexx/integrations-node-sdk
 
+## 1.2.0
+
+### Minor Changes
+
+- 33ace6a: Judge the address a connection lands on, not only the one that was checked (PO-184).
+
+  `assertPublicUrl` resolves a target's hostname and approves its addresses; the
+  connection that follows resolves the name **again**, on its own. A DNS answer
+  that differs the second time — public while the guard looks, private when the
+  socket opens — walked past the guard. That is DNS rebinding, and in this product
+  the workflow author supplies the URL _and_ the DNS behind it, so the usual
+  precondition for it is met by default rather than by exception.
+
+  `safeFetch` now judges that second answer too. While a hop is in flight it
+  watches undici's `undici:client:connected` diagnostics channel for the host it is
+  reaching, runs the same address ruling over the connected socket's peer address,
+  and destroys the socket when it is private or reserved. The channel is published
+  synchronously, before the request is written, so a refused target receives no
+  request bytes — the refusal still surfaces as
+  `NodeError('BLOCKED_ADDRESS', …, { status: 0 })`, and still is not retried.
+
+  What this does not do: the TCP handshake — and for `https:` the TLS handshake —
+  with the refused address has already completed when the connection is judged.
+  Nothing of the request follows it, but a bare connection is observable to
+  whoever aimed the call there. `specs/ssrf-guard.md` records that, and the
+  worker's network egress policy remains the layer that does not depend on this
+  code being right.
+
+  Four things a consumer can observe, which is why this is not a patch:
+
+  - A call that only got through by rebinding now throws. No consumer could have
+    depended on that without depending on a bypass of a documented refusal.
+  - The first `safeFetch` call installs a `diagnostics_channel` subscriber in the
+    host process. It judges only the **host and port** a `safeFetch` call is
+    currently reaching, so the worker's own connections to internal services are
+    untouched — that promise has two tests of its own, one for another host and one
+    for another port on the same host. What it cannot do is tell whose connection a
+    socket is: the announcement names the target, not the caller. A connection
+    somebody else opens to a target a call is reaching is judged too, and
+    `specs/ssrf-guard.md` records that.
+  - The subscriber logs one warning, once per process, if it is ever handed a
+    message it cannot read — the shape of that message belongs to Node's bundled
+    undici, and a rename would otherwise take this half of the guard away in
+    silence. The suite now runs on every Node major `engines` claims for the same
+    reason.
+  - `RVNXX_SSRF_ALLOW_PRIVATE` now relaxes both halves. Without that the local
+    stack would pass the check and then lose its sockets.
+
+  Not a major, although the SemVer table would read "changed semantics" that way:
+  the behaviour that disappears is behaviour `specs/ssrf-guard.md` always refused,
+  and a security fix that every consumer has to opt into by hand is a security fix
+  that does not arrive.
+
+- 56c2957: Refuse an address unless a maintained classification calls it public (PO-183).
+
+  `isBlockedAddress` decided what was public by classifying the address **by
+  hand** — its own IPv4 and IPv6 parsers plus a list of range checks. That was a
+  deliberate limitation when the guard shipped: the list covered the ranges that
+  mattered most, and it was accurate about being incomplete. What it left out was
+  reserved address space that read as public and would have passed — carrier-grade
+  NAT `100.64.0.0/10`, multicast, the broadcast address, the documentation,
+  benchmarking and future-use bands, IPv6 deprecated site-local, and the
+  transitional ranges 6to4 `2002::/16`, Teredo `2001::/32` and NAT64
+  `64:ff9b::/96`, each of which can carry a private IPv4 address inside an IPv6
+  one, and every IPv6 band nobody has been allocated.
+
+  The classification now comes from `ipaddr.js`, and the rule over it is stated the
+  other way round: an address is refused **unless** it is public unicast. That is
+  what makes the gap close for good rather than by one list getting longer —
+  nobody has to remember which reserved range was left out, and a range the
+  classification learns about later is refused without a change here.
+
+  Being public unicast is _determined_, not defaulted to. Asked which special range
+  an address is in, the classification answers "none" for space it has no range
+  for, and unallocated space answers that way — so for IPv6, where most of the
+  space is unallocated, the criterion is that the address also sits inside
+  `2000::/3`, the block IANA has handed out. Without that, `1000::/4`, `4000::/2`,
+  `8000::/1` and `fe00::/9` would all read as public.
+
+  The forms that carry one version inside the other are judged on the address they
+  carry rather than on the wrapper: IPv4-mapped `::ffff:a.b.c.d`, the deprecated
+  IPv4-compatible `::a.b.c.d`, and the NAT64 well-known prefix `64:ff9b::/96` — the
+  last because on an IPv6-only network with DNS64 it is what every IPv4-only host
+  resolves to, so refusing the prefix whole would refuse them all. A private
+  address behind any of them is still refused; a public one stays reachable. 6to4
+  and Teredo are refused whole, being legacy transition rather than infrastructure.
+  An address that cannot be parsed is still blocked.
+
+  Two things a consumer can observe, which is why this is not a patch:
+
+  - **Targets that used to be allowed now throw `BLOCKED_ADDRESS`.** Every one of
+    them is in reserved, non-public address space; none is a host anybody can
+    legitimately serve an API from. `2001:db8::/32` — the documentation prefix — is
+    the case the test matrix used to assert was allowed, and it is now refused.
+  - **The SDK has a runtime dependency for the first time.** `ipaddr.js` has no
+    transitive dependencies and adds ~13.4 KB minified to a bundled workflow. That
+    cost is the reason the classification is being handed over rather than extended:
+    the alternative was keeping a parser and a range table correct here, in a
+    package whose consumers cannot see it.
+
+  What this does not change: which addresses are checked, or when. Both halves of
+  the guard — the pre-flight ruling and the connected-socket judgement from PO-184
+  — run the same ruling as before, so the refusals arrive at exactly the same
+  points and in the same error shape. `RVNXX_SSRF_ALLOW_PRIVATE` still relaxes both.
+
+  The residual is now mostly the dependency's vintage rather than our attention:
+  `ipaddr.js` is pinned to an exact version, so a range the address registry sets
+  aside inside the allocated block after that version was published reads as
+  `unicast` until the pin moves forward. What is still kept by hand is the one
+  constant above — the boundary of the allocated block — which fails the safe way
+  (space allocated outside it reads as refused, costing reachability and not
+  safety) but is nonetheless ours to move. `specs/ssrf-guard.md` records both as
+  _Known_ gaps, in place of the _Undecided_ one this closes.
+
+### Patch Changes
+
+- 65796f3: `BaseCredential.postForm` now reads the token endpoint's answer through
+  `readText` under a 1 MiB cap instead of a bare `res.text()` (PO-185), so an
+  OAuth token exchange can no longer read an answer of any size into the worker.
+
+  This is the half of PO-185 that the previous change did not close. `safeFetch`
+  hands back a `Response`; reading it is the caller's job, so routing `postForm`
+  through the guard bounded where the request could go and how long it could take,
+  but not how much came back. It is the one answer in the package that no node's
+  settings stand in front of — nobody chooses a cap for a credential resolve — and
+  it is read on every first use and every refresh, in a worker every workflow
+  shares.
+
+  **An answer past the cap now fails** with `NodeError('RESPONSE_TOO_LARGE')`
+  where it previously succeeded, and the same holds for a refusal: both branches
+  read one string, and an error body from a token endpoint is the less predictable
+  of the two. The figure is deliberately far below `DEFAULT_MAX_RESPONSE_BYTES` —
+  an OAuth token response is a small JSON object, and even an `id_token` with a
+  fat claim set is tens of kilobytes — and it is not a setting, because there is no
+  node author and no workflow author in front of this call to offer it to. Nothing
+  that ships today comes near it.
+
+  The RFC 6749 §5.2 error extraction is unchanged: a failure still carries only
+  `error` and `error_description`, never the raw body.
+
+  Alongside it, `readArrayBuffer`'s `Content-Length` fast-reject now discards the
+  body before it throws, so a refused answer releases its connection instead of
+  leaving it held. That exit was the only one out of a read that did not — the
+  streaming overrun cancels, and `safeFetch` already cancels a redirect body ahead
+  of every throw path — and it was unreachable until now, because `res.text()`
+  always consumed the body on its way to the same failure. Routing `postForm`
+  through a capped read is what reaches it, on the call this changeset is about.
+
 ## 1.1.0
 
 ### Minor Changes
