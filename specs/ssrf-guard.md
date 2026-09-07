@@ -158,9 +158,17 @@ workflow.
 - **Then** it is refused, in either IP version and in the forms that embed one version
   inside the other
 - **And** an address just outside one of those ranges is allowed
+- **And** where a form carries an address of the other version, it is that carried
+  address that decides — so the same form holding a public address is allowed, and a
+  target does not become unreachable for the notation it arrived in
 - **Because** the ranges are contiguous and the boundaries are where a range check goes
   wrong — one octet out and the cloud metadata address reads as public, or a customer's
   real host becomes unreachable
+- **Note** which forms are unwrapped rather than refused whole is a reachability
+  question, not a safety one: a private address is refused either way. The IPv4-mapped
+  forms and the NAT64 well-known prefix are unwrapped, because on an IPv6-only network
+  with DNS64 the latter is what every IPv4-only host resolves to; 6to4 and Teredo are
+  refused whole, being legacy transition rather than infrastructure anything here runs on
 - verify: unit
 
 ### AC-12 — A host that can be judged without asking DNS is judged without asking
@@ -255,8 +263,8 @@ workflow.
 ### AC-19 — Only public unicast is allowed, so a range no promise names is still refused
 
 - **Given** an address in a reserved range that no criterion here names — a
-  documentation range, a future-use range, or a range the address registry set aside
-  after this was written
+  documentation range, a future-use range, a range the address registry set aside after
+  this was written, or address space nobody has been allocated at all
 - **When** it is judged
 - **Then** it is refused
 - **Because** the refused set is stated the other way round: what is allowed is the
@@ -264,6 +272,11 @@ workflow.
   having enumerated it. A list of refused ranges is only ever as complete as the last
   person who remembered to extend it, and the ranges that were missing from this one
   were missing for months
+- **And** being public unicast is *determined*, not defaulted to. A classification
+  asked "which special range is this in" answers "none" for space it has no range for,
+  and unallocated space answers that way — so for IPv6, where most of the space is
+  unallocated, the criterion is that the address sits inside the block the registry has
+  actually handed out. Without that, every unallocated band would read as public
 - **Pair** AC-2, the same ruling on an address that *is* public unicast — the rule
   refuses a range nobody named without refusing the ordinary internet
 - verify: unit
@@ -322,10 +335,21 @@ workflow.
 
 - **The classification is only as current as the version it travels with.** The ruling
   defers to a vetted, maintained classification of the address space rather than to one
-  kept here, and that classification is pinned at a version. A range the address
-  registry sets aside after that version was published reads as ordinary unicast until
-  the pin moves forward. What is gone is the older, worse shape of this: a range that
-  was long since reserved and merely unlisted here read as public too.
+  kept here, and that classification is pinned at an exact version. A range the address
+  registry sets aside *inside* the allocated unicast block after that version was
+  published reads as ordinary unicast until the pin moves forward. What is gone is the
+  older, worse shape of this: a range that was long since reserved and merely unlisted
+  here read as public too.
+- **And the boundary of the allocated block is the one thing still kept by hand.** The
+  classification answers which special range an address is in, and has no answer to
+  give for space no range covers — so its verdict there is *no special range*, which a
+  rule reading it as "public" would default to allow. IPv4 can be read that way, being
+  fully allocated; IPv6 mostly cannot, so the criterion asks positively whether the
+  address is inside the block the registry has handed out, and that block is a constant
+  here (AC-19). It is one line rather than the hundred this replaced, and it fails the
+  safe way — space allocated outside it later reads as refused, costing reachability
+  and not safety, which is the opposite of what the defaulting rule cost. But it is
+  ours to move, and nothing here notices when it should be moved.
 
 **Undecided**
 
@@ -352,6 +376,15 @@ workflow.
   list into a rule: AC-19, and the ranges AC-11 had left out. It closed the *Undecided*
   gap that asked whether to keep extending the list or hand the question over, and left
   behind the *Known* one that the answer is pinned at a version
+  - Review found AC-19 promising more than the rule delivered: the classification's
+    verdict for space it has no range for is *no special range*, which the rule read as
+    public — so every unallocated IPv6 band was allowed, `fe00::/9` among them, and no
+    version bump would have changed that. AC-19 now says being public is determined
+    rather than defaulted to, and the allocation boundary it needs is the second *Known*
+    gap. The same review turned the NAT64 well-known prefix from refused-whole into
+    unwrapped (AC-11): it had been listed as a transitional range like 6to4, but on an
+    IPv6-only network with DNS64 it is what every IPv4-only host resolves to, so
+    refusing it whole would have refused them all
 - [PO-184](https://linear.app/revenexx/issue/PO-184) — the connect-time half: AC-17 and
   AC-18, and the AC-15 promise that the local relaxation reaches it too. What had been the
   first *Known* gap here — the guard checked one address and the connection resolved

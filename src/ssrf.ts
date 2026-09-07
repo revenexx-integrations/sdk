@@ -47,15 +47,59 @@ function isIPv6(addr: ipaddr.IPv4 | ipaddr.IPv6): addr is ipaddr.IPv6 {
 const PUBLIC_RANGE = 'unicast';
 
 /**
- * Return `true` when `ip` (a literal IPv4/IPv6 address) points at a private,
- * loopback, link-local, carrier-grade NAT, multicast, broadcast, transitional or
- * otherwise reserved target that a server-side fetch must never be steered to.
+ * IANA's global unicast allocation, and the reason the range name above is not the
+ * whole rule for IPv6.
  *
- * The verdict is an allow-list of one: the address is refused unless the
- * classification calls it public unicast. IPv4-mapped and the deprecated
- * IPv4-compatible IPv6 forms are unwrapped and their embedded address judged
- * instead, so a public host stays reachable when it is written that way. An address
- * we cannot parse is treated as blocked (fail-closed).
+ * `unicast` is the classification's **default** verdict, not a determination: it is
+ * what comes back for an address no special range matched. For IPv4 that is the same
+ * thing, since the space is fully allocated and what is left over is what a host may
+ * be reached at. IPv6 is mostly *unallocated*, so the default reads `unicast` across
+ * `::/3`, `4000::/2`, `8000::/1` and `fe00::/9` — reserved space that a defaulting
+ * rule calls public. So the IPv6 half is asked positively instead: an address is
+ * public only if it sits inside the block IANA has actually handed out.
+ *
+ * The direction of the residual is the point. Space allocated outside `2000::/3`
+ * later reads as refused until this constant moves, which costs reachability and not
+ * safety — the opposite of what defaulting to `unicast` costs.
+ */
+const GLOBAL_UNICAST_V6 = ipaddr.parseCIDR('2000::/3');
+
+/**
+ * The range names of the IPv6 forms that carry an IPv4 address in their low 32 bits.
+ * Each is a range of its own and so never `unicast`, and none of them sits inside
+ * `2000::/3` either — so without unwrapping, the rule above would refuse them on the
+ * wrapper and never look at the address that actually decides the verdict.
+ *
+ * `ipv4Mapped` covers `::ffff:a.b.c.d` and, because the parser normalises it to the
+ * mapped form, the deprecated IPv4-compatible `::a.b.c.d` as well. `rfc6052` is the
+ * NAT64 well-known prefix `64:ff9b::/96`, which is live infrastructure rather than a
+ * legacy transition: on an IPv6-only network with DNS64, this is the form every
+ * IPv4-only host resolves to, and refusing the prefix outright would refuse them all.
+ */
+const V4_EMBEDDING_RANGES = new Set(['ipv4Mapped', 'rfc6052']);
+
+/**
+ * Pull the IPv4 address out of the low 32 bits of an IPv6 address in one of
+ * {@link V4_EMBEDDING_RANGES}. Not `toIPv4Address()`, which is defined only for the
+ * mapped form and throws on the NAT64 prefix.
+ */
+function embeddedIpv4(addr: ipaddr.IPv6): ipaddr.IPv4 | ipaddr.IPv6 {
+  return ipaddr.fromByteArray(addr.toByteArray().slice(12));
+}
+
+/**
+ * Return `true` when `ip` (a literal IPv4/IPv6 address) points at a private,
+ * loopback, link-local, carrier-grade NAT, multicast, broadcast, reserved,
+ * unallocated or otherwise non-public target that a server-side fetch must never be
+ * steered to.
+ *
+ * The verdict is an allow-list: the address is refused unless the classification
+ * calls its range public unicast and — for IPv6, where that verdict is a default
+ * rather than a determination — it also sits inside the block IANA has allocated
+ * (see {@link GLOBAL_UNICAST_V6}). The IPv6 forms that embed an IPv4 address are
+ * unwrapped and the embedded address judged in its place, so a public host stays
+ * reachable when it is written that way. An address we cannot parse is treated as
+ * blocked (fail-closed).
  *
  * Promised behaviour: specs/ssrf-guard.md (AC-9, AC-11, AC-19).
  */
@@ -67,11 +111,11 @@ export function isBlockedAddress(ip: string): boolean {
     return true; // fail-closed: an unparseable address is never "public"
   }
 
-  // `::ffff:a.b.c.d` and the deprecated `::a.b.c.d` carry the v4 address that decides
-  // the verdict; the wrapper is a range of its own and never unicast, so the embedded
-  // address has to be unwrapped and judged in its place.
-  if (isIPv6(addr) && addr.isIPv4MappedAddress()) {
-    return addr.toIPv4Address().range() !== PUBLIC_RANGE;
+  if (isIPv6(addr)) {
+    // The wrapper never decides the verdict; the address it carries does.
+    if (V4_EMBEDDING_RANGES.has(addr.range())) return embeddedIpv4(addr).range() !== PUBLIC_RANGE;
+    // Unallocated IPv6 defaults to `unicast`, so being public has to be asked for.
+    if (!addr.match(GLOBAL_UNICAST_V6)) return true;
   }
 
   return addr.range() !== PUBLIC_RANGE;

@@ -13,18 +13,29 @@ NAT `100.64.0.0/10`, multicast, the broadcast address, the documentation,
 benchmarking and future-use bands, IPv6 deprecated site-local, and the
 transitional ranges 6to4 `2002::/16`, Teredo `2001::/32` and NAT64
 `64:ff9b::/96`, each of which can carry a private IPv4 address inside an IPv6
-one.
+one, and every IPv6 band nobody has been allocated.
 
 The classification now comes from `ipaddr.js`, and the rule over it is stated the
-other way round: an address is refused **unless** its range is `unicast`. That is
+other way round: an address is refused **unless** it is public unicast. That is
 what makes the gap close for good rather than by one list getting longer —
 nobody has to remember which reserved range was left out, and a range the
-classification learns about later is refused without a change here. The one
-exception the rule needs is the IPv4-mapped (`::ffff:a.b.c.d`) and deprecated
-IPv4-compatible (`::a.b.c.d`) forms: they are a range of their own and never
-`unicast`, so the embedded address is unwrapped and judged in its place, and a
-public host written that way stays reachable. An address that cannot be parsed
-is still blocked.
+classification learns about later is refused without a change here.
+
+Being public unicast is *determined*, not defaulted to. Asked which special range
+an address is in, the classification answers "none" for space it has no range
+for, and unallocated space answers that way — so for IPv6, where most of the
+space is unallocated, the criterion is that the address also sits inside
+`2000::/3`, the block IANA has handed out. Without that, `1000::/4`, `4000::/2`,
+`8000::/1` and `fe00::/9` would all read as public.
+
+The forms that carry one version inside the other are judged on the address they
+carry rather than on the wrapper: IPv4-mapped `::ffff:a.b.c.d`, the deprecated
+IPv4-compatible `::a.b.c.d`, and the NAT64 well-known prefix `64:ff9b::/96` — the
+last because on an IPv6-only network with DNS64 it is what every IPv4-only host
+resolves to, so refusing the prefix whole would refuse them all. A private
+address behind any of them is still refused; a public one stays reachable. 6to4
+and Teredo are refused whole, being legacy transition rather than infrastructure.
+An address that cannot be parsed is still blocked.
 
 Two things a consumer can observe, which is why this is not a patch:
 
@@ -43,8 +54,11 @@ the guard — the pre-flight ruling and the connected-socket judgement from PO-1
 — run the same ruling as before, so the refusals arrive at exactly the same
 points and in the same error shape. `RVNXX_SSRF_ALLOW_PRIVATE` still relaxes both.
 
-The residual is now the dependency's vintage rather than our attention:
-`ipaddr.js` is pinned, so a range the address registry sets aside after that
-version was published reads as `unicast` until the pin moves forward.
-`specs/ssrf-guard.md` records that as a *Known* gap, in place of the *Undecided*
-one this closes.
+The residual is now mostly the dependency's vintage rather than our attention:
+`ipaddr.js` is pinned to an exact version, so a range the address registry sets
+aside inside the allocated block after that version was published reads as
+`unicast` until the pin moves forward. What is still kept by hand is the one
+constant above — the boundary of the allocated block — which fails the safe way
+(space allocated outside it reads as refused, costing reachability and not
+safety) but is nonetheless ours to move. `specs/ssrf-guard.md` records both as
+*Known* gaps, in place of the *Undecided* one this closes.
