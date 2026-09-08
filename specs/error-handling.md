@@ -94,12 +94,13 @@ node.**
   posted once, carrying on past a timeout is the wrong answer. A per-node setting is the
   obvious shape and is deliberately not built here, because a setting that can also turn
   AC-1 off would undo the classification.
-- **Whether `code` is drawn from a closed set.** `TIMEOUT` and `REQUEST_FAILED` are
-  minted here and recur across every package; everything else is minted per node, and
-  nothing reserves a name or stops two nodes meaning different things by one.
-- **What `message` is allowed to contain.** It frequently passes the far end's own
-  wording through, and nothing says whether that is safe to show to whoever reads the
-  run — see PO-345.
+- **What the two words on the port are allowed to be** — whether `code` is drawn from a
+  closed set, and what `message` may contain. Recorded here because this is where the
+  port is now declared, and recorded **once**: the same two questions already sit in the
+  `## Gaps` of the error-contract spec in all four node packages, eight entries for two
+  questions, which is what a shape with no single home does to a corpus. Whoever answers
+  it retires those eight against the answer rather than adding a ninth. `message`
+  carrying the far end's own wording is the half with a security edge — PO-345.
 
 ## Tickets
 
