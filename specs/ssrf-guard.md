@@ -7,7 +7,7 @@ where:
   - isBlockedAddress — the address ruling, for a caller that already has one
 docs:
   - docs/overview.md
-updated: 2026-09-01
+updated: 2026-09-07
 ---
 
 # The SSRF guard
@@ -151,15 +151,24 @@ workflow.
 
 ### AC-11 — The refused set covers every shape a non-public address comes in
 
-- **Given** an address that is loopback, private, link-local, unique-local or the
-  unspecified address
+- **Given** an address that is loopback, private, carrier-grade NAT, link-local,
+  unique-local, multicast, broadcast, one of the transitional forms that carry one IP
+  version inside the other, or the unspecified address
 - **When** it is judged
 - **Then** it is refused, in either IP version and in the forms that embed one version
   inside the other
 - **And** an address just outside one of those ranges is allowed
-- **Because** the ranges are contiguous and the boundaries are where a hand-written
-  check goes wrong — one octet out and the cloud metadata address reads as public, or a
-  customer's real host becomes unreachable
+- **And** where a form carries an address of the other version, it is that carried
+  address that decides — so the same form holding a public address is allowed, and a
+  target does not become unreachable for the notation it arrived in
+- **Because** the ranges are contiguous and the boundaries are where a range check goes
+  wrong — one octet out and the cloud metadata address reads as public, or a customer's
+  real host becomes unreachable
+- **Note** which forms are unwrapped rather than refused whole is a reachability
+  question, not a safety one: a private address is refused either way. The IPv4-mapped
+  forms and the NAT64 well-known prefix are unwrapped, because on an IPv6-only network
+  with DNS64 the latter is what every IPv4-only host resolves to; 6to4 and Teredo are
+  refused whole, being legacy transition rather than infrastructure anything here runs on
 - verify: unit
 
 ### AC-12 — A host that can be judged without asking DNS is judged without asking
@@ -203,6 +212,8 @@ workflow.
 - **When** it is unset, or set to something that does not read as on
 - **Then** the guard applies in full
 - **And** it applies again as soon as the variable is removed, within the same process
+- **And** when it *is* deliberately on, the relaxation reaches the address a connection
+  lands on as well, so a developer's own service answers instead of losing its socket
 - **Because** this is the one switch that turns the guard off, so the failure that
   matters is it being on when nobody meant it — a stale value in an environment, a
   default copied out of the development stack
@@ -219,6 +230,57 @@ workflow.
   set means nothing
 - verify: unit
 
+### AC-17 — A call the guard approved reaches only an address the guard would approve
+
+- **Given** a name that answers with a public address while the target is being judged,
+  and with a private or reserved one when the connection for that hop is opened
+- **When** a node calls `safeFetch`
+- **Then** the connection is dropped before any of the request is written, the call
+  throws `BLOCKED_ADDRESS`, and whatever was listening on that address receives nothing
+- **Because** the name is resolved twice — once to judge the target and again to open
+  the connection — and here the person who supplies the URL also controls the DNS
+  behind it, so answering differently the second time is not an exotic attack but the
+  ordinary way past a check that only ever sees the first answer
+- **Pair** AC-2, reached the same way and ending in a response; the two differ only in
+  which address the connection lands on
+- verify: unit
+
+### AC-18 — A connection to a target no call is reaching is left alone
+
+- **Given** a connection to a private address that no call to `safeFetch` asked for —
+  the worker's own traffic to an internal service, say
+- **When** it is opened while a call is in flight to another host, or to another port
+  on the same host
+- **Then** it is left alone and carries its request as usual
+- **Because** this package runs inside somebody else's process, and a judgement that
+  applied to every socket in it would cut the internal calls the worker is built on —
+  a guard that breaks its host is a guard somebody switches off
+- **Note** the scope is the target, host and port together, and not the caller: what
+  is promised is that a target nothing here is reaching is untouched, which is
+  narrower than "only our own connections" — see the gap that records the difference
+- verify: unit
+
+### AC-19 — Only public unicast is allowed, so a range no promise names is still refused
+
+- **Given** an address in a reserved range that no criterion here names — a
+  documentation range, a future-use range, a range the address registry set aside after
+  this was written, or address space nobody has been allocated at all
+- **When** it is judged
+- **Then** it is refused
+- **Because** the refused set is stated the other way round: what is allowed is the
+  address space that is public unicast, and everything else is refused without anyone
+  having enumerated it. A list of refused ranges is only ever as complete as the last
+  person who remembered to extend it, and the ranges that were missing from this one
+  were missing for months
+- **And** being public unicast is *determined*, not defaulted to. A classification
+  asked "which special range is this in" answers "none" for space it has no range for,
+  and unallocated space answers that way — so for IPv6, where most of the space is
+  unallocated, the criterion is that the address sits inside the block the registry has
+  actually handed out. Without that, every unallocated band would read as public
+- **Pair** AC-2, the same ruling on an address that *is* public unicast — the rule
+  refuses a range nobody named without refusing the ordinary internet
+- verify: unit
+
 ## Elsewhere
 
 - **What following a redirect does to the request** — how many hops are allowed, what a
@@ -232,26 +294,65 @@ workflow.
 
 **Known**
 
-- **The address a host resolves to is checked, and then resolved again when the
-  connection is opened.** Between those two moments an attacker's DNS can change its
-  answer, so a target that passed the guard can still connect somewhere private —
-  the DNS-rebinding race. Closing it needs the connected socket's address to be
-  inspected rather than a name resolved twice, which is
-  [PO-184](https://linear.app/revenexx/issue/PO-184). Until then this guard is a
-  central defence and not an isolation boundary.
+- **The handshake with a refused address has already happened.** A connection is
+  judged once it stands, so nothing of the request is written to a private address
+  (AC-17) — but the TCP handshake, and for an `https` target the TLS handshake, are
+  complete by then. Whoever aimed a call there still learns whether something answers
+  on that address and port, and a service that acts on a bare connection has acted.
+  Refusing before the handshake would take the address the judgement approved and open
+  the socket to exactly that, which is not something this package can ask for from
+  where it sits.
+- **A connection somebody else opened is not judged again.** Connections are pooled
+  per host, and only a new one is announced; if something else in the process reached
+  the same host first, a later call may travel on a connection this guard never saw.
+  Nothing here can tell that from a connection of its own.
+- **And the mirror image: a connection somebody else opens to a target a call *is*
+  reaching is judged as ours, and dropped.** The announcement carries the target, not
+  the caller, so host and port together are as narrow as the scope can be made
+  (AC-18). While a call to `host:port` is in flight, another connection in the process
+  to that same `host:port` is judged by the same rule — and if it lands somewhere
+  private it loses its socket, on a call that never went through `safeFetch`. It takes
+  a target that passed the pre-flight check, so it resolved public at that moment,
+  which is what keeps it narrow; what makes it awkward is the attribution, since the
+  refusal reaches that caller as the `fetch failed` undici reports a dropped socket as.
+- **A connection that completes after the call it belongs to is not judged.** The
+  registration lasts as long as the call, not as long as the connect: a fetch that
+  times out while its socket is still being opened releases its target, and the
+  connect that lands afterwards finds nothing registered. The handshake with that
+  address has then happened unjudged. Whether the unjudged socket can go on to carry
+  a request depends on undici not pooling a socket whose fetch was aborted mid-connect
+  — which it does not today, and which nothing here pins.
 - **The guard assumes the worker opens its own connections.** If a global proxy
   dispatcher is ever installed, the target is resolved at the proxy instead and the
-  address this guard judged is no longer the one the bytes reach. Nothing detects
-  that from here; it is a property of how the worker is configured.
+  address this guard judged is no longer the one the bytes reach — and the connection
+  it would judge is the one to the proxy, so neither half of the guard sees the real
+  target. It can also fail the other way, into an outage rather than a hole: the
+  connect-time half refuses a peer address it cannot read, and a connection over a
+  Unix socket has no peer address at all, so every call through such a dispatcher
+  would be refused. Which of the two a given proxy produces is not verified here.
+  Nothing detects either from this side; it is a property of how the worker is
+  configured.
+
+- **The classification is only as current as the version it travels with.** The ruling
+  defers to a vetted, maintained classification of the address space rather than to one
+  kept here, and that classification is pinned at an exact version. A range the address
+  registry sets aside *inside* the allocated unicast block after that version was
+  published reads as ordinary unicast until the pin moves forward. What is gone is the
+  older, worse shape of this: a range that was long since reserved and merely unlisted
+  here read as public too.
+- **And the boundary of the allocated block is the one thing still kept by hand.** The
+  classification answers which special range an address is in, and has no answer to
+  give for space no range covers — so its verdict there is *no special range*, which a
+  rule reading it as "public" would default to allow. IPv4 can be read that way, being
+  fully allocated; IPv6 mostly cannot, so the criterion asks positively whether the
+  address is inside the block the registry has handed out, and that block is a constant
+  here (AC-19). It is one line rather than the hundred this replaced, and it fails the
+  safe way — space allocated outside it later reads as refused, costing reachability
+  and not safety, which is the opposite of what the defaulting rule cost. But it is
+  ours to move, and nothing here notices when it should be moved.
 
 **Undecided**
 
-- **Which reserved ranges count is settled by hand, and the set is not complete.**
-  Carrier-grade NAT (`100.64.0.0/10`), the 6to4 and Teredo ranges and the broadcast
-  address are not among the ones refused today.
-  [PO-183](https://linear.app/revenexx/issue/PO-183) asks whether to keep extending
-  the list or hand the question to a library, and no promise here states which
-  ranges a caller may rely on until it is answered.
 - **What a refusal costs a running workflow is not promised anywhere.** A blocked
   target throws rather than routing to an error port, so whether an author sees a
   failed run or a branch they can handle is decided by each node rather than here.
@@ -267,6 +368,31 @@ workflow.
 - [PO-368](https://linear.app/revenexx/issue/PO-368) — backfilled this spec against the
   tests that already proved it, and installed the gate that now holds it
   - AC-11 through AC-16 came in a second pass, from proven behaviour the first pass left
-    unbound. At sixteen criteria this is the largest spec here; if it grows again, the
-    local-development relaxation (AC-10, AC-15) is the seam to split along — it is the one
-    subject here about operating this package rather than about what the guard refuses.
+    unbound. At eighteen criteria this is the largest spec here, and the seam to split
+    along is still the local-development relaxation (AC-10, AC-15) — the one subject here
+    about operating this package rather than about what the guard refuses. The split is
+    due; it is not a passenger PO-184 should have carried.
+- [PO-183](https://linear.app/revenexx/issue/PO-183) — turned the refused set from a
+  list into a rule: AC-19, and the ranges AC-11 had left out. It closed the *Undecided*
+  gap that asked whether to keep extending the list or hand the question over, and left
+  behind the *Known* one that the answer is pinned at a version
+  - Review found AC-19 promising more than the rule delivered: the classification's
+    verdict for space it has no range for is *no special range*, which the rule read as
+    public — so every unallocated IPv6 band was allowed, `fe00::/9` among them, and no
+    version bump would have changed that. AC-19 now says being public is determined
+    rather than defaulted to, and the allocation boundary it needs is the second *Known*
+    gap. The same review turned the NAT64 well-known prefix from refused-whole into
+    unwrapped (AC-11): it had been listed as a transitional range like 6to4, but on an
+    IPv6-only network with DNS64 it is what every IPv4-only host resolves to, so
+    refusing it whole would have refused them all
+- [PO-184](https://linear.app/revenexx/issue/PO-184) — the connect-time half: AC-17 and
+  AC-18, and the AC-15 promise that the local relaxation reaches it too. What had been the
+  first *Known* gap here — the guard checked one address and the connection resolved
+  another — is closed; what is left of it is the handshake that has already happened when
+  the connection is judged.
+  - Review narrowed AC-18: it was titled as though the judgement applied to this
+    package's own connections, which is not something the announcement can tell. The scope
+    is the target — host and port — and the difference between that and "ours" is now a
+    gap of its own, beside the two other residuals the review turned up: a connect that
+    lands after its call released, and a proxy dispatcher refusing every call rather than
+    weakening the check.

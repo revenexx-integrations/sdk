@@ -6,7 +6,7 @@ where:
   - OAuth2ClientCredentialsCredential, OAuth2AuthCodeCredential — the kinds that mint and refresh
 docs:
   - docs/overview.md
-updated: 2026-09-01
+updated: 2026-09-04
 ---
 
 # Standing in for the person who owns the account
@@ -24,9 +24,10 @@ resolve. An authorisation-code account is refreshed against a token the person g
 once, and the refresh token itself may be replaced in the act of using it — which has to
 be written down, or the next run holds one that has already been spent.
 
-Two things stay constant across all of them. The account details are the most
+Three things stay constant across all of them. The account details are the most
 dangerous thing this package handles, so where they are sent is judged before they are
-sent, and what comes back from a failure is filtered before anyone sees it.
+sent; what comes back is read under a limit rather than swallowed; and what comes back
+from a failure is filtered before anyone sees it.
 
 **A credential is never handed anywhere its destination has not been checked, and a
 failure never repeats what the account said.**
@@ -157,12 +158,33 @@ failure never repeats what the account said.**
 - **Pair** AC-5, the same exchange where the endpoint answers successfully
 - verify: unit
 
+### AC-13 — The answer from a token endpoint is read under a cap
+
+- **Given** a token endpoint that answers with far more than a token exchange could
+  honestly need
+- **When** the credential is resolved
+- **Then** the resolve fails for the weight of the answer, and it fails that way
+  whether the answer was a token or a refusal
+- **Because** this is the one answer in the package no node's settings stand in front
+  of, so there is nobody to offer the cap to and nobody to notice its absence — and a
+  resolve runs in the worker every workflow shares, which is what reading an
+  unbounded answer costs
+- **Pair** AC-5, the same exchange against an endpoint that answers with a token
+- verify: unit
+
 ## Elsewhere
 
 - **The rules AC-6 judges an endpoint by** — which addresses count as private, how a
   redirect is judged, what a refusal may disclose — are
   [`ssrf-guard.md`](ssrf-guard.md). This spec promises only that a credential's own
   token endpoint is put through them.
+- **What a cap does when an answer passes it**, and the ceiling standing above every
+  cap, are [`response-reading.md`](response-reading.md). This spec promises only that
+  the answer from a token endpoint is read through one — and that the figure is this
+  package's rather than anybody's to choose.
+- **How long the exchange may take, and how a cancelled run ends it**, are
+  [`request-budget.md`](request-budget.md). Nothing here restates them; the token
+  exchange is simply inside them.
 
 ## Gaps
 
@@ -190,7 +212,8 @@ failure never repeats what the account said.**
 - [PO-126](https://linear.app/revenexx/issue/PO-126) — the credential contract and these
   base classes, so a credential author fills in gaps rather than writing a kind: AC-1
   through AC-5 and AC-7 through AC-12
-- [PO-185](https://linear.app/revenexx/issue/PO-185) — AC-6: the token exchange used a
-  raw request, so the endpoint — which comes from configuration — was never judged
+- [PO-185](https://linear.app/revenexx/issue/PO-185) — AC-6 and AC-13: the token
+  exchange used a raw request, so the endpoint — which comes from configuration — was
+  never judged, and the answer to it was read with no limit at all
 - [PO-368](https://linear.app/revenexx/issue/PO-368) — backfilled this spec against the
   tests that already proved it

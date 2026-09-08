@@ -39,6 +39,7 @@ function delayedFetch(delayMs: number, status = 200): typeof globalThis.fetch {
 
 // Helper: restore global fetch after each patched test.
 function withFetch(mock: typeof globalThis.fetch, fn: () => Promise<void>): Promise<void> {
+  // biome-ignore lint/nursery/noJsRestrictedProperties: saving the global to restore it after the test — the seam that installs the mock, not a request
   const orig = globalThis.fetch;
   globalThis.fetch = mock;
   return fn().finally(() => {
@@ -394,38 +395,110 @@ test('readArrayBuffer enforces the cap while streaming (no Content-Length) [@spe
   );
 });
 
-// AC-3 — An answer that declares an oversized length is refused untouched
-test('readArrayBuffer fast-rejects on an oversized Content-Length without touching the body [@spec:response-reading:AC-3]', async () => {
-  // A Response-shaped fake whose `body` getter throws if accessed — proving the
-  // Content-Length fast-reject bails out before any body read. (A real undici
-  // Response eagerly drains a stream body on construction, so a read-side-effect
-  // flag can't observe this.)
-  let bodyAccessed = false;
-  const fake = {
-    status: 200,
-    headers: new Headers({ 'content-length': '1000000' }),
-    get body(): ReadableStream<Uint8Array> {
-      bodyAccessed = true;
-      throw new Error('body must not be accessed on fast-reject');
+// A Response-shaped fake whose body records what was done to it: reading it is an
+// error, cancelling it is not. (A real undici Response eagerly drains a stream body
+// on construction, so a read-side-effect flag can't observe this.) The fast-reject
+// must take the second and never the first — AC-3 is the not-read half, AC-12 the
+// let-go half.
+function fastRejectFake(): { res: Response; state: { read: boolean; cancelled: boolean } } {
+  const state = { read: false, cancelled: false };
+  const body = {
+    async cancel(): Promise<void> {
+      state.cancelled = true;
     },
-  } as unknown as Response;
+    getReader(): never {
+      state.read = true;
+      throw new Error('body must not be read on fast-reject');
+    },
+  };
+  return {
+    res: { status: 200, headers: new Headers({ 'content-length': '1000000' }), body } as unknown as Response,
+    state,
+  };
+}
+
+// AC-3 — An answer that declares an oversized length is refused untouched
+test('readArrayBuffer fast-rejects on an oversized Content-Length without reading the body [@spec:response-reading:AC-3]', async () => {
+  const { res, state } = fastRejectFake();
   await assert.rejects(
-    () => readArrayBuffer(fake, 100),
+    () => readArrayBuffer(res, 100),
     (err: unknown) => err instanceof NodeError && err.code === 'RESPONSE_TOO_LARGE',
   );
-  assert.equal(bodyAccessed, false, 'body must not be accessed when Content-Length already exceeds the cap');
+  assert.equal(state.read, false, 'body must not be read when Content-Length already exceeds the cap');
+});
+
+// PO-185: this exit used to be the one way out of a read that left the connection
+// held — `guardedFetch` cancels a 3xx body ahead of every throw, and the streaming
+// overrun below cancels too, but the header fast-reject threw straight past the
+// body. A bare `res.text()` never reached it, because it always consumed the body;
+// the token exchange reaching it is what made it observable.
+// AC-12 — An answer refused for its size lets go of its connection
+test('readArrayBuffer cancels the body when it refuses on Content-Length [@spec:response-reading:AC-12]', async () => {
+  const { res, state } = fastRejectFake();
+  await assert.rejects(
+    () => readArrayBuffer(res, 100),
+    (err: unknown) => err instanceof NodeError && err.code === 'RESPONSE_TOO_LARGE',
+  );
+  assert.equal(state.cancelled, true, 'the body must be discarded so the connection is released');
+});
+
+// AC-12 — An answer refused for its size lets go of its connection
+test('readArrayBuffer cancels the body when it overruns the cap while streaming [@spec:response-reading:AC-12]', async () => {
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    // Left open for the reason AC-4's test spells out: an already-closed stream is
+    // cancelled without the underlying source hearing about it.
+    start(controller) {
+      controller.enqueue(bytes(20));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const fake = { status: 200, headers: new Headers(), body: stream } as unknown as Response;
+  await assert.rejects(
+    () => readArrayBuffer(fake, 10),
+    (err: unknown) => err instanceof NodeError && err.code === 'RESPONSE_TOO_LARGE',
+  );
+  assert.equal(cancelled, true, 'the body must be discarded so the connection is released');
+});
+
+// AC-1 — An answer within the cap is returned whole
+// Positive control for the two AC-12 tests above: a read that stays under the cap
+// consumes the body to completion, so nothing is left for a cancel to release.
+test('readArrayBuffer consumes the body it is allowed to keep [@spec:response-reading:AC-1]', async () => {
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes(4));
+      controller.close();
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const fake = { status: 200, headers: new Headers(), body: stream } as unknown as Response;
+  assert.equal((await readArrayBuffer(fake, 100)).byteLength, 4);
+  assert.equal(cancelled, false, 'a body read to the end needs no cancelling');
 });
 
 // AC-4 — An oversized answer is reported as oversized even if discarding it fails
 test('readArrayBuffer surfaces RESPONSE_TOO_LARGE even when the stream cancel rejects [@spec:response-reading:AC-4]', async () => {
   // Underlying cancel() throws → reader.cancel() rejects. The overrun must still
   // surface as RESPONSE_TOO_LARGE, not the cancellation error.
+  //
+  // The stream is deliberately left open. Cancelling an already-closed stream
+  // resolves without the underlying source hearing about it, so a
+  // `controller.close()` here would leave the throwing cancel uncalled and the
+  // test green for the wrong reason — and a body cancelled mid-overrun is open by
+  // definition.
+  let cancelAttempted = false;
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(bytes(20));
-      controller.close();
     },
     cancel() {
+      cancelAttempted = true;
       throw new Error('cancel failed');
     },
   });
@@ -434,6 +507,7 @@ test('readArrayBuffer surfaces RESPONSE_TOO_LARGE even when the stream cancel re
     () => readArrayBuffer(fake, 10),
     (err: unknown) => err instanceof NodeError && err.code === 'RESPONSE_TOO_LARGE',
   );
+  assert.equal(cancelAttempted, true, 'the failing cancel must actually have been attempted');
 });
 
 // AC-1 — An answer within the cap is returned whole
@@ -561,18 +635,26 @@ test('clampResponseBytes bounds a request into [1, MAX_RESPONSE_BYTES] [@spec:re
 // AC-5 — A cap above the hard ceiling does not lift it
 test('readArrayBuffer clamps maxBytes to the hard ceiling (Content-Length fast-reject) [@spec:response-reading:AC-5]', async () => {
   // A caller passing a maxBytes above the ceiling must not lift the guard: a
-  // Content-Length just over MAX_RESPONSE_BYTES is still rejected.
+  // Content-Length just over MAX_RESPONSE_BYTES is still rejected. The body is
+  // cancelled rather than read on the way out (AC-12), so reading it is the error
+  // here, not touching it.
+  let read = false;
   const fake = {
     status: 200,
     headers: new Headers({ 'content-length': String(MAX_RESPONSE_BYTES + 1) }),
-    get body(): ReadableStream<Uint8Array> {
-      throw new Error('body must not be accessed on fast-reject');
+    body: {
+      async cancel(): Promise<void> {},
+      getReader(): never {
+        read = true;
+        throw new Error('body must not be read on fast-reject');
+      },
     },
   } as unknown as Response;
   await assert.rejects(
     () => readArrayBuffer(fake, MAX_RESPONSE_BYTES * 10),
     (err: unknown) => err instanceof NodeError && err.code === 'RESPONSE_TOO_LARGE',
   );
+  assert.equal(read, false, 'the ceiling refuses before the body is read');
 });
 
 // ------------------------------------------------ SSRF guard + redirects

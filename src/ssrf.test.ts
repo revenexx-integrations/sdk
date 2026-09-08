@@ -1,7 +1,19 @@
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { createRequire } from 'node:module';
+import type { AddressInfo } from 'node:net';
 import { test } from 'node:test';
+import ipaddr from 'ipaddr.js';
 import { NodeError } from './errors.js';
-import { assertPublicUrl, isBlockedAddress, type LookupAddress } from './ssrf.js';
+import { safeFetch } from './fetch.js';
+import {
+  assertPublicUrl,
+  guardConnectionsTo,
+  isBlockedAddress,
+  type LookupAddress,
+  type LookupFn,
+  ssrfResolver,
+} from './ssrf.js';
 
 // ------------------------------------------------------------ isBlockedAddress
 
@@ -18,6 +30,11 @@ const BLOCKED_V4 = [
   '192.168.255.255', // 192.168/16
   '169.254.0.1',
   '169.254.169.254', // link-local incl. cloud metadata
+  '100.64.0.1',
+  '100.127.255.255', // 100.64/10 carrier-grade NAT
+  '224.0.0.1',
+  '239.255.255.255', // 224/4 multicast
+  '255.255.255.255', // broadcast
 ];
 
 const PUBLIC_V4 = [
@@ -29,6 +46,9 @@ const PUBLIC_V4 = [
   '192.167.255.255', // just below 192.168/16
   '169.253.255.255', // just below link-local
   '11.0.0.1',
+  '100.63.255.255', // just below 100.64/10
+  '100.128.0.1', // just above 100.64/10
+  '223.255.255.255', // just below 224/4 multicast
 ];
 
 for (const ip of BLOCKED_V4) {
@@ -52,6 +72,16 @@ const BLOCKED_V6 = [
   '0:0:0:0:0:ffff:7f00:1', // IPv4-mapped loopback, non-dotted form
   '::127.0.0.1', // deprecated IPv4-compatible loopback (dotted tail after ::)
   '::10.0.0.1', // deprecated IPv4-compatible private
+  'fec0::1', // deprecated site-local
+  'ff02::1', // multicast
+  '2002:7f00:0001::', // 6to4 carrying a loopback address
+  '2002:0808:0808::', // 6to4 at all — the whole transitional range is refused
+  '2001:0:0:0:0:0:7f00:1', // Teredo carrying a loopback address
+  '64:ff9b::7f00:1', // NAT64 well-known prefix carrying a loopback address
+  '64:ff9b::10.0.0.1', // NAT64 carrying a private address, dotted tail
+  '::ffff:0:8.8.8.8', // IPv4-translated, not IPv4-mapped
+  '2001:db8::93.184.216.34', // documentation prefix, public-looking embedded IPv4
+  '1fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff', // just below the allocated 2000::/3
 ];
 
 const PUBLIC_V6 = [
@@ -59,8 +89,9 @@ const PUBLIC_V6 = [
   '2606:4700:4700::1111', // Cloudflare DNS
   '::ffff:93.184.216.34', // IPv4-mapped public
   '::93.184.216.34', // deprecated IPv4-compatible public (dotted tail after ::)
-  '2001:db8::93.184.216.34', // embedded IPv4 with a non-empty prefix
-  'fe00::1', // just below fc00::/7
+  '2606:4700::93.184.216.34', // embedded IPv4 with a non-empty prefix
+  '64:ff9b::93.184.216.34', // NAT64 well-known prefix carrying a public address
+  '2000::1', // the bottom of the allocated 2000::/3
 ];
 
 for (const ip of BLOCKED_V6) {
@@ -71,6 +102,58 @@ for (const ip of PUBLIC_V6) {
   // AC-2 — A public target is allowed through, by each of the three ways in
   test(`isBlockedAddress allows IPv6 ${ip} [@spec:ssrf-guard:AC-2] [@spec:ssrf-guard:AC-11]`, () => assert.equal(isBlockedAddress(ip), false));
 }
+
+// AC-19 — Only public unicast is allowed, so a range no promise names is still refused
+for (const ip of ['192.0.2.1', '198.51.100.1', '203.0.113.1', '240.0.0.1', '198.18.0.1', '2001:20::1']) {
+  test(`isBlockedAddress blocks the unnamed reserved range holding ${ip} [@spec:ssrf-guard:AC-19]`, () =>
+    assert.equal(isBlockedAddress(ip), true));
+}
+// The IPv6 bands nobody has been allocated. These are the ones the classification
+// calls `unicast` by *default* — it has no special range for them — so a rule that
+// only asked for that name would call every one of them public. AC-19 is the promise
+// that it does not; these are its controls.
+for (const ip of ['1000::1', '4000::1', '8000::1', 'c000::1', 'fe00::1']) {
+  test(`isBlockedAddress blocks unallocated IPv6 ${ip}, which the classification defaults to unicast [@spec:ssrf-guard:AC-19]`, () =>
+    assert.equal(isBlockedAddress(ip), true));
+}
+// AC-2 — A public target is allowed through, by each of the three ways in
+test('isBlockedAddress allows an ordinary public address under the same rule [@spec:ssrf-guard:AC-2] [@spec:ssrf-guard:AC-19]', () => {
+  assert.equal(isBlockedAddress('93.184.216.34'), false);
+  assert.equal(isBlockedAddress('2606:4700:4700::1111'), false);
+});
+
+// The rule leans on three things the address classification does not promise in its
+// README, and a minor bump could change any of them quietly. Each is asserted here
+// directly, so a bump reads as the assumption it broke rather than as a matrix of
+// addresses that mysteriously changed sides. The dependency is pinned exactly for the
+// same reason; these are what make moving the pin a decision somebody sees.
+//
+// AC-11 — The refused set covers every shape a non-public address comes in
+test('the classification still names the range every public address shares [@spec:ssrf-guard:AC-11]', () => {
+  // Were `unicast` renamed or subdivided, every address would be refused: fail-closed,
+  // but a total outbound outage rather than a range check going one way or the other.
+  assert.equal(ipaddr.parse('93.184.216.34').range(), 'unicast');
+  assert.equal(ipaddr.parse('2606:4700:4700::1111').range(), 'unicast');
+});
+// AC-11 — The refused set covers every shape a non-public address comes in
+test('the classification still folds the deprecated IPv4-compatible form into the mapped one [@spec:ssrf-guard:AC-11]', () => {
+  // `::a.b.c.d` is its own (deprecated) form, and it is judged by the embedded address
+  // only because the parser normalises it as though the `ffff` were written. Nothing
+  // says it must keep doing that. If it stops, `::127.0.0.1` is no longer unwrapped —
+  // which the positive rule then refuses rather than lets through, so the cost is a
+  // public host written that way becoming unreachable, and this is where it says so.
+  const compatible = ipaddr.parse('::127.0.0.1');
+  assert.equal(compatible.range(), 'ipv4Mapped');
+  assert.equal(compatible.toString(), '::ffff:7f00:1');
+});
+// AC-19 — Only public unicast is allowed, so a range no promise names is still refused
+test('the classification still names the NAT64 well-known prefix, which is unwrapped rather than refused [@spec:ssrf-guard:AC-19]', () => {
+  // `64:ff9b::/96` is the one refused-looking range that is unwrapped instead, because
+  // on an IPv6-only network with DNS64 it is what every IPv4-only host resolves to.
+  // Were the range to lose this name, the prefix would stop being unwrapped and fall
+  // to the positive rule — refusing every IPv4-only host on such a network.
+  assert.equal(ipaddr.parse('64:ff9b::93.184.216.34').range(), 'rfc6052');
+});
 
 // AC-9 — An address the guard cannot parse counts as blocked
 test('isBlockedAddress fails closed on an unparseable address [@spec:ssrf-guard:AC-9]', () => {
@@ -254,3 +337,161 @@ test('RVNXX_SSRF_ALLOW_PRIVATE with a falsy value keeps the guard active [@spec:
   withEnv('0', async () => {
     await assertBlocked(() => assertPublicUrl('http://127.0.0.1:3000/'));
   }));
+
+// --------------------------------------------------------- connect-time guard
+//
+// The tests below are the only ones in this suite that open a real socket. The
+// race they reproduce lives entirely between the guard's check and the connect,
+// so a stubbed transport cannot show it: it needs one name with two different
+// answers, and the second answer has to be the one a connection really uses.
+// No real name is resolved — both answers are scripted — and the only host
+// reached is a loopback server this file starts and stops.
+//
+// All three reach that server over `http:`, so the `https:` path through the same
+// branch — where the peer address has to be readable off a `TLSSocket` for the
+// fail-closed side not to fire — is not covered here. Covering it needs a
+// certificate the client trusts, or verification turned off, and this package has
+// no `undici` dependency to scope either to a single request: the only handles are
+// a certificate fixture in the repository or a process-wide
+// `NODE_TLS_REJECT_UNAUTHORIZED=0`. An untested path, not a known defect.
+
+/** A loopback HTTP server that counts the requests that actually reach it. */
+async function loopbackServer(): Promise<{ port: number; hits: () => number; close: () => Promise<void> }> {
+  let hits = 0;
+  const server = createServer((_req, res) => {
+    hits++;
+    res.writeHead(200, { 'content-type': 'text/plain' });
+    res.end('reached');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  return {
+    port: (server.address() as AddressInfo).port,
+    hits: () => hits,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
+
+/** Swap the guard's own resolver for the duration of `fn` (see {@link ssrfResolver}). */
+async function withResolver(lookupFn: LookupFn, fn: () => Promise<void>): Promise<void> {
+  const prev = ssrfResolver.lookup;
+  ssrfResolver.lookup = lookupFn;
+  try {
+    await fn();
+  } finally {
+    ssrfResolver.lookup = prev;
+  }
+}
+
+/**
+ * Script what the *connection* resolves `host` to, which is a different question
+ * from what the guard's resolver answers: `net.connect` (and therefore the fetch
+ * undici opens) calls `dns.lookup` off the `node:dns` module object, so
+ * replacing it there is how a test gets a second, conflicting answer for one
+ * name — exactly the DNS-rebinding race, with both answers fixed in advance.
+ */
+function withConnectAddress(host: string, address: string, fn: () => Promise<void>): Promise<void> {
+  const dns = createRequire(import.meta.url)('node:dns') as {
+    lookup: (...args: any[]) => void;
+  };
+  const original = dns.lookup;
+  dns.lookup = (hostname: string, options: any, callback: any): void => {
+    if (hostname !== host) {
+      original(hostname, options, callback);
+      return;
+    }
+    const cb = typeof options === 'function' ? options : callback;
+    const all = typeof options === 'object' && options !== null && options.all === true;
+    process.nextTick(() => (all ? cb(null, [{ address, family: 4 }]) : cb(null, address, 4)));
+  };
+  return fn().finally(() => {
+    dns.lookup = original;
+  });
+}
+
+const REBINDING_HOST = 'rebind.test';
+
+// AC-17 — A call the guard approved does not reach an address the guard did not
+test('safeFetch refuses a target that resolved publicly at check time and connects privately [@spec:ssrf-guard:AC-17]', async () => {
+  const server = await loopbackServer();
+  try {
+    // The guard's check sees a public address; the connection lands on loopback.
+    await withResolver(lookup('93.184.216.34'), () =>
+      withConnectAddress(REBINDING_HOST, '127.0.0.1', async () => {
+        await assertBlocked(async () => {
+          await safeFetch(`http://${REBINDING_HOST}:${server.port}/`, { timeoutMs: 2_000 });
+        });
+      }),
+    );
+    assert.equal(server.hits(), 0, 'the request must never reach the host the connection landed on');
+  } finally {
+    await server.close();
+  }
+});
+
+// AC-18 — The connect-time guard judges only the targets this package is reaching
+//
+// These two are the sanctioned raw-fetch tests in this package: what AC-18
+// promises is that a connection *nobody here asked for* keeps its socket, and only
+// a connection nobody here asked for can show that. Note that neither raw call is
+// what `noRestrictedGlobals` looks at — that rule matches the bare `fetch`
+// identifier, and `globalThis.fetch` is the member form. `biome.json` restricts
+// that form separately, and these two lines are the only places allowed to hold it.
+test('a connection this package did not ask for keeps its socket [@spec:ssrf-guard:AC-18]', async () => {
+  const server = await loopbackServer();
+  // The guard is engaged — for a different host. The worker this SDK runs in
+  // reaches internal services of its own on private addresses, and a guard that
+  // dropped those would sever them the moment any node made a request.
+  const release = guardConnectionsTo(new URL('http://guarded.test/'));
+  try {
+    await withConnectAddress('unrelated.test', '127.0.0.1', async () => {
+      // biome-ignore lint/nursery/noJsRestrictedProperties: AC-18 needs a connection safeFetch did not ask for; see the note above
+      const res = await globalThis.fetch(`http://unrelated.test:${server.port}/`);
+      assert.equal(res.status, 200);
+      assert.equal(await res.text(), 'reached');
+    });
+    assert.equal(server.hits(), 1, 'the unrelated connection must carry its request as usual');
+  } finally {
+    release();
+    await server.close();
+  }
+});
+
+// AC-18 — The connect-time guard judges only the targets this package is reaching
+test('a connection to another port on the same host keeps its socket [@spec:ssrf-guard:AC-18]', async () => {
+  const server = await loopbackServer();
+  // Same host, a port no call here is reaching. One private service per host is not
+  // how a worker is laid out: the host that serves a node's webhook and the host
+  // that serves the worker's own internal API are routinely the same name.
+  const release = guardConnectionsTo(new URL(`http://shared.test:${server.port + 1}/`));
+  try {
+    await withConnectAddress('shared.test', '127.0.0.1', async () => {
+      // biome-ignore lint/nursery/noJsRestrictedProperties: AC-18 needs a connection safeFetch did not ask for; see the note above
+      const res = await globalThis.fetch(`http://shared.test:${server.port}/`);
+      assert.equal(res.status, 200);
+      assert.equal(await res.text(), 'reached');
+    });
+    assert.equal(server.hits(), 1, 'a port nothing here is reaching must carry its request as usual');
+  } finally {
+    release();
+    await server.close();
+  }
+});
+
+// AC-15 — The local-development relaxation is off unless it is deliberately on
+test('RVNXX_SSRF_ALLOW_PRIVATE relaxes the connect-time guard too [@spec:ssrf-guard:AC-15]', async () => {
+  const server = await loopbackServer();
+  try {
+    await withEnv('1', () =>
+      withResolver(lookup('93.184.216.34'), () =>
+        withConnectAddress(REBINDING_HOST, '127.0.0.1', async () => {
+          const res = await safeFetch(`http://${REBINDING_HOST}:${server.port}/`, { timeoutMs: 2_000 });
+          assert.equal(res.status, 200);
+          assert.equal(await res.text(), 'reached');
+        }),
+      ),
+    );
+    assert.equal(server.hits(), 1, 'the dev stack must still reach its own services');
+  } finally {
+    await server.close();
+  }
+});

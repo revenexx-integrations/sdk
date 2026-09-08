@@ -37,6 +37,16 @@ enables the **linter only**. Three things about it are load-bearing:
   **`src/fetch.ts` is the one sanctioned exception** (`timedFetch`, called by
   `guardedFetch` *after* the guard has run) and is excepted via `overrides`.
   Adding a second exception means adding a second way to bypass the guard.
+  **That rule matches the bare `fetch` identifier only**, so `globalThis.fetch(…)`
+  walks past it — found in the PO-184 review. The member form is covered by
+  `nursery/noJsRestrictedProperties` (`globalThis.fetch` / `global.fetch`, which
+  also catches `globalThis["fetch"]` and destructuring, but not an alias through a
+  variable). It is a *nursery* rule: a biome bump may promote it and change the
+  category, which breaks the `biome-ignore lint/nursery/…` lines in the test files
+  loudly rather than silently. Those ignores — three at the mock seams that save the
+  global to restore it, two on the AC-18 tests that need a connection `safeFetch`
+  did not ask for — are per-line on purpose, so the exception is visible where it is
+  taken instead of widening a file.
 - **The formatter is deliberately disabled.** Biome disagrees with this repo's
   hand-wrapped source in 13 to 17 of 22 files depending on `lineWidth` (13 at its
   narrowest useful setting, 17 at the siblings' 200) — unlike its sibling
