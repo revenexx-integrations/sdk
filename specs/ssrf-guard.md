@@ -356,6 +356,12 @@ workflow.
 - **What a refusal costs a running workflow is not promised anywhere.** A blocked
   target throws rather than routing to an error port, so whether an author sees a
   failed run or a branch they can handle is decided by each node rather than here.
+  [error-handling.md](error-handling.md) does not settle this one, and the reason is
+  worth keeping: a blocked address is the author's own configuration when they typed it
+  into the node, and this record's data when it arrived in a payload — the two classes
+  answer differently and the guard cannot tell them apart, because by the time it runs,
+  a resolved setting is a resolved setting. It is the one refusal in this package whose
+  class depends on where the value came from.
 
 ## Tickets
 

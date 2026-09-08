@@ -190,6 +190,10 @@ failure never repeats what the account said.**
 
 **Known**
 
+- **A credential that cannot be resolved at all takes the node's error output.** Settled
+  by [error-handling.md](error-handling.md): the credential store not answering is a
+  fault in the world around the run, not in what the author configured, so it is one the
+  workflow may carry on from. The criterion that holds it belongs to each node package.
 - **Nothing here promises when a token is refreshed.** A credential says when its token
   expires; whether the engine refreshes ahead of that, on expiry, or only after a
   request has already failed is the engine's decision and is not stated anywhere in this
@@ -200,9 +204,6 @@ failure never repeats what the account said.**
 
 **Undecided**
 
-- **What a node sees when a credential cannot be resolved at all** is not settled: a
-  failure is raised, and whether that surfaces to the workflow author as a failed run or
-  as something they can branch on is decided by each node.
 - **Whether a credential may be resolved concurrently by two runs** is not promised. Two
   runs refreshing the same rotating token at once is exactly the case AC-9 is about, and
   nothing here states who wins.

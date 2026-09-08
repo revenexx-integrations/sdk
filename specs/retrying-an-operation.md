@@ -162,6 +162,9 @@ rather than after it.
 
 **Known**
 
+- **An exhausted retry budget takes the node's error output.** Settled by
+  [error-handling.md](error-handling.md), and for the same reason the last attempt was:
+  a host that would not answer is a fault in the world around the run.
 - **Nothing here decides what is retryable.** The loop asks again only when a failure
   declares itself so, which means every operation wrapping a foreign error has to make
   that judgement itself. There is no shared ruling on, say, which status codes are worth
@@ -172,9 +175,6 @@ rather than after it.
 - **Whether a retry budget should be shared across an operation's own internal calls**
   is not settled. Two nested loops each get their own budget, so the attempts multiply,
   and nothing here says whether that is intended.
-- **What a node should do once the budget is exhausted** — raise, or route to an error
-  port — is left to each node.
-
 ## Tickets
 
 - [PO-139](https://linear.app/revenexx/issue/PO-139) — the transport-agnostic retry and

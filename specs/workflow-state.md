@@ -106,6 +106,12 @@ engine.**
 
 **Known**
 
+- **A refused state call ends the run.** Settled by
+  [error-handling.md](error-handling.md), and it is the row that shows the rule
+  discriminates rather than routing everything: an undeclared namespace, or a write
+  attempted at author time, is the author's own configuration. No record repairs it and
+  no branch is worth wiring for it, so it ends the run instead of taking the error
+  output — the opposite answer from a timeout, on purpose.
 - **What the store does is the engine's promise; this surface is the package's.** The
   criteria above are about the calls a node makes — that each answer is a value, that a
   watermark keeps its shape, that the whole thing can be stood in for. That the answers are
@@ -140,10 +146,6 @@ engine.**
 
 **Undecided**
 
-- **What a node should do when a state call is refused** — an undeclared namespace, a write
-  at author time — is not stated: whether it throws or routes to an error port. The error
-  contract it would follow is itself unpromised, and is recorded as such in the register in
-  [README.md](README.md).
 - **Whether a shared namespace changes anything for a node.** A workflow declares each
   namespace private or shared, and nothing on this surface tells the two apart — so whether
   a node may assume it is alone in a namespace it writes to is open.
