@@ -167,15 +167,16 @@ quietly handed on as text.
 
 **Known**
 
+- **An answer this package refuses takes the node's error output.** Settled by
+  [error-handling.md](error-handling.md): an oversized or unparseable answer is the far
+  end answering badly, which is a fault the workflow may carry on from rather than one
+  the author can fix by editing the node.
 - **The cap counts bytes, not what they cost once parsed.** An answer that fits the cap
   can still expand into far more memory as a parsed value, and nothing here bounds
   that.
 
 **Undecided**
 
-- **Whether a node should see a refused answer as an error or as a branch** is not
-  settled here. An oversized or unparseable answer is raised, and each node decides
-  what its author sees.
 - **What happens to an answer that declares one content type and sends another** is
   promised only for JSON. Nothing states how a mismatch is treated for any other type.
 

@@ -154,6 +154,10 @@ signal the engine passes in, which ends the call wherever it has got to.
 
 **Known**
 
+- **A budget that runs out takes the node's error output.** Settled by
+  [error-handling.md](error-handling.md): a host that is slow or silent is a fault in the
+  world around the run. A workflow that would rather stop than carry on past a timeout
+  has no way to say so yet, which is that document's own open question.
 - **A budget that is not a usable number falls back to the package default.** It does,
   and no criterion here says so: the only tests that observe it watch the timer being
   scheduled rather than anything a caller can see, and a promise whose sole proof is a
@@ -170,10 +174,6 @@ signal the engine passes in, which ends the call wherever it has got to.
   cannot change is not asked again. What is still unstated is the other side: whether a
   host that answers with a rejection — a refused authorisation, a malformed request —
   should be asked again, or only one that fails to answer at all.
-- **What a workflow author sees when the budget runs out is decided by each node.** A
-  timeout is raised, not routed, so whether it surfaces as a failed run or as a branch
-  that can be handled is not settled here.
-
 ## Tickets
 
 - [PO-135](https://linear.app/revenexx/issue/PO-135) — `safeFetch` with one timeout and
