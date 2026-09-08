@@ -93,9 +93,6 @@ node.**
   `../CLAUDE.md` split on unexpected against expected. A required setting left empty is
   expected and a configuration fault at once, which is how four pairs of shipped nodes
   came to answer one situation two ways. Both now point here.
-
-**Known**
-
 - **A cancellation reaching `toErrorOutput` would be reported as a timeout, and it is
   the calling node that keeps it away.** `safeFetch` separates the two — its own budget
   raises `NodeError('TIMEOUT')`, an engine cancellation re-throws `ctxSignal.reason`
