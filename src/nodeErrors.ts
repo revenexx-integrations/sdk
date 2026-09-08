@@ -49,24 +49,28 @@ export function errorResult(output: NodeErrorOutput, port = 'error'): INodeResul
 }
 
 /**
- * Catch-block shortcut: normalize any thrown value and route it to the `error`
- * port. The one helper every node's `catch` funnels into, so the
+ * Catch-block shortcut: normalize any thrown value and route it to the failure
+ * output. The one helper every node's `catch` funnels into, so the
  * `{ code, message, status }` mapping lives in a single place instead of being
  * re-implemented per protocol (FTP/SFTP) or per package.
+ *
+ * `port` is the output taken, `error` unless the node declares its failure
+ * output under another name (`{ ...errorPort(), name: 'failed' }`) — pass the
+ * same name here, or the branch names a port that node does not have.
  */
-export function toErrorResult(err: unknown): INodeResult {
-  return errorResult(toErrorOutput(err));
+export function toErrorResult(err: unknown, port = 'error'): INodeResult {
+  return errorResult(toErrorOutput(err), port);
 }
 
 /**
- * Catch-block shortcut for the HTTP-style nodes whose `error` port additionally
+ * Catch-block shortcut for the HTTP-style nodes whose failure output additionally
  * declares `body`: the canonical `{ code, message, status }` mapping plus the
  * response body a {@link NodeError} carries in `meta.body` (`null` when the
- * failure never reached a response).
+ * failure never reached a response). `port` names the output as above.
  */
-export function httpErrorResult(err: unknown): INodeResult {
+export function httpErrorResult(err: unknown, port = 'error'): INodeResult {
   const body = err instanceof NodeError ? (err.meta?.['body'] ?? null) : null;
-  return errorResult({ ...toErrorOutput(err), body });
+  return errorResult({ ...toErrorOutput(err), body }, port);
 }
 
 /**

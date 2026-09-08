@@ -79,6 +79,16 @@ test('the catch-block shortcuts normalise and route in one step [@spec:error-han
     body: { e: 1 },
   });
   assert.equal((httpErrorResult(new Error('gone')).outputs['error'] as { body: unknown }).body, null);
+
+  // And both keep branch and payload together on a node that named its failure
+  // output something else — a branch no port declares reaches nothing.
+  const renamed = toErrorResult(new Error('gone'), 'failed');
+  assert.equal(renamed.branch, 'failed');
+  assert.deepEqual(Object.keys(renamed.outputs), ['failed']);
+
+  const renamedHttp = httpErrorResult(new NodeError('HTTP_ERROR', 'bad', { status: 400 }), 'failed');
+  assert.equal(renamedHttp.branch, 'failed');
+  assert.deepEqual(Object.keys(renamedHttp.outputs), ['failed']);
 });
 
 test('the declared error output carries the three fields, and body only when asked [@spec:error-handling:AC-3]', () => {
