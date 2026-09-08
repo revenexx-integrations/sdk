@@ -151,13 +151,13 @@ The SDK is published to the public npm registry (`registry.npmjs.org`) under the
 A published SDK version changes nothing on its own. It is a type surface: no
 running process loads it, and no workflow sees it until a **node package** has
 been rebuilt against it, re-registered, and pulled into a bundle. Six steps, in
-four repos, and only the first two are automated.
+four repos, of which two — 3 and 5 — happen only because somebody runs them.
 
 | # | Where | What happens | Automated? |
 |---|---|---|---|
 | 1 | this repo | Merge the feature PR (with its changeset) → the workflow opens/updates the **“Version Packages”** PR | yes |
 | 2 | this repo | Merge **“Version Packages”** → `changeset publish` → npm + release tag | yes |
-| 3 | each node repo | `npm install` picks the new SDK up, `npm run build` rebuilds `dist/` and `dist/manifest.json` | **no** |
+| 3 | each node repo | `npm update @revenexx/integrations-node-sdk` moves the lockfile onto the new SDK, `npm run build` rebuilds `dist/` and `dist/manifest.json` | **no** |
 | 4 | each node repo | Changeset → “Version Packages” → merge → `v{version}` tag → the Console re-registers the tarball | tag→registration: yes |
 | 5 | `integrations` | `workflows:build-bundles` recompiles every workflow bundle against the new tarball | **no** |
 | 6 | worker pool | Downloads the new bundles by content hash on the next run | yes |
@@ -194,8 +194,8 @@ time — not what the range in `package.json` says. Consequences:
 - **A green build is not evidence the new SDK shipped.** A node package compiles
   fine against the old copy; the tarball just carries the old copy too.
   `npm ls @revenexx/integrations-node-sdk` before `npm pack` is the check.
-- The install root sets one SDK version for every package installed together —
-  see [Consumer pinning strategy](#consumer-pinning-strategy).
+- Each package carries its own bundled copy, so two of them can ship different
+  SDK minors — see [Consumer pinning strategy](#consumer-pinning-strategy).
 
 ### Steps 3–5, locally
 
@@ -245,7 +245,7 @@ git add package-lock.json && git commit        # the lockfile is the record
 
 | Consumer | Pin style | Why |
 | --- | --- | --- |
-| node packages (`core`, `business-central`, `deepl`, `pipedrive`, `example-node`) | Caret (`^1.0.0`) in `dependencies` **and** the package name in `bundledDependencies` | Follows the latest minor on the next `npm install`; the bundled copy is what ships in the tarball. |
+| node packages (`core`, `business-central`, `deepl`, `pipedrive`, `example-node`) | Caret (`^1.0.0`) in `dependencies` **and** the package name in `bundledDependencies` | Follows the latest minor once `npm update` refreshes the lockfile; the bundled copy is what ships in the tarball. |
 | `integrations-node-devkit` | `>=1.0.0` | A build-time tool, deliberately loose so it works against whatever SDK the package under test uses. |
 | `studio-integrations` | none — types mirrored by hand | The SDK entry point pulls Node built-ins and cannot enter a browser bundle. |
 | `integrations-worker` | none | Consumes the published manifest; couples via `manifestVersion`, a separate axis from this package's semver. |
@@ -297,7 +297,7 @@ consumers. The policy was to ignore that licence and follow the matrix above as
 if the leading zero were not there. The one `0.x`-era rule still worth
 remembering is the caret: `^0.15.0` did not accept `0.16.0`, so every SDK minor
 needed an explicit version edit in every consumer. Above `1.0.0` it does not,
-which is why step 3 of the rollout is an `npm install` and not an edit.
+which is why step 3 of the rollout is an `npm update` and not an edit.
 
 `1.0.0` was originally planned for the point at which the type surface stopped
 shifting weekly. It arrived earlier and for a different reason: PO-374 added
