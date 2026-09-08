@@ -26,7 +26,12 @@ export interface NodeErrorOutput {
  */
 export function toErrorOutput(err: unknown): NodeErrorOutput {
   if (err instanceof NodeError) {
-    const status = typeof err.meta?.['status'] === 'number' ? (err.meta['status'] as number) : 0;
+    // Finite, not merely `typeof 'number'`: NaN and Infinity pass that test and
+    // would put a value into `status` that is neither an HTTP status nor the `0`
+    // this port promises — and NaN serialises to `null`, so the author would see
+    // an empty field rather than a wrong one.
+    const raw = err.meta?.['status'];
+    const status = typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
     return { code: err.code, message: err.message, status };
   }
   if (err instanceof Error && err.name === 'AbortError') {

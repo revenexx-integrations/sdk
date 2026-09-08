@@ -15,12 +15,30 @@ test('a NodeError keeps its code, and takes a status only where it carries one [
   // No `status` in meta, and a `status` that is not a number, both read as "none".
   assert.equal(toErrorOutput(new NodeError('MISSING_PATH_PARAM', 'no id')).status, 0);
   assert.equal(toErrorOutput(new NodeError('X', 'y', { status: '503' })).status, 0);
+
+  // And a number that is not a status: NaN and Infinity are `typeof 'number'`,
+  // and NaN would reach the author as an empty field rather than a wrong one.
+  assert.equal(toErrorOutput(new NodeError('X', 'y', { status: Number.NaN })).status, 0);
+  assert.equal(toErrorOutput(new NodeError('X', 'y', { status: Number.POSITIVE_INFINITY })).status, 0);
 });
 
 test('an abort becomes TIMEOUT and anything else REQUEST_FAILED [@spec:error-handling:AC-1]', () => {
+  // A last resort for an abort nobody recognised. It is NOT how a cancellation is
+  // meant to arrive: safeFetch raises its own budget as NodeError('TIMEOUT') — which
+  // takes the branch above, not this one — and re-throws the engine's abort reason
+  // untouched, and a routing node checks `ctx.signal.aborted` before it ever calls in
+  // here. See request-budget AC-4/AC-5, and this spec's gap on the same subject.
   const abort = new Error('The operation was aborted');
   abort.name = 'AbortError';
   assert.deepEqual(toErrorOutput(abort), { code: 'TIMEOUT', message: 'Request timed out', status: 0 });
+
+  // safeFetch's own budget arrives as a NodeError and keeps its code and status,
+  // rather than falling through to the line above.
+  assert.deepEqual(toErrorOutput(new NodeError('TIMEOUT', 'Request timed out after 5000ms')), {
+    code: 'TIMEOUT',
+    message: 'Request timed out after 5000ms',
+    status: 0,
+  });
 
   assert.deepEqual(toErrorOutput(new Error('socket hang up')), {
     code: 'REQUEST_FAILED',

@@ -42,10 +42,17 @@ node.**
   something that is not an error at all
 - **When** it is normalised for the `error` output
 - **Then** it carries `code`, `message` and `status`: a `NodeError` keeps its own code
-  and takes `status` from its `meta` where one is there, an abort becomes `TIMEOUT`, and
-  anything else becomes `REQUEST_FAILED`; `status` is `0` wherever no status was read
+  and takes `status` from its `meta` where that is a finite number, and anything else
+  becomes `REQUEST_FAILED`; `status` is `0` wherever no status was read
+- **And** a bare abort that reaches this point becomes `TIMEOUT` — a last resort for an
+  abort nobody recognised, not the way a cancellation is meant to arrive: `safeFetch`
+  raises its own budget as `NodeError('TIMEOUT')` and re-throws the engine's abort
+  reason untouched, so a node that checks its signal before routing never brings one
+  here (see the gap below)
 - **Because** the editor offers the author fields to branch on before any run exists, so
   the three have to mean the same thing behind every node in every package
+- **Pair** [request-budget.md](request-budget.md) AC-4 and AC-5 are the other side: a
+  cancellation is not a timeout, and outranks one when both land together
 - verify: unit
 
 ### AC-2 — A routed failure names the output it took
@@ -86,6 +93,19 @@ node.**
   `../CLAUDE.md` split on unexpected against expected. A required setting left empty is
   expected and a configuration fault at once, which is how four pairs of shipped nodes
   came to answer one situation two ways. Both now point here.
+
+**Known**
+
+- **A cancellation reaching `toErrorOutput` would be reported as a timeout, and it is
+  the calling node that keeps it away.** `safeFetch` separates the two — its own budget
+  raises `NodeError('TIMEOUT')`, an engine cancellation re-throws `ctxSignal.reason`
+  untouched — but that reason is frequently an `AbortError`, and this helper cannot see
+  a signal to tell it from an abort of any other kind. What holds the line is the
+  convention every routing node in `integrations-nodes-core` already follows:
+  `if (ctx.signal.aborted) throw err;` before the catch routes anything, which is also
+  what the platform promises in its own `node-failure-handling` criteria — a
+  cancellation is never routed. The line is held by a habit rather than by this
+  package, and giving the helper the signal is the shape of the fix. PO-442.
 
 **Undecided**
 
