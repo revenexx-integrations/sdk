@@ -4,6 +4,7 @@ export * from './operators.js';
 export * from './conditions.js';
 export * from './credentialType.js';
 export * from './errors.js';
+export * from './nodeErrors.js';
 export * from './extract.js';
 export * from './fetch.js';
 // Only the stable guard helpers/types are public. `ssrfResolver` is deliberately

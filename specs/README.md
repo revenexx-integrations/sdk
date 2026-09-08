@@ -36,6 +36,9 @@ What stays out is the machinery behind the name — that is `docs/`, and
 - [`retrying-an-operation.md`](retrying-an-operation.md) — asking again when it might
   work: which failures are asked twice, how the wait between attempts grows, and how a
   cancellation lands during one
+- [`error-handling.md`](error-handling.md) — when a failing step ends the run and when
+  the workflow carries on: which class of fault takes which way out, the one shape a
+  routed failure arrives in, and the `error` output that carries the rule to the author
 
 ### Acting as somebody's account
 
@@ -73,8 +76,8 @@ What stays out is the machinery behind the name — that is `docs/`, and
 
 ## What is not promised yet
 
-Three surfaces, and they have one thing in common: not one of them has a test to point
-at, which is why none of them could be backfilled.
+Two surfaces, and they have one thing in common: not one of them has a test to point
+at, which is why neither could be backfilled.
 
 - **The node and credential contract** — what `INode`, `INodeDescription`,
   `INodeContext` and `ICredential` guarantee whoever implements them, the iteration
@@ -84,8 +87,6 @@ at, which is why none of them could be backfilled.
   promised in [workflow-state.md](workflow-state.md), because it is the only one with
   tests to point at; the signal, the secrets and the credentials a run is handed are
   still here.
-- **The error contract** — when a node throws and when it routes to an error port, and
-  what `NodeError` obliges either way. Stated in `../CLAUDE.md`, held by nothing.
 - **The `rvnxx-nodes` CLI** — which every node package's build runs, and which has no
   test file at all.
 
@@ -93,7 +94,7 @@ The guardrail this corpus is written under seeds a criterion only from behaviour
 somebody can point at, so a spec for any of these is test work before it is spec work.
 That is the shape the next ticket should take.
 
-**None of these has a row yet, and that is the honest state rather than an omission.**
+**Neither of these has a row yet, and that is the honest state rather than an omission.**
 A row here names the ticket that will promise its surface, and no such ticket has been
 filed — carving the rest of this package into surfaces is a decision somebody has to
 make, not a line to invent here. The ticket that installed this gate is history in
@@ -275,7 +276,10 @@ name they are holding.
 | `collectImageSources` | [node-images.md](node-images.md) |
 | `copyImages` | [node-images.md](node-images.md) |
 | `DEFAULT_RETRY_POLICY` | [retrying-an-operation.md](retrying-an-operation.md) |
+| `errorPort` | [error-handling.md](error-handling.md) |
+| `errorResult` | [error-handling.md](error-handling.md) |
 | `evaluate` | [setting-conditions.md](setting-conditions.md) |
+| `httpErrorResult` | [error-handling.md](error-handling.md) |
 | `INode.loadOptions` | [author-time-resolution.md](author-time-resolution.md) |
 | `INode.resolveConfigSchema` | [author-time-resolution.md](author-time-resolution.md) |
 | `INode.resolveOutputs` | [author-time-resolution.md](author-time-resolution.md) |
@@ -283,6 +287,8 @@ name they are holding.
 | `INodeState` | [workflow-state.md](workflow-state.md) |
 | `isBlockedAddress` | [ssrf-guard.md](ssrf-guard.md) |
 | `maxBytesConfigField` | [response-reading.md](response-reading.md) |
+| `NodeError` | [error-handling.md](error-handling.md) |
+| `NodeErrorOutput` | [error-handling.md](error-handling.md) |
 | `normalizeCredentialType` | [credential-type.md](credential-type.md) |
 | `normalizeLocalized` | [localized-text.md](localized-text.md) |
 | `OAuth2AuthCodeCredential` | [credentials.md](credentials.md) |
@@ -299,6 +305,8 @@ name they are holding.
 | `SimpleValueCredential` | [credentials.md](credentials.md) |
 | `sleepWithSignal` | [retrying-an-operation.md](retrying-an-operation.md) |
 | `timeoutConfigField` | [request-budget.md](request-budget.md) |
+| `toErrorOutput` | [error-handling.md](error-handling.md) |
+| `toErrorResult` | [error-handling.md](error-handling.md) |
 | `withRetry` | [retrying-an-operation.md](retrying-an-operation.md) |
 
 **One name carries three specs.** `safeFetch` is where a request is allowed to go, what
@@ -307,9 +315,9 @@ its row is the only one with three links and why none of the three may be read a
 whole of what that name promises.
 
 **A name with no row has no promise here — and whether that absence is recorded is a
-second question.** Some of it is: the `INode` and `ICredential` contract, `NodeError`
-and the error contract, and the `rvnxx-nodes` CLI that every node package's build runs
-are the three entries in *What is not promised yet* above. The rest is not accounted
+second question.** Some of it is: the `INode` and `ICredential` contract, and the
+`rvnxx-nodes` CLI that every node package's build runs, are the two entries in
+*What is not promised yet* above. The rest is not accounted
 for anywhere — `BaseCredential`, the `extract*` helpers, `clampResponseBytes`,
 `MANIFEST_VERSION`, the `DEFAULT_*` and `MAX_*` constants, and the `state-ref` setting with
 its `stateRole` are exported, unpromised, and unrecorded. (The last of those is unpromised
