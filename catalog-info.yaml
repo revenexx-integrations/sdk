@@ -13,5 +13,7 @@ spec:
   type: library
   owner: group:default/platform
   system: revenue-cloud
-  lifecycle: experimental
+  lifecycle: production
   providesApis: []
+  consumesApis:
+    - integrations-api
