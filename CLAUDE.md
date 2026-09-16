@@ -69,7 +69,20 @@ is public.
 ## Skills
 
 [`.claude/skills/`](.claude/skills/README.md) carries three, and its README says which
-are ours and which are vendored. The one to know about before changing behaviour is
+are ours and which are vendored. A fourth is **named rather than carried**: before
+filing or retitling an issue, read the `ticket` skill — the six kinds of ticket and the
+shape each one takes, the title rule with its prohibitions and its prefix slot, the five
+labelled lines every kind opens with, the language rule, and the duplicate check that
+comes before creating anything. Tickets from here go to Linear, team **Product
+Engineering**, project **Integration Studio**, key `PO`, which is where every `PO-nnn`
+in this repository's commits and pull requests comes from.
+
+It is deliberately not a copy in this clone: it is maintained once, in
+`integrations-meta`, and the four node packages that each kept a copy all drifted from
+that source while claiming to be identical to it — a copy is a fork the moment somebody
+edits either end. A checkout that cannot see the skill by name reads
+`integrations-meta/.claude/skills/ticket/SKILL.md` until `skills-catalog` makes that
+unnecessary. The one to know about before changing behaviour is
 **[`feature-spec`](.claude/skills/feature-spec/SKILL.md)** — promised behaviour lives in
 `specs/*.md`, and every promise is bound to the test that proves it. Install it, or
 update it, from the registry:
