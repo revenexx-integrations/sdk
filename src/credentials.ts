@@ -188,16 +188,45 @@ export abstract class SimpleValueCredential extends BaseCredential {
 }
 
 /**
- * API-key credential. By default exposes the configured key under
- * `{ apiKey }`; override {@link apiKeyField}/{@link credentialShape} to map.
+ * API-key credential. Reads the key from the configured field and hands it to
+ * the node under that same name; override {@link credentialShape} where the
+ * node needs something else, or more than the key alone.
  */
 export abstract class ApiKeyCredential extends BaseCredential {
+  /**
+   * Which field of the credential form the key is typed into. Override it to
+   * name the form field this provider calls its key — `botToken`, `authKey`,
+   * `webhookUrl`.
+   *
+   * **What this does not do** (PO-497): it does not decide what a node looks
+   * the key up under at run time. It used to do only half of that — it changed
+   * which field was *read* while {@link credentialShape} went on emitting
+   * `apiKey` — so a credential that renamed its form field alone handed the
+   * node a key under a name it was never told to expect, and the node refused
+   * a perfectly good key as a missing one. The default shape now follows this
+   * name, so overriding this alone is correct on both sides. Overriding
+   * {@link credentialShape} as well is still how a credential emits a
+   * different name, or more than the key.
+   *
+   * Note that no node test can see a mismatch between the two: a mocked node
+   * context is seeded with the resolved blob directly and never calls
+   * `resolve`. Only a credential test asserting the whole resolved shape
+   * catches it, and asserting it loosely still misses — a partial match is
+   * happy with the wrong key present beside the right one.
+   */
   protected apiKeyField(): string {
     return 'apiKey';
   }
 
+  /**
+   * What the node receives. Defaults to the key under the name
+   * {@link apiKeyField} returns, so the two cannot drift apart by default.
+   *
+   * Override it where the node needs a different name than the form uses, or
+   * needs more than the key — a base URL derived from it, say.
+   */
   protected credentialShape(apiKey: string): Record<string, unknown> {
-    return { apiKey };
+    return { [this.apiKeyField()]: apiKey };
   }
 
   async resolve(
