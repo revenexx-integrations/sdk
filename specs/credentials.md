@@ -6,7 +6,7 @@ where:
   - OAuth2ClientCredentialsCredential, OAuth2AuthCodeCredential — the kinds that mint and refresh
 docs:
   - docs/overview.md
-updated: 2026-09-04
+updated: 2026-09-17
 ---
 
 # Standing in for the person who owns the account
@@ -54,13 +54,17 @@ failure never repeats what the account said.**
 - **Pair** AC-11, the same test with a complete configuration
 - verify: unit
 
-### AC-3 — A key credential hands the key on under one agreed name, or refuses
+### AC-3 — A key credential hands the key on under the name it named for it, or refuses
 
-- **Given** an API-key credential
+- **Given** an API-key credential, which names the setting its key is typed into
 - **When** it is resolved
-- **Then** the key arrives under the name every node expects
+- **Then** the key arrives under that same name, and under no other
+- **And** a credential that names its own shape instead keeps it
 - **And** a resolve with no key fails rather than handing on nothing
-- **Because** a node that received an empty key would send an unauthenticated request
+- **Because** the name a credential gives the setting is the name the node was told to
+  look the key up under; a credential that renamed the one and not the other handed the
+  node a key it could not find, and the node refused a perfectly good key as a missing
+  one — while a node that received an empty key would send an unauthenticated request
   and report whatever the host says about it, which is never "your key is missing"
 - verify: unit
 
@@ -218,3 +222,6 @@ failure never repeats what the account said.**
   never judged, and the answer to it was read with no limit at all
 - [PO-368](https://linear.app/revenexx/issue/PO-368) — backfilled this spec against the
   tests that already proved it
+- [PO-497](https://linear.app/revenexx/issue/PO-497) — AC-3: the name a key credential
+  read its setting under and the name it handed the key on under were two separate
+  answers, so naming one alone was a half-change no node test could see

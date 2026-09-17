@@ -159,6 +159,9 @@ quietly handed on as text.
   here bounds the answer.
 - **Whether the request could be made at all** is
   [`ssrf-guard.md`](ssrf-guard.md).
+- **What the setting in AC-11 reads like to the workflow author who meets it** is
+  [`offered-settings.md`](offered-settings.md). The bound is promised here; that the
+  declaration is legible without a node author completing it is promised there.
 - **The same letting-go on the way out of a redirect** is
   [`redirect-following.md`](redirect-following.md), whose 3xx body is never read at
   all. AC-12 here is the reading side of the same care.

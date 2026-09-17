@@ -149,6 +149,10 @@ signal the engine passes in, which ends the call wherever it has got to.
 - **What following a redirect does to the request** is
   [`redirect-following.md`](redirect-following.md). Each hop gets its own budget, which
   is the `## Gaps` entry below.
+- **What the settings in AC-9 and AC-10 read like to the workflow author who meets
+  them** is [`offered-settings.md`](offered-settings.md). The bounds are promised here;
+  that the declaration is legible without a node author completing it is promised there,
+  over these two settings and the size cap together.
 
 ## Gaps
 

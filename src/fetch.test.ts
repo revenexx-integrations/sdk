@@ -19,6 +19,7 @@ import {
   timeoutConfigField,
 } from './fetch.js';
 import { NodeError } from './errors.js';
+import type { IConfigField } from './types.js';
 import { ssrfResolver } from './ssrf.js';
 
 // Helper: a fetch mock that waits `delayMs` before resolving, and respects the
@@ -352,6 +353,71 @@ test('retryConfigFields accepts custom defaults [@spec:request-budget:AC-10]', (
   const [attemptsField, delayField] = retryConfigFields({ defaultAttempts: 3, defaultDelayMs: 2_000 });
   assert.equal(attemptsField?.default, 3);
   assert.equal(delayField?.default, 2_000);
+});
+
+// Every setting these factories produce, so a new factory is one row rather than
+// a forgotten test — and so AC-1 and AC-2 below are proven over all of them
+// rather than over whichever one somebody remembered.
+const offeredSettings: [string, IConfigField][] = [
+  ['maxBytesConfigField', maxBytesConfigField()],
+  ['timeoutConfigField', timeoutConfigField()],
+  ...retryConfigFields().map(
+    (field, i) => [`retryConfigFields[${i}]`, field] as [string, IConfigField],
+  ),
+];
+
+// The languages the node packages write every author-facing string in. A third
+// one arriving here is a change to what these factories promise, which is why
+// this list is written down rather than inferred from whatever the fields hold.
+const LANGUAGES = ['en', 'de'] as const;
+
+// AC-1 — A setting this package offers is written in every language the packages write
+test('every offered setting carries a label in each language [@spec:offered-settings:AC-1]', () => {
+  for (const [name, field] of offeredSettings) {
+    assert.equal(typeof field.label, 'object', `${name}: label is a plain string`);
+    for (const lang of LANGUAGES) {
+      const text = (field.label as Record<string, string>)[lang];
+      assert.equal(typeof text, 'string', `${name}: no ${lang} label`);
+      assert.notEqual(text.trim(), '', `${name}: blank ${lang} label`);
+    }
+  }
+});
+
+// AC-1 — A setting this package offers is written in every language the packages write
+test('every offered setting carries an explanation in each language [@spec:offered-settings:AC-1]', () => {
+  for (const [name, field] of offeredSettings) {
+    assert.equal(typeof field.description, 'object', `${name}: no localized description`);
+    for (const lang of LANGUAGES) {
+      const text = (field.description as Record<string, string>)[lang];
+      assert.equal(typeof text, 'string', `${name}: no ${lang} description`);
+      assert.notEqual(text.trim(), '', `${name}: blank ${lang} description`);
+    }
+  }
+});
+
+// The positive control for AC-1: a field written the way these factories used to
+// write one passes nothing above, so a green run is the assertions holding rather
+// than the loop finding nothing to walk.
+test('the check AC-1 makes fails on a field written the old way [@spec:offered-settings:AC-1]', () => {
+  const bare: IConfigField = { key: 'timeoutMs', label: 'Timeout (ms)', type: 'number' };
+  assert.notEqual(typeof bare.label, 'object');
+  assert.equal(bare.description, undefined);
+  assert.ok(offeredSettings.length > 0, 'nothing was checked at all');
+});
+
+// AC-2 — A setting says what it does, not only what it is called
+test('every offered setting explains itself in more than its label [@spec:offered-settings:AC-2]', () => {
+  for (const [name, field] of offeredSettings) {
+    for (const lang of LANGUAGES) {
+      const label = (field.label as Record<string, string>)[lang] ?? '';
+      const description = (field.description as Record<string, string>)[lang] ?? '';
+      assert.notEqual(description, label, `${name}: the ${lang} description restates the label`);
+      assert.ok(
+        description.length > label.length,
+        `${name}: the ${lang} description says no more than the label`,
+      );
+    }
+  }
 });
 
 // ------------------------------------------------ size cap: read* helpers
