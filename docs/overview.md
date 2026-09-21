@@ -353,7 +353,16 @@ What it does:
 
 #### Config field factories
 
-Use these to add standardised timeout and retry fields to a node's `description.config`:
+Use these to add standardised timeout, retry and response-size fields to a node's
+`description.config`. Each returns a **finished** declaration: `label` and
+`description` come in both `en` and `de`, so spreading one unchanged already
+satisfies the node packages' rule that every field an author reads has a
+sentence and is written in both languages. Up to 1.3.0 they did not — the label
+was a plain English string and there was no description at all, so every node in
+the stack that reaches a host shipped a field a German author could not read
+(PO-497). What is still the node's own job is reading the configured value back
+out in `execute` and passing it to `safeFetch`; the factory only declares the
+setting.
 
 ```ts
 import { timeoutConfigField, retryConfigFields } from '@revenexx/integrations-node-sdk';
@@ -587,7 +596,7 @@ base classes (`src/credentials.ts`), which supply the boilerplate for their
 | Base class | `authKind` | Use for |
 |---|---|---|
 | `SimpleValueCredential` | `static` | Non-expiring structured connections (SMTP, SFTP). `resolve` passes the config through unchanged. |
-| `ApiKeyCredential` | `api-key` | Single-token systems (e.g. `revenexx:http-bearer`, `revenexx:deepl`). |
+| `ApiKeyCredential` | `api-key` | Single-token systems (e.g. `revenexx:http-bearer`, `revenexx:deepl`). See the note below on `apiKeyField`/`credentialShape`. |
 | `BasicAuthCredential` | `basic` | Username/password. |
 | `OAuth2ClientCredentialsCredential` | `oauth2-client-credentials` | Service-to-service OAuth (2-legged); mints/refreshes access tokens. |
 | `OAuth2AuthCodeCredential` | `oauth2-authcode` | Interactive 3-legged OAuth; also implement `ICredentialOAuthAuthorize` (`buildAuthorizeUrl` / `exchangeCode`). |
@@ -634,6 +643,26 @@ Key contract points:
   `secret` fields are masked in the UI and never returned in plaintext by the public API.
 - `ctx.persistDurableCreds?(...)` writes rotated durable creds back to storage
   (absent during pre-save tests where no instance exists yet).
+
+**`ApiKeyCredential`: the two hooks and how they used to come apart (PO-497).**
+`apiKeyField()` names the *form* field the key is typed into — `botToken`,
+`authKey`, `webhookUrl` — and `credentialShape()` decides what `resolve()`
+*emits*. Before 1.4.0 they defaulted independently: `credentialShape()` returned
+`{ apiKey }` whatever `apiKeyField()` said, so a credential that renamed only the
+form field handed the node a blob keyed `apiKey`, the node found nothing under
+the name it had been told to expect, and a perfectly good token was refused as a
+bad credential. `credentialShape()` now defaults to `{ [apiKeyField()]: key }`,
+so overriding `apiKeyField()` alone is correct on both sides; override
+`credentialShape()` where the node needs a different name, or more than the key
+(`DeeplCredential` derives a `baseUrl` from it, `PipedriveApiTokenCredential`
+emits `accessToken`).
+
+The reason this was worth changing rather than documenting: **no node test can
+see the mismatch.** The devkit's `createMockContext({ credentials })` seeds the
+*resolved* blob directly and never calls `resolve()`, so a full node suite passes
+against a connection that is wired wrong. Only a credential test asserting the
+whole resolved shape catches it — `assert.deepEqual`, not a property check, since
+a partial match is happy with `apiKey` sitting beside the right key.
 
 Export credential instances as `CREDENTIALS` so the manifest step picks them up:
 

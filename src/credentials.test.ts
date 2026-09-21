@@ -79,16 +79,69 @@ class DeeplCredential extends ApiKeyCredential {
   ]);
 }
 
-// AC-3 — A key credential hands the key on under one agreed name, or refuses
+// AC-3 — A key credential hands the key on under the name it named for it, or refuses
 test('ApiKeyCredential.resolve returns the apiKey shape [@spec:credentials:AC-3]', async () => {
   const result = await new DeeplCredential().resolve(ctx(), { apiKey: 'abc' }, null);
 
   assert.deepEqual(result.credentials, { apiKey: 'abc' });
 });
 
-// AC-3 — A key credential hands the key on under one agreed name, or refuses
+// AC-3 — A key credential hands the key on under the name it named for it, or refuses
 test('ApiKeyCredential.resolve throws when the key is missing [@spec:credentials:AC-3]', async () => {
   await assert.rejects(() => new DeeplCredential().resolve(ctx(), {}, null));
+});
+
+// Names its form field and nothing else — the half-override that used to hand the
+// node a key under `apiKey` it was never told to expect (PO-497).
+class BotTokenCredential extends ApiKeyCredential {
+  readonly description = describe('revenexx:telegram', 'api-key', [
+    { key: 'botToken', label: 'Bot token', type: 'secret', required: true },
+  ]);
+
+  protected override apiKeyField(): string {
+    return 'botToken';
+  }
+}
+
+// AC-3 — A key credential hands the key on under the name it named for it, or refuses
+test('ApiKeyCredential.resolve keys the blob by the named form field [@spec:credentials:AC-3]', async () => {
+  const result = await new BotTokenCredential().resolve(ctx(), { botToken: 'xyz' }, null);
+
+  // deepEqual, not a property check: a partial match is happy with `apiKey`
+  // sitting beside `botToken`, which is exactly the shape this promise forbids.
+  assert.deepEqual(result.credentials, { botToken: 'xyz' });
+});
+
+// AC-3 — A key credential hands the key on under the name it named for it, or refuses
+test('ApiKeyCredential.resolve refuses a key absent from the named field [@spec:credentials:AC-3]', async () => {
+  // The key is present, under the name the base class used to emit — which is
+  // not the field this credential reads, so there is nothing to hand on.
+  await assert.rejects(() => new BotTokenCredential().resolve(ctx(), { apiKey: 'xyz' }, null));
+});
+
+// Names both: the form field, and a blob carrying more than the key alone.
+class PipedriveCredential extends ApiKeyCredential {
+  readonly description = describe('revenexx:pipedrive', 'api-key', [
+    { key: 'apiToken', label: 'API token', type: 'secret', required: true },
+  ]);
+
+  protected override apiKeyField(): string {
+    return 'apiToken';
+  }
+
+  protected override credentialShape(apiToken: string): Record<string, unknown> {
+    return { accessToken: apiToken, baseUrl: 'https://api.pipedrive.com' };
+  }
+}
+
+// AC-3 — A key credential hands the key on under the name it named for it, or refuses
+test('a credential that names its own shape keeps it [@spec:credentials:AC-3]', async () => {
+  const result = await new PipedriveCredential().resolve(ctx(), { apiToken: 'tok' }, null);
+
+  assert.deepEqual(result.credentials, {
+    accessToken: 'tok',
+    baseUrl: 'https://api.pipedrive.com',
+  });
 });
 
 class BasicCredential extends BasicAuthCredential {

@@ -373,26 +373,65 @@ export async function readJsonOrText(
   }
 }
 
+/**
+ * The setting a node offers its workflow author for the response size cap,
+ * ready to spread into `description.config`.
+ *
+ * **What the node still has to do** (PO-497): declaring the setting does not
+ * wire it up. Read the configured value in `execute` and pass it on — the
+ * helpers here only produce the declaration, and a node that spreads this and
+ * never reads `config.maxBytes` offers a setting that does nothing.
+ *
+ * Everything an author reads is supplied in both languages the node packages
+ * write, so spreading this unchanged already satisfies the rule they hold.
+ * Nothing is left to the caller on that side: a node that wants different
+ * words replaces the field rather than completing it.
+ */
 export function maxBytesConfigField(opts?: { default?: number; max?: number }): IConfigField {
   return {
     key: 'maxBytes',
-    label: 'Max response size (bytes)',
+    label: { en: 'Max response size (bytes)', de: 'Maximale Antwortgröße (Bytes)' },
+    description: {
+      en: 'Answers larger than this are refused instead of read. The limit this package enforces applies above whatever is set here.',
+      de: 'Größere Antworten werden abgelehnt statt gelesen. Über dem hier gesetzten Wert gilt zusätzlich die Obergrenze dieses Pakets.',
+    },
     type: 'number',
     default: opts?.default ?? DEFAULT_MAX_RESPONSE_BYTES,
     validation: { min: 1, max: Math.min(opts?.max ?? MAX_RESPONSE_BYTES, MAX_RESPONSE_BYTES) },
   };
 }
 
+/**
+ * The setting a node offers its workflow author for the request budget, ready
+ * to spread into `description.config`.
+ *
+ * **What the node still has to do** (PO-497): pass the configured value to
+ * `safeFetch` as `timeoutMs`. See {@link maxBytesConfigField} for the same note
+ * and for why the label and description are not the caller's to complete.
+ */
 export function timeoutConfigField(opts?: { default?: number; max?: number }): IConfigField {
   return {
     key: 'timeoutMs',
-    label: 'Timeout (ms)',
+    label: { en: 'Timeout (ms)', de: 'Zeitlimit (ms)' },
+    description: {
+      en: 'How long one attempt may take before it fails as a timeout. Counted per attempt and per redirect hop, not across the whole call.',
+      de: 'Wie lange ein einzelner Versuch dauern darf, bevor er als Zeitüberschreitung fehlschlägt. Gilt je Versuch und je Weiterleitung, nicht für den gesamten Aufruf.',
+    },
     type: 'number',
     default: opts?.default ?? DEFAULT_TIMEOUT_MS,
     validation: { min: 100, max: opts?.max ?? MAX_TIMEOUT_MS },
   };
 }
 
+/**
+ * The two settings a node offers its workflow author for the retry budget,
+ * ready to spread into `description.config`.
+ *
+ * **What the node still has to do** (PO-497): pass both configured values to
+ * `safeFetch` as `retry.attempts` and `retry.delayMs`. See
+ * {@link maxBytesConfigField} for the same note and for why the labels and
+ * descriptions are not the caller's to complete.
+ */
 export function retryConfigFields(opts?: {
   defaultAttempts?: number;
   defaultDelayMs?: number;
@@ -400,14 +439,22 @@ export function retryConfigFields(opts?: {
   return [
     {
       key: 'retryAttempts',
-      label: 'Retry attempts',
+      label: { en: 'Retry attempts', de: 'Wiederholungsversuche' },
+      description: {
+        en: 'How often a failed attempt is repeated. 0 sends the request once and reports the first failure.',
+        de: 'Wie oft ein fehlgeschlagener Versuch wiederholt wird. 0 sendet die Anfrage einmal und meldet den ersten Fehler.',
+      },
       type: 'number',
       default: opts?.defaultAttempts ?? DEFAULT_RETRY_ATTEMPTS,
       validation: { min: 0, max: MAX_RETRY_ATTEMPTS },
     },
     {
       key: 'retryDelayMs',
-      label: 'Retry delay (ms)',
+      label: { en: 'Retry delay (ms)', de: 'Wartezeit vor Wiederholung (ms)' },
+      description: {
+        en: 'How long to wait before the next attempt.',
+        de: 'Wie lange vor dem nächsten Versuch gewartet wird.',
+      },
       type: 'number',
       default: opts?.defaultDelayMs ?? DEFAULT_RETRY_DELAY_MS,
       validation: { min: 100 },

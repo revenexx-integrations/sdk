@@ -73,6 +73,9 @@ What stays out is the machinery behind the name — that is `docs/`, and
   drawn, and what happens when the language asked for was never written
 - [`credential-type.md`](credential-type.md) — which credentials a node will accept, and
   why every reader sees the same list however the node wrote it
+- [`offered-settings.md`](offered-settings.md) — the settings this package hands a node
+  to offer: what a node author gets by spreading one unchanged, and what is still theirs
+  to do
 
 ## What is not promised yet
 
@@ -164,6 +167,18 @@ a cut this package could defensibly have made the other way.
   spec*. What it costs is visible in the surface register below: the marker has no row,
   because nothing here promises it means anything, and only [package-manifest.md](package-manifest.md)
   AC-1 carries it as far as the registry.
+- **The wording of a handed-over setting is its own spec, although the settings
+  themselves belong to three others.** That a request budget is bounded is
+  [request-budget.md](request-budget.md) AC-9, and that a size cap is bounded is
+  [response-reading.md](response-reading.md) AC-11 — but the promise PO-497 added holds
+  over all four settings the three factories produce, in two specs. Item 2: the same
+  promise on more than one surface is promoted rather than restated, and
+  [offered-settings.md](offered-settings.md) is where it went. The alternative was an
+  identical criterion in each spec, which is the shape this package had just finished
+  fixing one layer down — the same rule copied into every node package until PO-442
+  hoisted it. What the promotion costs is a reader of either budget spec having to
+  follow a link to learn that the setting it promises is legible at all, which is why
+  both `## Elsewhere` sections say so in a sentence rather than with a bare link.
 - **The inventory is grouped by goal, and no group mirrors a source file.** *Reaching a
   host*, *Doing work that may fail*, *Acting as somebody's account*, *What a built
   package hands over*, *What a node declares* — a reader arrives with a task rather than
@@ -286,7 +301,7 @@ name they are holding.
 | `INodeContext.state` | [workflow-state.md](workflow-state.md) |
 | `INodeState` | [workflow-state.md](workflow-state.md) |
 | `isBlockedAddress` | [ssrf-guard.md](ssrf-guard.md) |
-| `maxBytesConfigField` | [response-reading.md](response-reading.md) |
+| `maxBytesConfigField` | [response-reading.md](response-reading.md), [offered-settings.md](offered-settings.md) |
 | `NodeError` | [error-handling.md](error-handling.md) |
 | `NodeErrorOutput` | [error-handling.md](error-handling.md) |
 | `normalizeCredentialType` | [credential-type.md](credential-type.md) |
@@ -299,12 +314,12 @@ name they are holding.
 | `readJsonOrText` | [response-reading.md](response-reading.md) |
 | `readText` | [response-reading.md](response-reading.md) |
 | `RetryableError` | [retrying-an-operation.md](retrying-an-operation.md) |
-| `retryConfigFields` | [request-budget.md](request-budget.md) |
+| `retryConfigFields` | [request-budget.md](request-budget.md), [offered-settings.md](offered-settings.md) |
 | `safeFetch` | [ssrf-guard.md](ssrf-guard.md), [redirect-following.md](redirect-following.md), [request-budget.md](request-budget.md) |
 | `settingApplies` | [setting-conditions.md](setting-conditions.md) |
 | `SimpleValueCredential` | [credentials.md](credentials.md) |
 | `sleepWithSignal` | [retrying-an-operation.md](retrying-an-operation.md) |
-| `timeoutConfigField` | [request-budget.md](request-budget.md) |
+| `timeoutConfigField` | [request-budget.md](request-budget.md), [offered-settings.md](offered-settings.md) |
 | `toErrorOutput` | [error-handling.md](error-handling.md) |
 | `toErrorResult` | [error-handling.md](error-handling.md) |
 | `withRetry` | [retrying-an-operation.md](retrying-an-operation.md) |
@@ -312,7 +327,10 @@ name they are holding.
 **One name carries three specs.** `safeFetch` is where a request is allowed to go, what
 a hop does to it, and what it may cost — three promises about one export, which is why
 its row is the only one with three links and why none of the three may be read as the
-whole of what that name promises.
+whole of what that name promises. The three config-field factories carry two each for a
+different reason: what each setting bounds is promised where that budget is, and that the
+setting is legible at all is promised once, across all three, in
+[offered-settings.md](offered-settings.md).
 
 **A name with no row has no promise here — and whether that absence is recorded is a
 second question.** Some of it is: the `INode` and `ICredential` contract, and the
