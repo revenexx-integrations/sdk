@@ -392,8 +392,8 @@ export function maxBytesConfigField(opts?: { default?: number; max?: number }): 
     key: 'maxBytes',
     label: { en: 'Max response size (bytes)', de: 'Maximale Antwortgröße (Bytes)' },
     description: {
-      en: 'Answers larger than this are refused instead of read. The limit this package enforces applies above whatever is set here.',
-      de: 'Größere Antworten werden abgelehnt statt gelesen. Über dem hier gesetzten Wert gilt zusätzlich die Obergrenze dieses Pakets.',
+      en: 'An answer larger than this is refused instead of read, counted per answer rather than per run. This package enforces a ceiling of its own above it, so a larger value buys nothing.',
+      de: 'Eine größere Antwort wird abgelehnt statt gelesen; gezählt wird je Antwort, nicht je Lauf. Darüber liegt zusätzlich die feste Obergrenze dieses Pakets, ein höherer Wert bringt also nichts.',
     },
     type: 'number',
     default: opts?.default ?? DEFAULT_MAX_RESPONSE_BYTES,
