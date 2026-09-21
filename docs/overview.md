@@ -358,8 +358,8 @@ Use these to add standardised timeout, retry and response-size fields to a node'
 `description` come in both `en` and `de`, so spreading one unchanged already
 satisfies the node packages' rule that every field an author reads has a
 sentence and is written in both languages. Up to 1.3.0 they did not — the label
-was a plain English string and there was no description at all, so roughly thirty
-call sites across four packages shipped a field a German author could not read
+was a plain English string and there was no description at all, so every node in
+the stack that reaches a host shipped a field a German author could not read
 (PO-497). What is still the node's own job is reading the configured value back
 out in `execute` and passing it to `safeFetch`; the factory only declares the
 setting.

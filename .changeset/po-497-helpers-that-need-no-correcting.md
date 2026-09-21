@@ -9,7 +9,7 @@ finished declaration.** `label` was a plain English string and there was no
 `description` at all, in a stack whose node packages require every field an
 author reads to carry a sentence and to be written in both languages — so a node
 that spread a helper unchanged broke that rule at the moment it used the thing
-built to help it. Around thirty call sites across four packages did. All four
+built to help it. Every package here that reaches a host did. All four
 settings the three factories produce now carry `label` and `description` as
 `{ en, de }`. Nothing else about them changed: the keys, the defaults and the
 bounds are what they were, so upgrading is enough and no call site has to move.
@@ -29,13 +29,14 @@ than documented.
 
 **This is a behaviour change, and the one case it alters is the broken one.** It
 changes what a subclass emits only where `apiKeyField()` is overridden and
-`credentialShape()` is not. All eight `ApiKeyCredential` subclasses in the stack
+`credentialShape()` is not. All nine `ApiKeyCredential` subclasses in the stack
 override both — `core` (`token`), `deepl` (`authKey`), `pipedrive` (`apiToken`),
-and `notifications` (`botToken` ×2, `webhookUrl` ×2, plus Telegram) — so nothing
-in-tree moves. The two places that read `apiKey` out of a resolved blob belong to
-`revenexx:api`, whose credential extends `SimpleValueCredential` and genuinely
-has a field of that name; they are untouched. Released as a minor rather than a
-major on that evidence — a subclass outside this stack that renames its form
+`shipcloud` (`apiKey`) and `notifications` (`botToken` ×3, `webhookUrl` ×2) — so
+nothing in-tree moves. Two places read `apiKey` out of a resolved blob and
+neither is touched: `revenexx:api`, whose credential extends
+`SimpleValueCredential` and genuinely has a field of that name, and `shipcloud`,
+whose credential is an `ApiKeyCredential` that overrides both hooks and calls its
+field `apiKey` anyway. Released as a minor rather than a major on that evidence — a subclass outside this stack that renames its form
 field and relies on the `{ apiKey }` default would change, and that combination
 is the defect itself.
 

@@ -22,8 +22,8 @@ saying *I do not need to think about this setting* — so whatever the helper le
 arrives in front of a workflow author anyway, in a node whose author believed the
 question was settled. What was left out was everything a person reads: the setting came
 with an English name, no explanation, and no second language, in packages whose own
-rules require both. Twenty-eight call sites took it unchanged, and four branches of one
-package each discovered it and each fixed it separately in an afternoon.
+rules require both. Every package here that reaches a host took it unchanged, and four branches of
+one of them each discovered it and each fixed it separately in an afternoon.
 
 **A setting this package hands over is one a node author can spread without correcting
 it.**
@@ -75,9 +75,11 @@ it.**
   declarations and never reads the configured value has offered a workflow author a
   setting that changes nothing, and that is the node's promise to keep rather than this
   package's.
-- **The existing call sites are not covered.** Around thirty nodes across four packages
-  spread the older, English-only declaration, and they take the corrected one only when
-  each package upgrades. Each is its own package's to fix.
+- **The existing call sites are not covered.** Every node that spread the older,
+  English-only declaration keeps it until its own package upgrades — which is every
+  package here that reaches a host. How many that is is deliberately not written down:
+  `shipcloud` landed twenty-six more of them two hours after they were first counted for
+  PO-497, and each package's are its own to fix in any case.
 
 **Undecided**
 

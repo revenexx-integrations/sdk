@@ -371,42 +371,48 @@ const offeredSettings: [string, IConfigField][] = [
 // this list is written down rather than inferred from whatever the fields hold.
 const LANGUAGES = ['en', 'de'] as const;
 
+// One field's worth of AC-1, as a function rather than inline in the loop, so the
+// control below can aim the *same* check at a field written the old way and watch
+// it fail. A check that is only ever run over fields that pass says nothing about
+// itself.
+function assertLocalized(name: string, value: unknown, what: string): void {
+  assert.equal(typeof value, 'object', `${name}: the ${what} is not a locale map`);
+  for (const lang of LANGUAGES) {
+    const text = (value as Record<string, string> | null)?.[lang];
+    assert.equal(typeof text, 'string', `${name}: no ${lang} ${what}`);
+    assert.notEqual((text as string).trim(), '', `${name}: blank ${lang} ${what}`);
+  }
+}
+
 // AC-1 — A setting this package offers is written in every language the packages write
 test('every offered setting carries a label in each language [@spec:offered-settings:AC-1]', () => {
+  assert.ok(offeredSettings.length > 0, 'no setting was checked at all');
   for (const [name, field] of offeredSettings) {
-    assert.equal(typeof field.label, 'object', `${name}: label is a plain string`);
-    for (const lang of LANGUAGES) {
-      const text = (field.label as Record<string, string>)[lang];
-      assert.equal(typeof text, 'string', `${name}: no ${lang} label`);
-      assert.notEqual(text.trim(), '', `${name}: blank ${lang} label`);
-    }
+    assertLocalized(name, field.label, 'label');
   }
 });
 
 // AC-1 — A setting this package offers is written in every language the packages write
 test('every offered setting carries an explanation in each language [@spec:offered-settings:AC-1]', () => {
+  assert.ok(offeredSettings.length > 0, 'no setting was checked at all');
   for (const [name, field] of offeredSettings) {
-    assert.equal(typeof field.description, 'object', `${name}: no localized description`);
-    for (const lang of LANGUAGES) {
-      const text = (field.description as Record<string, string>)[lang];
-      assert.equal(typeof text, 'string', `${name}: no ${lang} description`);
-      assert.notEqual(text.trim(), '', `${name}: blank ${lang} description`);
-    }
+    assertLocalized(name, field.description, 'description');
   }
 });
 
-// The positive control for AC-1: a field written the way these factories used to
-// write one passes nothing above, so a green run is the assertions holding rather
-// than the loop finding nothing to walk.
-test('the check AC-1 makes fails on a field written the old way [@spec:offered-settings:AC-1]', () => {
+// The control for AC-1 — the check itself, aimed at a field written the way these
+// factories used to write one. It has to reject it, or the two tests above are
+// green because the check objects to nothing rather than because the settings pass.
+test('the check AC-1 makes rejects a field written the old way [@spec:offered-settings:AC-1]', () => {
   const bare: IConfigField = { key: 'timeoutMs', label: 'Timeout (ms)', type: 'number' };
-  assert.notEqual(typeof bare.label, 'object');
-  assert.equal(bare.description, undefined);
-  assert.ok(offeredSettings.length > 0, 'nothing was checked at all');
+
+  assert.throws(() => assertLocalized('bare', bare.label, 'label'));
+  assert.throws(() => assertLocalized('bare', bare.description, 'description'));
 });
 
 // AC-2 — A setting says what it does, not only what it is called
 test('every offered setting explains itself in more than its label [@spec:offered-settings:AC-2]', () => {
+  assert.ok(offeredSettings.length > 0, 'no setting was checked at all');
   for (const [name, field] of offeredSettings) {
     for (const lang of LANGUAGES) {
       const label = (field.label as Record<string, string>)[lang] ?? '';
