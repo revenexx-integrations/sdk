@@ -11,7 +11,8 @@
   `description` at all, in a stack whose node packages require every field an
   author reads to carry a sentence and to be written in both languages — so a node
   that spread a helper unchanged broke that rule at the moment it used the thing
-  built to help it. Every package here that reaches a host did. All four
+  built to help it. Every node package in the stack that reaches a host did — 74
+  files across six of them as of this release. All four
   settings the three factories produce now carry `label` and `description` as
   `{ en, de }`. Nothing else about them changed: the keys, the defaults and the
   bounds are what they were, so upgrading is enough and no call site has to move.
