@@ -55,8 +55,14 @@ jobs:
       # Versioning ("changeset version") runs by default; publishing happens only
       # once the "Version Packages" PR is merged and no changesets remain.
       - name: Create release PR or publish
-        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
-          publish: npm run release
-        env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          publish-script: npm run release
+          # The App token goes in as an input, not as a GITHUB_TOKEN env var: v2
+          # throws when the env var is set and differs from this input, and its
+          # default is the workflow token this workflow must not use (see above).
+          github-token: ${{ steps.app-token.outputs.token }}
+          # v1 pushed with the Git CLI; v2 defaults to the GitHub API. Kept
+          # explicit at the proven setting rather than letting the default flip
+          # the mechanism that pushes the protected release tag.
+          push-with-git-cli: true
