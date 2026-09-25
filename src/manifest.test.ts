@@ -164,3 +164,30 @@ test('buildManifest carries image declarations through untouched [@spec:package-
   assert.deepEqual(manifest.credentials?.[0]?.images, fakeCredential.description.images);
   assert.deepEqual(manifest.templates?.[0]?.images, fakeTemplate.images);
 });
+
+const nodeWith = (slug: string, paletteOrder?: number): INode => ({
+  description: {
+    ...fakeNode.description,
+    slug,
+    ...(paletteOrder === undefined ? {} : { paletteOrder }),
+  },
+  execute: fakeNode.execute,
+});
+
+// AC-11 — A package's nodes arrive in the order it lists them
+test('buildManifest keeps the order of NODES rather than sorting by slug [@spec:package-manifest:AC-11]', () => {
+  const manifest = buildManifest([nodeWith('revenexx:send-email'), nodeWith('revenexx:cancel-email'), nodeWith('revenexx:get-email')]);
+
+  assert.deepEqual(
+    manifest.nodes.map((n) => n.slug),
+    ['revenexx:send-email', 'revenexx:cancel-email', 'revenexx:get-email'],
+  );
+});
+
+// AC-12 — A declared palette position is carried as written
+test('buildManifest carries a declared paletteOrder and invents none [@spec:package-manifest:AC-12]', () => {
+  const manifest = buildManifest([nodeWith('revenexx:b', 2), nodeWith('revenexx:a')]);
+
+  assert.equal(manifest.nodes[0]?.paletteOrder, 2);
+  assert.equal('paletteOrder' in (manifest.nodes[1] ?? {}), false);
+});
