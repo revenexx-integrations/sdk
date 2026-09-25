@@ -216,6 +216,17 @@ export interface INodeDescription {
    * pickers without it fall back to package/category grouping.
    */
   groups?: LocalizedString[];
+  /**
+   * Where this node stands inside its innermost palette folder, among the nodes
+   * of the same package: lower comes first. Optional — the editor draws nodes
+   * with a position before those without, and those without in the order the
+   * package lists them in `NODES`, so a package that lists its main node first
+   * needs no position at all. Use it when the array order is not the palette
+   * order, e.g. when `NODES` is sorted for another reason. It orders nodes only
+   * within one package; where a folder takes nodes from several packages, the
+   * order between packages is the editor's.
+   */
+  paletteOrder?: number;
   /** Associated images (screenshots, logos, banners) shipped with the package. */
   images?: IImage[];
   inputs: Record<string, IInputPort>;

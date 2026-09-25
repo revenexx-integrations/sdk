@@ -6,7 +6,7 @@ where:
   - parsePackageMeta — what is taken from a package's own metadata
 docs:
   - docs/overview.md
-updated: 2026-09-01
+updated: 2026-09-25
 ---
 
 # What a package tells the registry
@@ -128,6 +128,25 @@ nothing to compare against, because there is no second source.
 - **Pair** AC-6
 - verify: unit
 
+### AC-11 — A package's nodes arrive in the order it lists them
+
+- **Given** a package whose `NODES` lists its nodes in an order other than their slugs'
+- **When** its manifest is built
+- **Then** the nodes arrive in the order the package lists them
+- **Because** that order is the package's statement of which node comes first in the
+  palette; a manifest that re-sorted it would leave the registry nothing to keep
+- verify: unit
+
+### AC-12 — A declared palette position is carried as written
+
+- **Given** a node that declares where it stands in its palette folder
+- **When** the manifest is built
+- **Then** the position arrives as it was declared, and a node that declares none carries none
+- **Because** the position is how a package orders a folder independently of the order of
+  `NODES`; a default filled in here would be indistinguishable from one the author chose
+- **Pair** AC-11
+- verify: unit
+
 ## Elsewhere
 
 - **The image files themselves** — which are collected and how they reach the build —
@@ -158,3 +177,5 @@ nothing to compare against, because there is no second source.
   package's own group: AC-6 through AC-10
 - [PO-368](https://linear.app/revenexx/issue/PO-368) — backfilled this spec against the
   tests that already proved it
+- [PO-537](https://linear.app/revenexx/issue/PO-537) — a package orders the nodes inside a
+  palette folder: AC-11 and AC-12
