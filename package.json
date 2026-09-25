@@ -1,6 +1,6 @@
 {
   "name": "@revenexx/integrations-node-sdk",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "description": "TypeScript interfaces and utilities for Revenexx integration nodes",
   "license": "MIT",
   "author": "revenexx GmbH",
