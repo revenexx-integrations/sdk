@@ -191,3 +191,23 @@ test('buildManifest carries a declared paletteOrder and invents none [@spec:pack
   assert.equal(manifest.nodes[0]?.paletteOrder, 2);
   assert.equal('paletteOrder' in (manifest.nodes[1] ?? {}), false);
 });
+
+// AC-1 — A declared value reaches the manifest as declared, a dotted name included
+test('buildManifest writes a dotted output field name out as one name [@spec:output-fields:AC-1]', () => {
+  const fields = {
+    counts: { dataType: 'object', description: 'How many records fell into each group' },
+    'counts.added': { dataType: 'number', description: { en: 'Records only in the new dataset', de: 'Nur im neuen Datensatz' } },
+  } as const;
+  const node: INode = {
+    description: { ...fakeNode.description, outputs: [{ name: 'out', kind: 'default', dataType: 'object', fields }] },
+    execute: fakeNode.execute,
+  };
+
+  // What the CLI writes to dist/manifest.json, read back.
+  const written = JSON.parse(JSON.stringify(buildManifest([node])));
+  const declared = written.nodes[0].outputs[0].fields;
+
+  assert.deepEqual(Object.keys(declared), ['counts', 'counts.added']);
+  assert.deepEqual(declared, fields);
+  assert.equal('fields' in declared.counts, false);
+});

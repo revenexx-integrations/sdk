@@ -49,6 +49,14 @@ export interface IInputPort {
   description?: LocalizedString;
 }
 
+/**
+ * One value an output carries, as the editor offers it to the next step.
+ *
+ * Deliberately flat: there is no member describing what is inside the value,
+ * because the registry's manifest schema refuses any key beside these two and
+ * the studio reads none. What is inside a value is declared beside it, under a
+ * dotted name — see `IOutputPort.fields` (PO-408).
+ */
 export interface IOutputField {
   dataType: DataType;
   description?: LocalizedString;
@@ -60,6 +68,15 @@ export interface IOutputPort {
   name?: string;
   label?: LocalizedString;
   description?: LocalizedString;
+  /**
+   * The values this output carries, by name.
+   *
+   * A name containing `.` is a path into the value: `counts` as `object` and
+   * `counts.added` as `number`, side by side, offers both the object and the
+   * number inside it. The studio and the worker resolve that name as a path, so
+   * the record the node emits must really be nested — a record carrying a
+   * literal `"counts.added"` key is not reached by it (specs/output-fields.md).
+   */
   fields?: Record<string, IOutputField>;
   sourceFromConfig?: string;
   /**
