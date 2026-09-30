@@ -78,7 +78,7 @@ export class UppercaseNode implements INode {
     category: 'transform',
     name: { en: 'Uppercase', de: 'Großschreiben' },
     description: { en: 'Upper-cases a string read from the input.' },
-    icon: 'mdi:format-letter-case-upper',
+    icon: 'lucide:case-upper',
     inputs: { in: { dataType: 'string', required: true } },
     outputs: [{ name: 'out', kind: 'default', dataType: 'string', label: { en: 'Result', de: 'Ergebnis' } }],
   } satisfies INodeDescription;
@@ -107,7 +107,7 @@ export class ConditionIfNode implements INode {
     version: '1.0.0',
     category: 'control',
     name: { en: 'If condition', de: 'Wenn-Bedingung' },
-    icon: 'mdi:source-branch',
+    icon: 'lucide:git-branch',
     inputs: { in: { dataType: 'any', required: true } },
     outputs: [
       { name: 'true', kind: 'branch', dataType: 'any', label: { en: 'True', de: 'Wahr' } },
@@ -153,7 +153,7 @@ export class HttpRequestNode implements INode {
     version: '1.0.0',
     category: 'action',
     name: { en: 'HTTP Request', de: 'HTTP-Anfrage' },
-    icon: 'mdi:web',
+    icon: 'lucide:globe',
     inputs: { in: { dataType: 'object' } },
     outputs: [
       {

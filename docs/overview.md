@@ -57,7 +57,7 @@ Static metadata about the node. Read at registry build time — never at runtime
 | `category` | `NodeCategory` | `trigger \| action \| transform \| control \| io` |
 | `name` | `LocalizedString` | Display name |
 | `description` | `LocalizedString?` | Optional longer description |
-| `icon` | `string?` | Icon identifier, e.g. `mdi:cloud-download` |
+| `icon` | `string?` | A Lucide name, `lucide:<kebab-name>` as listed on lucide.dev, e.g. `lucide:cloud-download`. The studio draws it as named; a name it cannot draw becomes a generic box |
 | `inputs` | `Record<string, IInputPort>` | Named input ports. Single-input nodes use the conventional key `'in'` |
 | `outputs` | `IOutputPort[]` | Output ports. Empty `[]` marks a terminal node — see below |
 | `config` | `IConfigField[]?` | User-configurable fields |
