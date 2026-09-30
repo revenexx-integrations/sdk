@@ -226,6 +226,7 @@ export interface INodeDescription {
   category: NodeCategory;
   name: LocalizedString;
   description?: LocalizedString;
+  /** A Lucide icon name, `lucide:<kebab-name>` as listed on lucide.dev (e.g. `lucide:globe`). The studio draws it as named; a name it cannot draw becomes a generic box. */
   icon?: string;
   /**
    * Curated node-picker group path, outermost first (max 4 levels), e.g.
@@ -521,6 +522,7 @@ export interface ICredentialDescription {
   version: string;
   name: LocalizedString;
   description?: LocalizedString;
+  /** A Lucide icon name, `lucide:<kebab-name>` as listed on lucide.dev (e.g. `lucide:globe`). The studio draws it as named; a name it cannot draw becomes a generic box. */
   icon?: string;
   /** Associated images (screenshots, logos, banners) shipped with the package. */
   images?: IImage[];
@@ -650,6 +652,7 @@ export interface ITemplateDescription {
   shortDescription?: LocalizedString;
   /** Long-form description in Markdown. */
   description?: LocalizedString;
+  /** A Lucide icon name, `lucide:<kebab-name>` as listed on lucide.dev (e.g. `lucide:globe`). The studio draws it as named; a name it cannot draw becomes a generic box. */
   icon?: string;
   /** Free-form industry tags (e.g. `any`, `medical`). */
   industries?: string[];
