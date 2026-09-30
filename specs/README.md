@@ -76,6 +76,9 @@ What stays out is the machinery behind the name — that is `docs/`, and
 - [`offered-settings.md`](offered-settings.md) — the settings this package hands a node
   to offer: what a node author gets by spreading one unchanged, and what is still theirs
   to do
+- [`output-fields.md`](output-fields.md) — what an output says it carries: how a value
+  inside a record is declared under its path, and why a declared value cannot describe
+  its own contents
 
 ## What is not promised yet
 
@@ -283,6 +286,7 @@ name they are holding.
 | --- | --- |
 | the `dynamic`, `dependsOn`, `dynamic-schema` and `resolveOutputs` markers | [author-time-resolution.md](author-time-resolution.md) |
 | the `showIf` condition on a setting | [setting-conditions.md](setting-conditions.md) |
+| the `fields` an output declares | [output-fields.md](output-fields.md) |
 | `ApiKeyCredential` | [credentials.md](credentials.md) |
 | `assertPublicUrl` | [ssrf-guard.md](ssrf-guard.md) |
 | `backoffDelay` | [retrying-an-operation.md](retrying-an-operation.md) |

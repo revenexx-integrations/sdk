@@ -398,6 +398,34 @@ await safeFetch(url, {
 | `label` | `LocalizedString?` | Display label |
 | `sourceFromConfig` | `string?` | Dynamically names the port from a config field value |
 | `fallback` | `object?` | Fallback name/label when `sourceFromConfig` resolves to nothing |
+| `fields` | `Record<string, IOutputField>?` | The values the port carries, by name — each `{ dataType, description? }`. A dotted name is a path into a value, see below |
+
+**A value inside a record is declared under its path.** `IOutputField` stays
+flat (PO-408), so a record and what is inside it are declared side by side:
+
+```ts
+fields: {
+  counts:         { dataType: 'object', description: 'How many records fell into each group' },
+  'counts.added': { dataType: 'number', description: 'Records only in the new dataset' },
+}
+```
+
+Why a dotted name, and why that works, as of PO-408:
+
+- **The studio** turns a field name into an expression by appending it to
+  `nodes.<id>.outputs.<port>.`, so `counts.added` becomes a chip for the
+  nested number.
+- **The worker** resolves that expression by splitting it on `.` and walking
+  the rest into the port's value. The emitted record must really be nested:
+  a literal `"counts.added"` key is not found.
+- **The registry** puts no pattern on field names, but closes every field to
+  `dataType` and `description`. That closed schema is why a nested `fields`
+  member was not the answer — it would be refused at publish, and the studio
+  reads nothing beyond those two keys either.
+
+A node whose record is shaped by paths the author configures (json-transform,
+set-fields) cannot declare them statically at all. The promise is in
+[`specs/output-fields.md`](../specs/output-fields.md).
 
 Note the difference from a node that declares **no** ports at all — that is a
 property of [`INodeDescription.outputs`](#inodedescription), not of a port.
