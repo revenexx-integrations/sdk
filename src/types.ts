@@ -172,6 +172,20 @@ export interface IConfigFieldBase {
    */
   showIf?: IShowIfCondition;
   /**
+   * What a value mapped into this field from an earlier step has to be — `'array'`
+   * for a setting that wants the list a previous node produced (PO-594).
+   *
+   * The editor uses it to put the earlier steps' outputs of that kind first in the
+   * `{ }` list, mark them, and offer the single matching one as a one-click answer
+   * under an empty field. So the author does not have to know what a previous node
+   * returns, or which of its fields is the list.
+   *
+   * Not to be confused with `type: 'array'`, which draws the setting itself as
+   * repeating rows the author fills in by hand. Only meaningful together with
+   * `expressionAllowed`. Left unset, every output is offered alike, as before.
+   */
+  accepts?: DataType;
+  /**
    * Only meaningful when `type === 'credentials-ref'`: the namespaced slug(s) of
    * the credential type(s) this field accepts (e.g. `revenexx:smtp`). The editor
    * lists tenant credential instances of these type(s); the blob stores the
