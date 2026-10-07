@@ -147,6 +147,18 @@ nothing to compare against, because there is no second source.
 - **Pair** AC-11
 - verify: unit
 
+### AC-13 — A package's folder icon is read from the same group, and one the registry would refuse stops the build
+
+- **Given** metadata declaring an icon for the package's folder under this platform's
+  group — well formed, blank, or not a Lucide name
+- **When** it is read, and when the manifest is built
+- **Then** a well-formed icon arrives trimmed, a blank one counts as none, and one that
+  is not `lucide:` and a kebab-case name stops the build, naming the field and the value
+- **Because** the registry refuses such a package on upload; stopping here tells the
+  author while they can still fix it, rather than when a release fails
+- **Pair** AC-7
+- verify: unit
+
 ## Elsewhere
 
 - **The image files themselves** — which are collected and how they reach the build —

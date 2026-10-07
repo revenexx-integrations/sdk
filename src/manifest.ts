@@ -50,15 +50,37 @@ export interface NodePackageMeta {
   version: string;
   /** Human-readable bundle label (e.g. „Business Central"); optional. */
   displayName?: string;
+  /**
+   * The glyph that marks the package's folder in the studio's palette, as
+   * `lucide:<kebab-name>` (e.g. `lucide:bell`); optional. Declared by a package
+   * holding several services, which has no one vendor logo to mark its folder
+   * with — a package that is one vendor leaves it out. Read as written; whether
+   * it is well formed is {@link packageIconProblem}'s question.
+   */
+  icon?: string;
+}
+
+/** `lucide:` and a kebab-case Lucide name — the same rule the registry enforces on upload. */
+const PACKAGE_ICON = /^lucide:[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/**
+ * Why a declared `revenexx.icon` would be refused by the registry, or
+ * `undefined` when it is fine (or absent). Lets the build stop where the author
+ * can still fix it, rather than at upload.
+ */
+export function packageIconProblem(icon: string | undefined): string | undefined {
+  if (icon === undefined || PACKAGE_ICON.test(icon)) return undefined;
+  return `package.json "revenexx.icon" must be a Lucide icon name such as "lucide:bell", got "${icon}".`;
 }
 
 /**
  * Extracts {@link NodePackageMeta} from parsed `package.json` contents, keeping
  * only the registry-relevant fields and coercing anything malformed to a safe
  * shape. All three fields are trimmed; a blank or whitespace-only value becomes
- * `''` (`name`/`version`) or `undefined` (`displayName`, matching how the server
- * treats it), so whitespace can't masquerade as a present value in tooling.
- * The bundle label is read from the `revenexx` group (`revenexx.displayName`).
+ * `''` (`name`/`version`) or `undefined` (`displayName`, `icon`, matching how the
+ * server treats them), so whitespace can't masquerade as a present value in
+ * tooling. The bundle label and the folder icon are read from the `revenexx`
+ * group (`revenexx.displayName`, `revenexx.icon`).
  * Does not validate that `name`/`version` are present — the integrations server
  * enforces that on upload; this is a typed, lenient read for tooling.
  */
@@ -69,10 +91,12 @@ export function parsePackageMeta(raw: unknown): NodePackageMeta {
     obj.revenexx && typeof obj.revenexx === 'object' ? obj.revenexx : {}
   ) as Record<string, unknown>;
   const displayName = str(revenexx.displayName);
+  const icon = str(revenexx.icon);
   return {
     name: str(obj.name),
     version: str(obj.version),
     displayName: displayName !== '' ? displayName : undefined,
+    ...(icon !== '' ? { icon } : {}),
   };
 }
 

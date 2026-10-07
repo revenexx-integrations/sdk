@@ -19,7 +19,7 @@ import * as fs from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { collectImageSources, copyImages } from './images.js';
-import { buildManifest, parsePackageMeta } from './manifest.js';
+import { buildManifest, packageIconProblem, parsePackageMeta } from './manifest.js';
 import type { ICredential, INode, ITemplateDescription } from './types.js';
 
 const projectRoot = process.cwd();
@@ -85,6 +85,10 @@ async function runManifest(): Promise<void> {
       '⚠ package.json has no "revenexx.displayName" — the node palette will fall back to the raw package name.',
     );
   }
+  // The registry refuses a malformed folder icon on upload (PO-640); refusing it
+  // here already keeps that from being the first anyone hears of it.
+  const iconProblem = packageIconProblem(meta.icon);
+  if (iconProblem) fail(iconProblem);
 
   const manifest = buildManifest(mod.NODES as INode[], credentials, templates);
 

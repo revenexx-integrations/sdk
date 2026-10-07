@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildManifest, MANIFEST_VERSION, parsePackageMeta } from './manifest.js';
+import { buildManifest, MANIFEST_VERSION, packageIconProblem, parsePackageMeta } from './manifest.js';
 import type { ICredential, INode, ITemplateDescription } from './types.js';
 
 const fakeNode: INode = {
@@ -210,4 +210,20 @@ test('buildManifest writes a dotted output field name out as one name [@spec:out
   assert.deepEqual(Object.keys(declared), ['counts', 'counts.added']);
   assert.deepEqual(declared, fields);
   assert.equal('fields' in declared.counts, false);
+});
+
+// AC-13 — A package's folder icon is read from the same group, and one the registry would refuse stops the build
+test('parsePackageMeta reads revenexx.icon trimmed, and a blank one as none [@spec:package-manifest:AC-13]', () => {
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: { icon: ' lucide:bell ' } }).icon, 'lucide:bell');
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: { icon: '  ' } }).icon, undefined);
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', icon: 'lucide:bell' }).icon, undefined);
+});
+
+// AC-13 — A package's folder icon is read from the same group, and one the registry would refuse stops the build
+test('packageIconProblem accepts a Lucide name and none, and names a malformed one [@spec:package-manifest:AC-13]', () => {
+  assert.equal(packageIconProblem(undefined), undefined);
+  assert.equal(packageIconProblem('lucide:message-square'), undefined);
+  for (const bad of ['mdi:bell', 'bell', 'lucide:MessageSquare', 'lucide:bell-']) {
+    assert.match(packageIconProblem(bad) ?? '', new RegExp(`"revenexx.icon" .* got "${bad}"`));
+  }
 });
