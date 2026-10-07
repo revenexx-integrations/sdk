@@ -75,7 +75,9 @@ const PHP_TRIM = /^[ \t\n\r\0\v]+|[ \t\n\r\0\v]+$/g;
 /**
  * Why a declared `revenexx.icon` would be refused by the registry, or
  * `undefined` when it is fine (or absent). Lets the build stop where the author
- * can still fix it, rather than at upload.
+ * can still fix it, rather than at upload. Takes the icon as
+ * {@link parsePackageMeta} returns it — trimmed as the registry trims it; an
+ * untrimmed raw value can be refused here although the registry accepts it.
  */
 export function packageIconProblem(icon: string | undefined): string | undefined {
   if (icon === undefined || PACKAGE_ICON.test(icon)) return undefined;

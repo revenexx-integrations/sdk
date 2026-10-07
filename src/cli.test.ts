@@ -52,6 +52,7 @@ test('rvnxx-nodes manifest builds, with a warning, when revenexx.icon is not tex
 
   assert.equal(run.status, 0, run.stderr);
   assert.ok(run.stderr.includes('"revenexx.icon" is not text'), run.stderr);
+  assert.equal(manifest({ displayName: 'X', icon: null }).stderr.includes('is not text'), false);
 });
 
 // AC-13 — A package's folder icon is read from the same group, and one the registry would refuse stops the build

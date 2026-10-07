@@ -59,6 +59,12 @@ async function runManifest(): Promise<void> {
   const meta = parsePackageMeta(pkg);
   const iconProblem = packageIconProblem(meta.icon);
   if (iconProblem) fail(iconProblem);
+  // Neither the CLI nor the registry can read an icon that is not text, so the
+  // folder would show none without saying why. `null` is a way to say none.
+  const declaredIcon = (pkg as { revenexx?: { icon?: unknown } } | null)?.revenexx?.icon;
+  if (declaredIcon != null && typeof declaredIcon !== 'string') {
+    console.warn('⚠ package.json "revenexx.icon" is not text — the folder will show no icon.');
+  }
 
   const distEntry = resolve(projectRoot, 'dist', 'index.js');
   if (!fs.existsSync(distEntry)) {
@@ -91,13 +97,6 @@ async function runManifest(): Promise<void> {
       '⚠ package.json has no "revenexx.displayName" — the node palette will fall back to the raw package name.',
     );
   }
-  // Neither the CLI nor the registry can read an icon that is not text, so the
-  // folder would show none without saying why.
-  const declaredIcon = (pkg as { revenexx?: { icon?: unknown } } | null)?.revenexx?.icon;
-  if (declaredIcon !== undefined && typeof declaredIcon !== 'string') {
-    console.warn('⚠ package.json "revenexx.icon" is not text — the folder will show no icon.');
-  }
-
   const manifest = buildManifest(mod.NODES as INode[], credentials, templates);
 
   const outDir = resolve(projectRoot, 'dist');
