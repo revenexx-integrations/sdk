@@ -53,12 +53,18 @@ export interface IInputPort {
  * One value an output carries, as the editor offers it to the next step.
  *
  * Deliberately flat: there is no member describing what is inside the value,
- * because the registry's manifest schema refuses any key beside these two and
+ * because the registry's manifest schema refuses any key beside these three and
  * the studio reads none. What is inside a value is declared beside it, under a
  * dotted name — see `IOutputPort.fields` (PO-408).
  */
 export interface IOutputField {
   dataType: DataType;
+  /**
+   * What the value is called, for an author picking it in the editor's `{ }` list —
+   * "Rechnungen" where the key is `invoices` (PO-594). Left out, the editor shows the
+   * key, as before.
+   */
+  label?: LocalizedString;
   description?: LocalizedString;
 }
 
@@ -171,6 +177,20 @@ export interface IConfigFieldBase {
    * know the key.
    */
   showIf?: IShowIfCondition;
+  /**
+   * What a value mapped into this field from an earlier step has to be — `'array'`
+   * for a setting that wants the list a previous node produced (PO-594).
+   *
+   * The editor uses it to put the earlier steps' outputs of that kind first in the
+   * `{ }` list, mark them, and offer the single matching one as a one-click answer
+   * under an empty field. So the author does not have to know what a previous node
+   * returns, or which of its fields is the list.
+   *
+   * Not to be confused with `type: 'array'`, which draws the setting itself as
+   * repeating rows the author fills in by hand. Only meaningful together with
+   * `expressionAllowed`. Left unset, every output is offered alike, as before.
+   */
+  accepts?: DataType;
   /**
    * Only meaningful when `type === 'credentials-ref'`: the namespaced slug(s) of
    * the credential type(s) this field accepts (e.g. `revenexx:smtp`). The editor
