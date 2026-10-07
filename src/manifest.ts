@@ -62,8 +62,15 @@ export interface NodePackageMeta {
   icon?: string;
 }
 
-/** `lucide:` and a kebab-case Lucide name — the same rule the registry enforces on upload. */
+/**
+ * `lucide:` and a kebab-case Lucide name — the same rule the registry enforces
+ * on upload (`ICON_PATTERN` in the integrations service's `TarballInspector`).
+ * A copy, not a shared source: a change on either side has to be made on both.
+ */
 const PACKAGE_ICON = /^lucide:[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/** The characters PHP's `trim()` removes by default, at either end. */
+const PHP_TRIM = /^[ \t\n\r\0\v]+|[ \t\n\r\0\v]+$/g;
 
 /**
  * Why a declared `revenexx.icon` would be refused by the registry, or
@@ -78,7 +85,9 @@ export function packageIconProblem(icon: string | undefined): string | undefined
 /**
  * Extracts {@link NodePackageMeta} from parsed `package.json` contents, keeping
  * only the registry-relevant fields and coercing anything malformed to a safe
- * shape. All four fields are trimmed; a blank or whitespace-only value becomes
+ * shape. All four fields are trimmed — the icon of ASCII whitespace only, as the
+ * server's PHP `trim()` does, so a pasted no-break space is refused here as it
+ * is there rather than trimmed away; a blank or whitespace-only value becomes
  * `''` (`name`/`version`) or `undefined` (`displayName`, `icon`, matching how the
  * server treats them), so whitespace can't masquerade as a present value in
  * tooling. The bundle label and the folder icon are read from the `revenexx`
@@ -93,7 +102,7 @@ export function parsePackageMeta(raw: unknown): NodePackageMeta {
     obj.revenexx && typeof obj.revenexx === 'object' ? obj.revenexx : {}
   ) as Record<string, unknown>;
   const displayName = str(revenexx.displayName);
-  const icon = str(revenexx.icon);
+  const icon = typeof revenexx.icon === 'string' ? revenexx.icon.replace(PHP_TRIM, '') : '';
   return {
     name: str(obj.name),
     version: str(obj.version),

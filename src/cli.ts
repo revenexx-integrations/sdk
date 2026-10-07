@@ -50,6 +50,16 @@ function readPackageJson(root: string): unknown {
 // --------------------------------------------------------------- manifest
 
 async function runManifest(): Promise<void> {
+  // package.json is read straight by the integrations server on upload — the
+  // CLI reads it to stop on a folder icon the server would refuse (PO-640), to
+  // warn about a missing label or an icon that is not text, and to annotate the
+  // log line below. The icon is checked before the bundle is imported, so a
+  // bundle that fails to load cannot hide that verdict behind its own error.
+  const pkg = readPackageJson(projectRoot);
+  const meta = parsePackageMeta(pkg);
+  const iconProblem = packageIconProblem(meta.icon);
+  if (iconProblem) fail(iconProblem);
+
   const distEntry = resolve(projectRoot, 'dist', 'index.js');
   if (!fs.existsSync(distEntry)) {
     fail('dist/index.js is missing. Run the build (tsup) before `rvnxx-nodes manifest`.');
@@ -73,10 +83,6 @@ async function runManifest(): Promise<void> {
   const credentials = (mod.CREDENTIALS as ICredential[] | undefined) ?? [];
   const templates = (mod.TEMPLATES as ITemplateDescription[] | undefined) ?? [];
 
-  // The bundle label (`revenexx.displayName`) is read straight from
-  // package.json by the integrations server on upload — the CLI reads it only
-  // to warn when it is missing and to annotate the log line below.
-  const meta = parsePackageMeta(readPackageJson(projectRoot));
   const hasPackage = meta.name !== '' && meta.version !== '';
   // Warn about a missing label only when there IS a package to label — a
   // missing/unparseable package.json is a separate (bigger) problem.
@@ -85,10 +91,12 @@ async function runManifest(): Promise<void> {
       '⚠ package.json has no "revenexx.displayName" — the node palette will fall back to the raw package name.',
     );
   }
-  // The registry refuses a malformed folder icon on upload (PO-640); refusing it
-  // here already keeps that from being the first anyone hears of it.
-  const iconProblem = packageIconProblem(meta.icon);
-  if (iconProblem) fail(iconProblem);
+  // Neither the CLI nor the registry can read an icon that is not text, so the
+  // folder would show none without saying why.
+  const declaredIcon = (pkg as { revenexx?: { icon?: unknown } } | null)?.revenexx?.icon;
+  if (declaredIcon !== undefined && typeof declaredIcon !== 'string') {
+    console.warn('⚠ package.json "revenexx.icon" is not text — the folder will show no icon.');
+  }
 
   const manifest = buildManifest(mod.NODES as INode[], credentials, templates);
 

@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 function manifest(revenexx: Record<string, unknown>) {
-  fs.writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0', revenexx }));
+  fs.writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0', type: 'module', revenexx }));
   return spawnSync(process.execPath, ['--import', tsx, cli, 'manifest'], { cwd: pkg, encoding: 'utf-8' });
 }
 
@@ -44,4 +44,21 @@ test('rvnxx-nodes manifest builds with a well-formed revenexx.icon [@spec:packag
 
   assert.equal(run.status, 0, run.stderr);
   assert.equal(fs.existsSync(join(pkg, 'dist', 'manifest.json')), true);
+});
+
+// AC-13 — A package's folder icon is read from the same group, and one the registry would refuse stops the build
+test('rvnxx-nodes manifest builds, with a warning, when revenexx.icon is not text [@spec:package-manifest:AC-13]', () => {
+  const run = manifest({ displayName: 'X', icon: ['lucide:bell'] });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.ok(run.stderr.includes('"revenexx.icon" is not text'), run.stderr);
+});
+
+// AC-13 — A package's folder icon is read from the same group, and one the registry would refuse stops the build
+test('rvnxx-nodes manifest stops on a malformed revenexx.icon even when the bundle fails to load [@spec:package-manifest:AC-13]', () => {
+  fs.writeFileSync(join(pkg, 'dist', 'index.js'), "throw new Error('bundle broke');\n");
+  const run = manifest({ displayName: 'X', icon: 'mdi:bell' });
+
+  assert.equal(run.status, 1);
+  assert.ok(run.stderr.includes('got "mdi:bell"'), run.stderr);
 });

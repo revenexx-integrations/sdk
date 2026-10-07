@@ -217,6 +217,8 @@ test('buildManifest writes a dotted output field name out as one name [@spec:out
 test('parsePackageMeta reads revenexx.icon trimmed, and a blank or non-text one as none [@spec:package-manifest:AC-13]', () => {
   assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: { icon: ' lucide:bell ' } }).icon, 'lucide:bell');
   assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: { icon: '  ' } }).icon, undefined);
+  // PHP's trim() leaves a no-break space, so the registry would refuse what JS's trim() cleans
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: { icon: 'lucide:bell\u00A0' } }).icon, 'lucide:bell\u00A0');
   for (const notText of [['lucide:bell'], true, 7, { name: 'bell' }]) {
     assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: { icon: notText } }).icon, undefined);
   }

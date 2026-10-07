@@ -153,9 +153,10 @@ nothing to compare against, because there is no second source.
 - **Given** metadata declaring an icon for the package's folder under this platform's
   group — well formed, blank, not text, or not a Lucide name
 - **When** it is read, and when the manifest is built
-- **Then** a well-formed icon arrives trimmed, a blank one or one that is not text counts
-  as none — as the registry reads it — and one that is not `lucide:` and a kebab-case
-  name stops the build before anything is written, naming the field and the value
+- **Then** a well-formed icon arrives trimmed, a blank one counts as none, one that is
+  not text counts as none with a warning — as the registry reads both — and one that is
+  not `lucide:` and a kebab-case name stops the build before the package's code runs,
+  naming the field and the value
 - **Because** the registry refuses such a package on upload; stopping here tells the
   author while they can still fix it, rather than when a release fails
 - **Pair** AC-7
