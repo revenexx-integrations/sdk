@@ -37,9 +37,10 @@ export interface NodeManifest {
  * The registry-relevant fields of a node package's `package.json`, as read by
  * the CLI. `name`/`version` identify the package; `displayName` is the
  * human-readable bundle label shown in the editor's node palette (e.g.
- * „Business Central"). All three are read straight from `package.json` by the
- * integrations server on upload — the CLI reads them only to warn about a
- * missing label and to annotate the manifest log line.
+ * „Business Central"); `icon` marks its folder there. All four are read straight
+ * from `package.json` by the integrations server on upload — the CLI reads them
+ * only to warn about a missing label, to annotate the manifest log line, and to
+ * stop on an icon the server would refuse.
  *
  * The label lives under a namespaced `revenexx` group in `package.json`
  * (`{ "revenexx": { "displayName": "…" } }`), not a bespoke top-level key, so
@@ -50,15 +51,49 @@ export interface NodePackageMeta {
   version: string;
   /** Human-readable bundle label (e.g. „Business Central"); optional. */
   displayName?: string;
+  /**
+   * The glyph that marks the package's folder in the studio's palette, as
+   * `lucide:<kebab-name>` (e.g. `lucide:bell`); optional. Declared by a package
+   * holding several services, which has no one vendor logo to mark its folder
+   * with — a package that is one vendor leaves it out. Trimmed, and a value that
+   * is not a string counts as none, as the server reads it; whether it is well
+   * formed is {@link packageIconProblem}'s question.
+   */
+  icon?: string;
+}
+
+/**
+ * `lucide:` and a kebab-case Lucide name — the same rule the registry enforces
+ * on upload (`ICON_PATTERN` in the integrations service's `TarballInspector`).
+ * A copy, not a shared source: a change on either side has to be made on both.
+ */
+const PACKAGE_ICON = /^lucide:[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/** The characters PHP's `trim()` removes by default, at either end. */
+const PHP_TRIM = /^[ \t\n\r\0\v]+|[ \t\n\r\0\v]+$/g;
+
+/**
+ * Why a declared `revenexx.icon` would be refused by the registry, or
+ * `undefined` when it is fine (or absent). Lets the build stop where the author
+ * can still fix it, rather than at upload. Takes the icon as
+ * {@link parsePackageMeta} returns it — trimmed as the registry trims it; an
+ * untrimmed raw value can be refused here although the registry accepts it.
+ */
+export function packageIconProblem(icon: string | undefined): string | undefined {
+  if (icon === undefined || PACKAGE_ICON.test(icon)) return undefined;
+  return `package.json "revenexx.icon" must be a Lucide icon name such as "lucide:bell", got "${icon}".`;
 }
 
 /**
  * Extracts {@link NodePackageMeta} from parsed `package.json` contents, keeping
  * only the registry-relevant fields and coercing anything malformed to a safe
- * shape. All three fields are trimmed; a blank or whitespace-only value becomes
- * `''` (`name`/`version`) or `undefined` (`displayName`, matching how the server
- * treats it), so whitespace can't masquerade as a present value in tooling.
- * The bundle label is read from the `revenexx` group (`revenexx.displayName`).
+ * shape. All four fields are trimmed — the icon of ASCII whitespace only, as the
+ * server's PHP `trim()` does, so a pasted no-break space is refused here as it
+ * is there rather than trimmed away; a blank or whitespace-only value becomes
+ * `''` (`name`/`version`) or `undefined` (`displayName`, `icon`, matching how the
+ * server treats them), so whitespace can't masquerade as a present value in
+ * tooling. The bundle label and the folder icon are read from the `revenexx`
+ * group (`revenexx.displayName`, `revenexx.icon`).
  * Does not validate that `name`/`version` are present — the integrations server
  * enforces that on upload; this is a typed, lenient read for tooling.
  */
@@ -69,10 +104,12 @@ export function parsePackageMeta(raw: unknown): NodePackageMeta {
     obj.revenexx && typeof obj.revenexx === 'object' ? obj.revenexx : {}
   ) as Record<string, unknown>;
   const displayName = str(revenexx.displayName);
+  const icon = typeof revenexx.icon === 'string' ? revenexx.icon.replace(PHP_TRIM, '') : '';
   return {
     name: str(obj.name),
     version: str(obj.version),
     displayName: displayName !== '' ? displayName : undefined,
+    icon: icon !== '' ? icon : undefined,
   };
 }
 

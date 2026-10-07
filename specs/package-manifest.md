@@ -4,9 +4,10 @@ title: What a package tells the registry
 where:
   - buildManifest — the envelope a package's build writes
   - parsePackageMeta — what is taken from a package's own metadata
+  - packageIconProblem — whether a declared folder icon would be refused
 docs:
   - docs/overview.md
-updated: 2026-09-25
+updated: 2026-10-07
 ---
 
 # What a package tells the registry
@@ -145,6 +146,20 @@ nothing to compare against, because there is no second source.
 - **Because** the position is how a package orders a folder independently of the order of
   `NODES`; a default filled in here would be indistinguishable from one the author chose
 - **Pair** AC-11
+- verify: unit
+
+### AC-13 — A package's folder icon is read from the same group, and one the registry would refuse stops the build
+
+- **Given** metadata declaring an icon for the package's folder under this platform's
+  group — well formed, blank, not text, or not a Lucide name
+- **When** it is read, and when the manifest is built
+- **Then** a well-formed icon arrives trimmed, a blank one counts as none, one that is
+  not text counts as none with a warning — as the registry reads both — and one that is
+  not `lucide:` and a kebab-case name stops the build before the package's code runs,
+  naming the field and the value
+- **Because** the registry refuses such a package on upload; stopping here tells the
+  author while they can still fix it, rather than when a release fails
+- **Pair** AC-7
 - verify: unit
 
 ## Elsewhere

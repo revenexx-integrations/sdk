@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildManifest, MANIFEST_VERSION, parsePackageMeta } from './manifest.js';
+import { buildManifest, MANIFEST_VERSION, packageIconProblem, parsePackageMeta } from './manifest.js';
 import type { ICredential, INode, ITemplateDescription } from './types.js';
 
 const fakeNode: INode = {
@@ -111,6 +111,7 @@ test('parsePackageMeta keeps the registry-relevant fields [@spec:package-manifes
     name: '@revenexx/integrations-nodes-core',
     version: '0.2.0',
     displayName: 'Core',
+    icon: undefined,
   });
 });
 
@@ -142,18 +143,18 @@ test('parsePackageMeta trims a surrounding-whitespace displayName [@spec:package
 test('parsePackageMeta trims name/version and blanks whitespace-only ones [@spec:package-manifest:AC-9]', () => {
   assert.deepEqual(
     parsePackageMeta({ name: '  @revenexx/x  ', version: ' 1.0.0 ' }),
-    { name: '@revenexx/x', version: '1.0.0', displayName: undefined },
+    { name: '@revenexx/x', version: '1.0.0', displayName: undefined, icon: undefined },
   );
   assert.deepEqual(
     parsePackageMeta({ name: '   ', version: '   ' }),
-    { name: '', version: '', displayName: undefined },
+    { name: '', version: '', displayName: undefined, icon: undefined },
   );
 });
 
 // AC-10 — Metadata that is not readable yields a safe shape, not a failure
 test('parsePackageMeta coerces malformed input to a safe shape [@spec:package-manifest:AC-10]', () => {
-  assert.deepEqual(parsePackageMeta(null), { name: '', version: '', displayName: undefined });
-  assert.deepEqual(parsePackageMeta('nope'), { name: '', version: '', displayName: undefined });
+  assert.deepEqual(parsePackageMeta(null), { name: '', version: '', displayName: undefined, icon: undefined });
+  assert.deepEqual(parsePackageMeta('nope'), { name: '', version: '', displayName: undefined, icon: undefined });
 });
 
 // AC-4 — Declared images are carried through untouched
@@ -210,4 +211,26 @@ test('buildManifest writes a dotted output field name out as one name [@spec:out
   assert.deepEqual(Object.keys(declared), ['counts', 'counts.added']);
   assert.deepEqual(declared, fields);
   assert.equal('fields' in declared.counts, false);
+});
+
+// AC-13 — A package's folder icon is read from the same group, and one the registry would refuse stops the build
+test('parsePackageMeta reads revenexx.icon trimmed, and a blank or non-text one as none [@spec:package-manifest:AC-13]', () => {
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: { icon: ' lucide:bell ' } }).icon, 'lucide:bell');
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: { icon: '  ' } }).icon, undefined);
+  // PHP's trim() leaves a no-break space, so the registry would refuse what JS's trim() cleans
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: { icon: 'lucide:bell\u00A0' } }).icon, 'lucide:bell\u00A0');
+  for (const notText of [['lucide:bell'], true, 7, { name: 'bell' }]) {
+    assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', revenexx: { icon: notText } }).icon, undefined);
+  }
+  assert.equal(parsePackageMeta({ name: 'x', version: '1.0.0', icon: 'lucide:bell' }).icon, undefined);
+});
+
+// AC-13 — A package's folder icon is read from the same group, and one the registry would refuse stops the build
+test('packageIconProblem accepts a Lucide name and none, and names a malformed one [@spec:package-manifest:AC-13]', () => {
+  assert.equal(packageIconProblem(undefined), undefined);
+  assert.equal(packageIconProblem('lucide:message-square'), undefined);
+  for (const bad of ['mdi:bell', 'bell', 'lucide:MessageSquare', 'lucide:bell-']) {
+    const problem = packageIconProblem(bad) ?? '';
+    assert.ok(problem.includes('"revenexx.icon"') && problem.includes(`got "${bad}"`), problem);
+  }
 });
