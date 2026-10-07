@@ -53,12 +53,18 @@ export interface IInputPort {
  * One value an output carries, as the editor offers it to the next step.
  *
  * Deliberately flat: there is no member describing what is inside the value,
- * because the registry's manifest schema refuses any key beside these two and
+ * because the registry's manifest schema refuses any key beside these three and
  * the studio reads none. What is inside a value is declared beside it, under a
  * dotted name — see `IOutputPort.fields` (PO-408).
  */
 export interface IOutputField {
   dataType: DataType;
+  /**
+   * What the value is called, for an author picking it in the editor's `{ }` list —
+   * "Rechnungen" where the key is `invoices` (PO-594). Left out, the editor shows the
+   * key, as before.
+   */
+  label?: LocalizedString;
   description?: LocalizedString;
 }
 
