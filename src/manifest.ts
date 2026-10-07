@@ -37,9 +37,10 @@ export interface NodeManifest {
  * The registry-relevant fields of a node package's `package.json`, as read by
  * the CLI. `name`/`version` identify the package; `displayName` is the
  * human-readable bundle label shown in the editor's node palette (e.g.
- * „Business Central"). All three are read straight from `package.json` by the
- * integrations server on upload — the CLI reads them only to warn about a
- * missing label and to annotate the manifest log line.
+ * „Business Central"); `icon` marks its folder there. All four are read straight
+ * from `package.json` by the integrations server on upload — the CLI reads them
+ * only to warn about a missing label, to annotate the manifest log line, and to
+ * stop on an icon the server would refuse.
  *
  * The label lives under a namespaced `revenexx` group in `package.json`
  * (`{ "revenexx": { "displayName": "…" } }`), not a bespoke top-level key, so
@@ -54,8 +55,9 @@ export interface NodePackageMeta {
    * The glyph that marks the package's folder in the studio's palette, as
    * `lucide:<kebab-name>` (e.g. `lucide:bell`); optional. Declared by a package
    * holding several services, which has no one vendor logo to mark its folder
-   * with — a package that is one vendor leaves it out. Read as written; whether
-   * it is well formed is {@link packageIconProblem}'s question.
+   * with — a package that is one vendor leaves it out. Trimmed, and a value that
+   * is not a string counts as none, as the server reads it; whether it is well
+   * formed is {@link packageIconProblem}'s question.
    */
   icon?: string;
 }
@@ -76,7 +78,7 @@ export function packageIconProblem(icon: string | undefined): string | undefined
 /**
  * Extracts {@link NodePackageMeta} from parsed `package.json` contents, keeping
  * only the registry-relevant fields and coercing anything malformed to a safe
- * shape. All three fields are trimmed; a blank or whitespace-only value becomes
+ * shape. All four fields are trimmed; a blank or whitespace-only value becomes
  * `''` (`name`/`version`) or `undefined` (`displayName`, `icon`, matching how the
  * server treats them), so whitespace can't masquerade as a present value in
  * tooling. The bundle label and the folder icon are read from the `revenexx`
@@ -96,7 +98,7 @@ export function parsePackageMeta(raw: unknown): NodePackageMeta {
     name: str(obj.name),
     version: str(obj.version),
     displayName: displayName !== '' ? displayName : undefined,
-    ...(icon !== '' ? { icon } : {}),
+    icon: icon !== '' ? icon : undefined,
   };
 }
 

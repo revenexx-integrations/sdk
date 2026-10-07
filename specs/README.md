@@ -313,6 +313,7 @@ name they are holding.
 | `OAuth2AuthCodeCredential` | [credentials.md](credentials.md) |
 | `OAuth2ClientCredentialsCredential` | [credentials.md](credentials.md) |
 | `OPERATORS` | [setting-conditions.md](setting-conditions.md) |
+| `packageIconProblem` | [package-manifest.md](package-manifest.md) |
 | `parsePackageMeta` | [package-manifest.md](package-manifest.md) |
 | `readArrayBuffer` | [response-reading.md](response-reading.md) |
 | `readJsonOrText` | [response-reading.md](response-reading.md) |
