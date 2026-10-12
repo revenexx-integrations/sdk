@@ -105,15 +105,16 @@ workflow.
   header the other end controls
 - verify: unit
 
-### AC-7 — A secret the caller sent does not cross an origin boundary on a redirect
+### AC-7 — A secret the caller sent in a header does not cross an origin boundary on a redirect
 
 - **Given** a request carrying a key or credential in any header — `Authorization`,
   `Cookie`, `Proxy-Authorization`, or a header of the caller's own naming such as
   `X-API-Key`
 - **When** it is redirected to a different origin
 - **Then** only the headers that carry no secret — what the request accepts, what its
-  body is, its SOAP action and who is asking — go on to the next hop, and every other
-  header the caller set is dropped before it is made
+  body is, the conditions and range it is asked under, its SOAP action and who is
+  asking — go on to the next hop, and every other header the caller set is dropped
+  before it is made
 - **And** a redirect to the *same* origin keeps every header, so an ordinary redirect
   within one host does not silently lose the caller's credentials
 - **Because** otherwise any host that can answer with a redirect can harvest the
@@ -121,6 +122,8 @@ workflow.
   service asks for. A rule that names the secret headers is only as complete as the
   last name somebody remembered; one that names the harmless ones costs a header when
   it is incomplete, never a key
+- **Note** this is about headers only. The body a redirect resends is the *Known* gap
+  below
 - verify: unit
 
 ### AC-8 — A refusal never discloses the address a hostname resolved to
@@ -301,6 +304,11 @@ workflow.
 
 **Known**
 
+- **A body a redirect resends goes to the other origin too.** The kinds of redirect
+  that preserve the method resend the body as given, and AC-7 keeps secrets out of the
+  headers only — a token request's `client_secret`, or whatever data a node posts,
+  still reaches the host the redirect names.
+  [PO-684](https://linear.app/revenexx/issue/PO-684) is where that is decided.
 - **The handshake with a refused address has already happened.** A connection is
   judged once it stands, so nothing of the request is written to a private address
   (AC-17) — but the TCP handshake, and for an `https` target the TLS handshake, are

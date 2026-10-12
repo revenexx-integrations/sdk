@@ -960,7 +960,7 @@ test('safeFetch downgrades POST to GET and drops the body on a 303 redirect [@sp
   });
 });
 
-// AC-7 — Authentication-bearing headers do not cross an origin boundary on a redirect
+// AC-7 — A secret the caller sent in a header does not cross an origin boundary on a redirect
 test('safeFetch strips auth-bearing headers on a cross-origin redirect [@spec:ssrf-guard:AC-7]', () => {
   const { fetch: mock, calls } = scriptedFetch([
     redirect(302, 'https://93.184.216.35/next'),
@@ -987,22 +987,23 @@ test('safeFetch strips auth-bearing headers on a cross-origin redirect [@spec:ss
   });
 });
 
-// AC-7 — Authentication-bearing headers do not cross an origin boundary on a redirect
-test('safeFetch preserves auth-bearing headers on a same-origin redirect [@spec:ssrf-guard:AC-7]', () => {
+// AC-7 — A secret the caller sent in a header does not cross an origin boundary on a redirect
+test('safeFetch preserves every header, keys included, on a same-origin redirect [@spec:ssrf-guard:AC-7]', () => {
   const { fetch: mock, calls } = scriptedFetch([
     redirect(302, 'https://93.184.216.34/next'),
     new Response(null, { status: 200 }),
   ]);
   return withFetch(mock, async () => {
     await safeFetch('https://93.184.216.34/start', {
-      headers: { authorization: 'Bearer secret', cookie: 'session=abc' },
+      headers: { authorization: 'Bearer secret', cookie: 'session=abc', 'x-api-key': 'secret-key' },
     });
     assert.equal(calls[1]?.headers.get('authorization'), 'Bearer secret');
     assert.equal(calls[1]?.headers.get('cookie'), 'session=abc');
+    assert.equal(calls[1]?.headers.get('x-api-key'), 'secret-key');
   });
 });
 
-// AC-7 — Authentication-bearing headers do not cross an origin boundary on a redirect
+// AC-7 — A secret the caller sent in a header does not cross an origin boundary on a redirect
 // The headers a node puts its key in, by the names the packages actually use and one
 // nobody has listed — the rule cannot depend on knowing the name.
 test('safeFetch drops a key in a header of its own on a cross-origin redirect [@spec:ssrf-guard:AC-7]', () => {
@@ -1028,23 +1029,10 @@ test('safeFetch drops a key in a header of its own on a cross-origin redirect [@
   });
 });
 
-// AC-7 — Authentication-bearing headers do not cross an origin boundary on a redirect
-test('safeFetch keeps a key in a header of its own on a same-origin redirect [@spec:ssrf-guard:AC-7]', () => {
-  const { fetch: mock, calls } = scriptedFetch([
-    redirect(307, 'https://93.184.216.34/next'),
-    new Response(null, { status: 200 }),
-  ]);
-  return withFetch(mock, async () => {
-    await safeFetch('https://93.184.216.34/start', {
-      headers: { 'x-api-key': 'secret-key' },
-    });
-    assert.equal(calls[1]?.headers.get('x-api-key'), 'secret-key');
-  });
-});
-
-// AC-7 — Authentication-bearing headers do not cross an origin boundary on a redirect
+// AC-7 — A secret the caller sent in a header does not cross an origin boundary on a redirect
 // The other half of the allow-list: what carries no secret still describes the
-// request on the next host, so a SOAP call keeps its action and its framing.
+// request on the next host, so a SOAP call keeps its action and its framing, and a
+// guarded write keeps its guard.
 test('safeFetch keeps the headers that carry no secret on a cross-origin redirect [@spec:ssrf-guard:AC-7]', () => {
   const kept = {
     accept: 'text/xml',
@@ -1052,6 +1040,12 @@ test('safeFetch keeps the headers that carry no secret on a cross-origin redirec
     'accept-language': 'de',
     'content-language': 'de',
     'content-type': 'text/xml; charset=utf-8',
+    'if-match': 'W/"etag-1"',
+    'if-modified-since': 'Mon, 12 Oct 2026 08:00:00 GMT',
+    'if-none-match': '"etag-0"',
+    'if-range': '"etag-1"',
+    'if-unmodified-since': 'Mon, 12 Oct 2026 08:00:00 GMT',
+    range: 'bytes=0-1023',
     soapaction: '"urn:GetCustomer"',
     'user-agent': 'revenexx-worker',
   };

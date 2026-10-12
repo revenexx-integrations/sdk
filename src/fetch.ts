@@ -16,8 +16,9 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
  * in headers of its own choosing (`X-API-Key`, `api-key`, `x-api-token`, or a
  * name a workflow author typed) and no deny-list can know them all. An allow-list
  * fails the safe way: a missing entry costs a header, never a key.
- * `soapaction` is here because SOAP 1.1 cannot be dispatched without it and it
- * carries no secret.
+ * `soapaction` is here because SOAP 1.1 cannot be dispatched without it, and the
+ * conditional and range headers because dropping them changes what the request
+ * does — a write guarded by `If-Match` would land unguarded. None carries a secret.
  */
 const CROSS_ORIGIN_SAFE_HEADERS = new Set([
   'accept',
@@ -25,6 +26,12 @@ const CROSS_ORIGIN_SAFE_HEADERS = new Set([
   'accept-language',
   'content-language',
   'content-type',
+  'if-match',
+  'if-modified-since',
+  'if-none-match',
+  'if-range',
+  'if-unmodified-since',
+  'range',
   'soapaction',
   'user-agent',
 ]);
