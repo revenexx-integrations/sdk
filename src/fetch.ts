@@ -16,16 +16,22 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
  * in headers of its own choosing (`X-API-Key`, `api-key`, `x-api-token`, or a
  * name a workflow author typed) and no deny-list can know them all. An allow-list
  * fails the safe way: a missing entry costs a header, never a key.
- * `soapaction` is here because SOAP 1.1 cannot be dispatched without it, and the
- * conditional and range headers because dropping them changes what the request
- * does — a write guarded by `If-Match` would land unguarded. None carries a secret.
+ * `soapaction` is here because SOAP 1.1 cannot be dispatched without it;
+ * `content-encoding` because a 307/308 resends the body as it was, and the next
+ * host cannot read a compressed body without being told so; and the conditional,
+ * range and idempotency headers because dropping them changes what the request
+ * does — a write guarded by `If-Match` would land unguarded, a retried POST
+ * without its `Idempotency-Key` could land twice. None carries a secret.
+ * Read from outside through {@link headerCrossesOrigin}.
  */
 const CROSS_ORIGIN_SAFE_HEADERS = new Set([
   'accept',
   'accept-encoding',
   'accept-language',
+  'content-encoding',
   'content-language',
   'content-type',
+  'idempotency-key',
   'if-match',
   'if-modified-since',
   'if-none-match',
@@ -38,7 +44,11 @@ const CROSS_ORIGIN_SAFE_HEADERS = new Set([
 
 /**
  * Whether a request header with this name goes on to the next hop when
- * {@link safeFetch} follows a redirect to another origin. The keep-list is by
+ * {@link safeFetch} follows a redirect to another origin — `true` for `Accept`,
+ * `Accept-Encoding`, `Accept-Language`, `Content-Encoding`, `Content-Language`,
+ * `Content-Type`, `Idempotency-Key`, `If-Match`, `If-Modified-Since`,
+ * `If-None-Match`, `If-Range`, `If-Unmodified-Since`, `Range`, `SOAPAction` and
+ * `User-Agent`, in any case, and `false` for every other name. The keep-list is by
  * name, so it can only keep a secret out of the headers it drops: a credential
  * whose header name the author chooses must refuse a name this answers `true`
  * for, or its key would cross with the harmless headers.
@@ -149,7 +159,7 @@ async function guardUrl(
  * followed manually (`redirect: 'manual'`) so a 3xx `Location` pointing at a
  * private/loopback address is re-checked and rejected rather than transparently
  * followed by the runtime. A cross-origin hop keeps only the headers in
- * {@link CROSS_ORIGIN_SAFE_HEADERS}, an `https`→`http` downgrade is refused, and
+ * the headers {@link headerCrossesOrigin} answers `true` for, an `https`→`http` downgrade is refused, and
  * the request is downgraded to `GET` per the usual 301/302/303 rules.
  */
 async function guardedFetch(

@@ -1032,15 +1032,17 @@ test('safeFetch drops a key in a header of its own on a cross-origin redirect [@
 
 // AC-7 — A secret the caller sent in a header does not cross an origin boundary on a redirect
 // The other half of the allow-list: what carries no secret still describes the
-// request on the next host, so a SOAP call keeps its action and its framing, and a
-// guarded write keeps its guard.
+// request on the next host, so a SOAP call keeps its action and its framing, a
+// resent compressed body stays readable, and a guarded write keeps its guard.
 test('safeFetch keeps the headers that carry no secret on a cross-origin redirect [@spec:ssrf-guard:AC-7]', () => {
   const kept = {
     accept: 'text/xml',
     'accept-encoding': 'gzip',
     'accept-language': 'de',
+    'content-encoding': 'gzip',
     'content-language': 'de',
     'content-type': 'text/xml; charset=utf-8',
+    'idempotency-key': 'order-4711',
     'if-match': 'W/"etag-1"',
     'if-modified-since': 'Mon, 12 Oct 2026 08:00:00 GMT',
     'if-none-match': '"etag-0"',
@@ -1070,7 +1072,7 @@ test('safeFetch keeps the headers that carry no secret on a cross-origin redirec
 // The names a credential would be refused, in the case and spacing an author types
 // them, against the key headers the packages actually send.
 test('headerCrossesOrigin answers true for the kept names and false for key headers [@spec:ssrf-guard:AC-20]', () => {
-  for (const name of ['User-Agent', ' accept ', 'SOAPAction', 'If-Match', 'RANGE']) {
+  for (const name of ['User-Agent', ' accept ', 'SOAPAction', 'If-Match', 'RANGE', 'Content-Encoding', 'Idempotency-Key']) {
     assert.equal(headerCrossesOrigin(name), true, `${name} crosses`);
   }
   for (const name of ['X-API-Key', 'api-key', 'x-api-token', 'Authorization', 'Cookie', 'X-User-Agent']) {

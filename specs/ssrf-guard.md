@@ -113,8 +113,8 @@ workflow.
   `X-API-Key`
 - **When** it is redirected to a different origin
 - **Then** only the headers that carry no secret — what the request accepts, what its
-  body is, the conditions and range it is asked under, its SOAP action and who is
-  asking — go on to the next hop, and every other header the caller set is dropped
+  body is and how it is encoded, the conditions, range and idempotency key it is asked
+  under, its SOAP action and who is asking — go on to the next hop, and every other header the caller set is dropped
   before it is made
 - **And** a redirect to the *same* origin keeps every header, so an ordinary redirect
   within one host does not silently lose the caller's credentials
