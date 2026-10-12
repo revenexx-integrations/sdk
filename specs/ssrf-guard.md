@@ -7,7 +7,7 @@ where:
   - isBlockedAddress — the address ruling, for a caller that already has one
 docs:
   - docs/overview.md
-updated: 2026-09-07
+updated: 2026-10-12
 ---
 
 # The SSRF guard
@@ -105,15 +105,22 @@ workflow.
   header the other end controls
 - verify: unit
 
-### AC-7 — Authentication-bearing headers do not cross an origin boundary on a redirect
+### AC-7 — A secret the caller sent does not cross an origin boundary on a redirect
 
-- **Given** a request carrying `Authorization`, `Cookie` or `Proxy-Authorization`
+- **Given** a request carrying a key or credential in any header — `Authorization`,
+  `Cookie`, `Proxy-Authorization`, or a header of the caller's own naming such as
+  `X-API-Key`
 - **When** it is redirected to a different origin
-- **Then** those headers are dropped before the next hop is made
-- **And** a redirect to the *same* origin keeps them, so an ordinary redirect within
-  one host does not silently lose the caller's credentials
-- **Because** otherwise any host that can answer with a 302 can harvest the
-  credentials meant for somebody else
+- **Then** only the headers that carry no secret — what the request accepts, what its
+  body is, its SOAP action and who is asking — go on to the next hop, and every other
+  header the caller set is dropped before it is made
+- **And** a redirect to the *same* origin keeps every header, so an ordinary redirect
+  within one host does not silently lose the caller's credentials
+- **Because** otherwise any host that can answer with a redirect can harvest the
+  credentials meant for somebody else, and a node puts its key in whatever header the
+  service asks for. A rule that names the secret headers is only as complete as the
+  last name somebody remembered; one that names the harmless ones costs a header when
+  it is incomplete, never a key
 - verify: unit
 
 ### AC-8 — A refusal never discloses the address a hostname resolved to
@@ -402,3 +409,6 @@ workflow.
     gap of its own, beside the two other residuals the review turned up: a connect that
     lands after its call released, and a proxy dispatcher refusing every call rather than
     weakening the check.
+- [PO-664](https://linear.app/revenexx/issue/PO-664) — AC-7 turned from the three
+  headers a browser strips into the few that may cross: a key in a header of the
+  caller's own naming had been going to whatever host a redirect named

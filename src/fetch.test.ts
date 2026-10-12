@@ -1001,3 +1001,72 @@ test('safeFetch preserves auth-bearing headers on a same-origin redirect [@spec:
     assert.equal(calls[1]?.headers.get('cookie'), 'session=abc');
   });
 });
+
+// AC-7 — Authentication-bearing headers do not cross an origin boundary on a redirect
+// The headers a node puts its key in, by the names the packages actually use and one
+// nobody has listed — the rule cannot depend on knowing the name.
+test('safeFetch drops a key in a header of its own on a cross-origin redirect [@spec:ssrf-guard:AC-7]', () => {
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(307, 'https://93.184.216.35/steal'),
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    await safeFetch('https://93.184.216.34/start', {
+      method: 'POST',
+      body: '<soap:Envelope/>',
+      headers: {
+        'x-api-key': 'secret-key',
+        'api-key': 'brevo-key',
+        'x-api-token': 'pipedrive-token',
+        'x-tenant-secret': 'typed-by-an-author',
+      },
+    });
+    assert.equal(calls[0]?.headers.get('x-api-key'), 'secret-key');
+    for (const name of ['x-api-key', 'api-key', 'x-api-token', 'x-tenant-secret']) {
+      assert.equal(calls[1]?.headers.get(name), null, `${name} must not cross the origin boundary`);
+    }
+  });
+});
+
+// AC-7 — Authentication-bearing headers do not cross an origin boundary on a redirect
+test('safeFetch keeps a key in a header of its own on a same-origin redirect [@spec:ssrf-guard:AC-7]', () => {
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(307, 'https://93.184.216.34/next'),
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    await safeFetch('https://93.184.216.34/start', {
+      headers: { 'x-api-key': 'secret-key' },
+    });
+    assert.equal(calls[1]?.headers.get('x-api-key'), 'secret-key');
+  });
+});
+
+// AC-7 — Authentication-bearing headers do not cross an origin boundary on a redirect
+// The other half of the allow-list: what carries no secret still describes the
+// request on the next host, so a SOAP call keeps its action and its framing.
+test('safeFetch keeps the headers that carry no secret on a cross-origin redirect [@spec:ssrf-guard:AC-7]', () => {
+  const kept = {
+    accept: 'text/xml',
+    'accept-encoding': 'gzip',
+    'accept-language': 'de',
+    'content-language': 'de',
+    'content-type': 'text/xml; charset=utf-8',
+    soapaction: '"urn:GetCustomer"',
+    'user-agent': 'revenexx-worker',
+  };
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(307, 'https://93.184.216.35/next'),
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    await safeFetch('https://93.184.216.34/start', {
+      method: 'POST',
+      body: '<soap:Envelope/>',
+      headers: kept,
+    });
+    for (const [name, value] of Object.entries(kept)) {
+      assert.equal(calls[1]?.headers.get(name), value, `${name} must survive the origin boundary`);
+    }
+  });
+});

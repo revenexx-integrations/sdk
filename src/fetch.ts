@@ -10,6 +10,25 @@ export const MAX_REDIRECTS = 5;
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
+/**
+ * The only request headers that survive a redirect to another origin. Every
+ * other header the caller set is dropped on that hop, because a node sends keys
+ * in headers of its own choosing (`X-API-Key`, `api-key`, `x-api-token`, or a
+ * name a workflow author typed) and no deny-list can know them all. An allow-list
+ * fails the safe way: a missing entry costs a header, never a key.
+ * `soapaction` is here because SOAP 1.1 cannot be dispatched without it and it
+ * carries no secret.
+ */
+const CROSS_ORIGIN_SAFE_HEADERS = new Set([
+  'accept',
+  'accept-encoding',
+  'accept-language',
+  'content-language',
+  'content-type',
+  'soapaction',
+  'user-agent',
+]);
+
 export const DEFAULT_RETRY_ATTEMPTS = 0;
 export const MAX_RETRY_ATTEMPTS = 5;
 export const DEFAULT_RETRY_DELAY_MS = 1_000;
@@ -111,8 +130,8 @@ async function guardUrl(
  * redirect target are checked with {@link assertPublicUrl}; redirects are
  * followed manually (`redirect: 'manual'`) so a 3xx `Location` pointing at a
  * private/loopback address is re-checked and rejected rather than transparently
- * followed by the runtime. `Authorization`, `Cookie` and `Proxy-Authorization`
- * are dropped on a cross-origin hop, an `https`→`http` downgrade is refused, and
+ * followed by the runtime. A cross-origin hop keeps only the headers in
+ * {@link CROSS_ORIGIN_SAFE_HEADERS}, an `https`→`http` downgrade is refused, and
  * the request is downgraded to `GET` per the usual 301/302/303 rules.
  */
 async function guardedFetch(
@@ -189,13 +208,14 @@ async function guardedFetch(
       headers.delete('content-type');
       headers.delete('content-length');
     }
-    // Never leak credentials across an origin boundary on redirect — drop every
-    // authentication-bearing header, matching what browsers/undici strip on a
-    // cross-origin redirect.
+    // Never leak credentials across an origin boundary on redirect. Browsers and
+    // undici strip only `Authorization`, `Cookie` and `Proxy-Authorization`, which
+    // is enough where the caller cannot choose a header for its key; a node can,
+    // so everything not known to be harmless is dropped instead (PO-664).
     if (nextUrl.origin !== base.origin) {
-      headers.delete('authorization');
-      headers.delete('cookie');
-      headers.delete('proxy-authorization');
+      for (const name of [...headers.keys()]) {
+        if (!CROSS_ORIGIN_SAFE_HEADERS.has(name)) headers.delete(name);
+      }
     }
 
     currentUrl = nextUrl;
