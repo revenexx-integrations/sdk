@@ -5,6 +5,7 @@ where:
   - safeFetch — the request helper a node reaches a host through
   - assertPublicUrl — the guard on its own, for a caller that opens its own request
   - isBlockedAddress — the address ruling, for a caller that already has one
+  - headerCrossesOrigin — which header names a redirect to another origin keeps
 docs:
   - docs/overview.md
 updated: 2026-10-12
@@ -123,7 +124,8 @@ workflow.
   last name somebody remembered; one that names the harmless ones costs a header when
   it is incomplete, never a key
 - **Note** this is about headers only. The body a redirect resends is the *Known* gap
-  below
+  below. The headers kept are chosen by name, so a secret put into one of *them* is
+  not covered here — AC-20 is how a credential stays out of them
 - verify: unit
 
 ### AC-8 — A refusal never discloses the address a hostname resolved to
@@ -291,6 +293,21 @@ workflow.
   refuses a range nobody named without refusing the ordinary internet
 - verify: unit
 
+### AC-20 — A credential can ask which header names a redirect to another origin keeps
+
+- **Given** a credential whose header name the author chooses
+- **When** it checks that name with `headerCrossesOrigin`
+- **Then** the answer is `true` for exactly the names AC-7 keeps on a redirect to
+  another origin — whatever their case or surrounding spaces — and `false` for every
+  other name, a key header like `X-API-Key` among them
+- **Because** AC-7 keeps headers by name and cannot tell a harmless `User-Agent` from a
+  key an author decided to send under that name. The credential is the one place that
+  knows its header carries a secret, so it has to refuse a name that crosses — and it
+  can only refuse what this package tells it, rather than a copy of the list that goes
+  stale the next time the list changes
+- **Pair** AC-7, the same list seen from the request instead of from the name
+- verify: unit
+
 ## Elsewhere
 
 - **What following a redirect does to the request** — how many hops are allowed, what a
@@ -420,3 +437,7 @@ workflow.
 - [PO-664](https://linear.app/revenexx/issue/PO-664) — AC-7 turned from the three
   headers a browser strips into the few that may cross: a key in a header of the
   caller's own naming had been going to whatever host a redirect named
+  - Review found AC-7 promising more than it held twice. It said no secret leaves the
+    origin, while a 307/308 still resends the body — now a *Known* gap, PO-684. And a
+    keep-list by name keeps a key an author sent *as* `User-Agent`; AC-20 gives the
+    credential that chooses the name the question to refuse it with

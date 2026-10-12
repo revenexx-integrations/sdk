@@ -36,6 +36,17 @@ const CROSS_ORIGIN_SAFE_HEADERS = new Set([
   'user-agent',
 ]);
 
+/**
+ * Whether a request header with this name goes on to the next hop when
+ * {@link safeFetch} follows a redirect to another origin. The keep-list is by
+ * name, so it can only keep a secret out of the headers it drops: a credential
+ * whose header name the author chooses must refuse a name this answers `true`
+ * for, or its key would cross with the harmless headers.
+ */
+export function headerCrossesOrigin(name: string): boolean {
+  return CROSS_ORIGIN_SAFE_HEADERS.has(name.trim().toLowerCase());
+}
+
 export const DEFAULT_RETRY_ATTEMPTS = 0;
 export const MAX_RETRY_ATTEMPTS = 5;
 export const DEFAULT_RETRY_DELAY_MS = 1_000;
@@ -221,7 +232,7 @@ async function guardedFetch(
     // so everything not known to be harmless is dropped instead (PO-664).
     if (nextUrl.origin !== base.origin) {
       for (const name of [...headers.keys()]) {
-        if (!CROSS_ORIGIN_SAFE_HEADERS.has(name)) headers.delete(name);
+        if (!headerCrossesOrigin(name)) headers.delete(name);
       }
     }
 

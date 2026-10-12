@@ -6,6 +6,7 @@ import {
   DEFAULT_RETRY_ATTEMPTS,
   DEFAULT_RETRY_DELAY_MS,
   DEFAULT_TIMEOUT_MS,
+  headerCrossesOrigin,
   MAX_REDIRECTS,
   MAX_RESPONSE_BYTES,
   MAX_RETRY_ATTEMPTS,
@@ -1061,6 +1062,37 @@ test('safeFetch keeps the headers that carry no secret on a cross-origin redirec
     });
     for (const [name, value] of Object.entries(kept)) {
       assert.equal(calls[1]?.headers.get(name), value, `${name} must survive the origin boundary`);
+    }
+  });
+});
+
+// AC-20 — A credential can ask which header names a redirect to another origin keeps
+// The names a credential would be refused, in the case and spacing an author types
+// them, against the key headers the packages actually send.
+test('headerCrossesOrigin answers true for the kept names and false for key headers [@spec:ssrf-guard:AC-20]', () => {
+  for (const name of ['User-Agent', ' accept ', 'SOAPAction', 'If-Match', 'RANGE']) {
+    assert.equal(headerCrossesOrigin(name), true, `${name} crosses`);
+  }
+  for (const name of ['X-API-Key', 'api-key', 'x-api-token', 'Authorization', 'Cookie', 'X-User-Agent']) {
+    assert.equal(headerCrossesOrigin(name), false, `${name} does not cross`);
+  }
+});
+
+// AC-20 — A credential can ask which header names a redirect to another origin keeps
+// The answer and the hop are the same list: a name it calls crossing does reach the
+// other origin, and one it does not call crossing does not.
+test('headerCrossesOrigin agrees with what a cross-origin redirect keeps [@spec:ssrf-guard:AC-20] [@spec:ssrf-guard:AC-7]', () => {
+  const names = ['user-agent', 'soapaction', 'if-none-match', 'x-api-key', 'x-custom'];
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(302, 'https://93.184.216.35/next'),
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    await safeFetch('https://93.184.216.34/start', {
+      headers: Object.fromEntries(names.map((n) => [n, 'v'])),
+    });
+    for (const name of names) {
+      assert.equal(calls[1]?.headers.has(name), headerCrossesOrigin(name), name);
     }
   });
 });
