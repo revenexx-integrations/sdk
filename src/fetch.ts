@@ -10,6 +10,53 @@ export const MAX_REDIRECTS = 5;
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
+/**
+ * The only request headers that survive a redirect to another origin. Every
+ * other header the caller set is dropped on that hop, because a node sends keys
+ * in headers of its own choosing (`X-API-Key`, `api-key`, `x-api-token`, or a
+ * name a workflow author typed) and no deny-list can know them all. An allow-list
+ * fails the safe way: a missing entry costs a header, never a key.
+ * `soapaction` is here because SOAP 1.1 cannot be dispatched without it;
+ * `content-encoding` because a 307/308 resends the body as it was, and the next
+ * host cannot read a compressed body without being told so; and the conditional,
+ * range and idempotency headers because dropping them changes what the request
+ * does — a write guarded by `If-Match` would land unguarded, a retried POST
+ * without its `Idempotency-Key` could land twice. None carries a secret.
+ * Read from outside through {@link headerCrossesOrigin}.
+ */
+const CROSS_ORIGIN_SAFE_HEADERS = new Set([
+  'accept',
+  'accept-encoding',
+  'accept-language',
+  'content-encoding',
+  'content-language',
+  'content-type',
+  'idempotency-key',
+  'if-match',
+  'if-modified-since',
+  'if-none-match',
+  'if-range',
+  'if-unmodified-since',
+  'range',
+  'soapaction',
+  'user-agent',
+]);
+
+/**
+ * Whether a request header with this name goes on to the next hop when
+ * {@link safeFetch} follows a redirect to another origin — `true` for `Accept`,
+ * `Accept-Encoding`, `Accept-Language`, `Content-Encoding`, `Content-Language`,
+ * `Content-Type`, `Idempotency-Key`, `If-Match`, `If-Modified-Since`,
+ * `If-None-Match`, `If-Range`, `If-Unmodified-Since`, `Range`, `SOAPAction` and
+ * `User-Agent`, in any case, and `false` for every other name. The keep-list is by
+ * name, so it can only keep a secret out of the headers it drops: a credential
+ * whose header name the author chooses must refuse a name this answers `true`
+ * for, or its key would cross with the harmless headers.
+ */
+export function headerCrossesOrigin(name: string): boolean {
+  return CROSS_ORIGIN_SAFE_HEADERS.has(name.trim().toLowerCase());
+}
+
 export const DEFAULT_RETRY_ATTEMPTS = 0;
 export const MAX_RETRY_ATTEMPTS = 5;
 export const DEFAULT_RETRY_DELAY_MS = 1_000;
@@ -111,8 +158,8 @@ async function guardUrl(
  * redirect target are checked with {@link assertPublicUrl}; redirects are
  * followed manually (`redirect: 'manual'`) so a 3xx `Location` pointing at a
  * private/loopback address is re-checked and rejected rather than transparently
- * followed by the runtime. `Authorization`, `Cookie` and `Proxy-Authorization`
- * are dropped on a cross-origin hop, an `https`→`http` downgrade is refused, and
+ * followed by the runtime. A cross-origin hop keeps only the headers in
+ * the headers {@link headerCrossesOrigin} answers `true` for, an `https`→`http` downgrade is refused, and
  * the request is downgraded to `GET` per the usual 301/302/303 rules.
  */
 async function guardedFetch(
@@ -189,13 +236,14 @@ async function guardedFetch(
       headers.delete('content-type');
       headers.delete('content-length');
     }
-    // Never leak credentials across an origin boundary on redirect — drop every
-    // authentication-bearing header, matching what browsers/undici strip on a
-    // cross-origin redirect.
+    // Never leak credentials across an origin boundary on redirect. Browsers and
+    // undici strip only `Authorization`, `Cookie` and `Proxy-Authorization`, which
+    // is enough where the caller cannot choose a header for its key; a node can,
+    // so everything not known to be harmless is dropped instead (PO-664).
     if (nextUrl.origin !== base.origin) {
-      headers.delete('authorization');
-      headers.delete('cookie');
-      headers.delete('proxy-authorization');
+      for (const name of [...headers.keys()]) {
+        if (!headerCrossesOrigin(name)) headers.delete(name);
+      }
     }
 
     currentUrl = nextUrl;

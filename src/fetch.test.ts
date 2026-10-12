@@ -6,6 +6,7 @@ import {
   DEFAULT_RETRY_ATTEMPTS,
   DEFAULT_RETRY_DELAY_MS,
   DEFAULT_TIMEOUT_MS,
+  headerCrossesOrigin,
   MAX_REDIRECTS,
   MAX_RESPONSE_BYTES,
   MAX_RETRY_ATTEMPTS,
@@ -960,7 +961,7 @@ test('safeFetch downgrades POST to GET and drops the body on a 303 redirect [@sp
   });
 });
 
-// AC-7 — Authentication-bearing headers do not cross an origin boundary on a redirect
+// AC-7 — A secret the caller sent in a header does not cross an origin boundary on a redirect
 test('safeFetch strips auth-bearing headers on a cross-origin redirect [@spec:ssrf-guard:AC-7]', () => {
   const { fetch: mock, calls } = scriptedFetch([
     redirect(302, 'https://93.184.216.35/next'),
@@ -987,17 +988,113 @@ test('safeFetch strips auth-bearing headers on a cross-origin redirect [@spec:ss
   });
 });
 
-// AC-7 — Authentication-bearing headers do not cross an origin boundary on a redirect
-test('safeFetch preserves auth-bearing headers on a same-origin redirect [@spec:ssrf-guard:AC-7]', () => {
+// AC-7 — A secret the caller sent in a header does not cross an origin boundary on a redirect
+test('safeFetch preserves every header, keys included, on a same-origin redirect [@spec:ssrf-guard:AC-7]', () => {
   const { fetch: mock, calls } = scriptedFetch([
     redirect(302, 'https://93.184.216.34/next'),
     new Response(null, { status: 200 }),
   ]);
   return withFetch(mock, async () => {
     await safeFetch('https://93.184.216.34/start', {
-      headers: { authorization: 'Bearer secret', cookie: 'session=abc' },
+      headers: { authorization: 'Bearer secret', cookie: 'session=abc', 'x-api-key': 'secret-key' },
     });
     assert.equal(calls[1]?.headers.get('authorization'), 'Bearer secret');
     assert.equal(calls[1]?.headers.get('cookie'), 'session=abc');
+    assert.equal(calls[1]?.headers.get('x-api-key'), 'secret-key');
+  });
+});
+
+// AC-7 — A secret the caller sent in a header does not cross an origin boundary on a redirect
+// The headers a node puts its key in, by the names the packages actually use and one
+// nobody has listed — the rule cannot depend on knowing the name.
+test('safeFetch drops a key in a header of its own on a cross-origin redirect [@spec:ssrf-guard:AC-7]', () => {
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(307, 'https://93.184.216.35/steal'),
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    await safeFetch('https://93.184.216.34/start', {
+      method: 'POST',
+      body: '<soap:Envelope/>',
+      headers: {
+        'x-api-key': 'secret-key',
+        'api-key': 'brevo-key',
+        'x-api-token': 'pipedrive-token',
+        'x-tenant-secret': 'typed-by-an-author',
+      },
+    });
+    assert.equal(calls[0]?.headers.get('x-api-key'), 'secret-key');
+    for (const name of ['x-api-key', 'api-key', 'x-api-token', 'x-tenant-secret']) {
+      assert.equal(calls[1]?.headers.get(name), null, `${name} must not cross the origin boundary`);
+    }
+  });
+});
+
+// AC-7 — A secret the caller sent in a header does not cross an origin boundary on a redirect
+// The other half of the allow-list: what carries no secret still describes the
+// request on the next host, so a SOAP call keeps its action and its framing, a
+// resent compressed body stays readable, and a guarded write keeps its guard.
+test('safeFetch keeps the headers that carry no secret on a cross-origin redirect [@spec:ssrf-guard:AC-7]', () => {
+  const kept = {
+    accept: 'text/xml',
+    'accept-encoding': 'gzip',
+    'accept-language': 'de',
+    'content-encoding': 'gzip',
+    'content-language': 'de',
+    'content-type': 'text/xml; charset=utf-8',
+    'idempotency-key': 'order-4711',
+    'if-match': 'W/"etag-1"',
+    'if-modified-since': 'Mon, 12 Oct 2026 08:00:00 GMT',
+    'if-none-match': '"etag-0"',
+    'if-range': '"etag-1"',
+    'if-unmodified-since': 'Mon, 12 Oct 2026 08:00:00 GMT',
+    range: 'bytes=0-1023',
+    soapaction: '"urn:GetCustomer"',
+    'user-agent': 'revenexx-worker',
+  };
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(307, 'https://93.184.216.35/next'),
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    await safeFetch('https://93.184.216.34/start', {
+      method: 'POST',
+      body: '<soap:Envelope/>',
+      headers: kept,
+    });
+    for (const [name, value] of Object.entries(kept)) {
+      assert.equal(calls[1]?.headers.get(name), value, `${name} must survive the origin boundary`);
+    }
+  });
+});
+
+// AC-20 — A credential can ask which header names a redirect to another origin keeps
+// The names a credential would be refused, in the case and spacing an author types
+// them, against the key headers the packages actually send.
+test('headerCrossesOrigin answers true for the kept names and false for key headers [@spec:ssrf-guard:AC-20]', () => {
+  for (const name of ['User-Agent', ' accept ', 'SOAPAction', 'If-Match', 'RANGE', 'Content-Encoding', 'Idempotency-Key']) {
+    assert.equal(headerCrossesOrigin(name), true, `${name} crosses`);
+  }
+  for (const name of ['X-API-Key', 'api-key', 'x-api-token', 'Authorization', 'Cookie', 'X-User-Agent']) {
+    assert.equal(headerCrossesOrigin(name), false, `${name} does not cross`);
+  }
+});
+
+// AC-20 — A credential can ask which header names a redirect to another origin keeps
+// The answer and the hop are the same list: a name it calls crossing does reach the
+// other origin, and one it does not call crossing does not.
+test('headerCrossesOrigin agrees with what a cross-origin redirect keeps [@spec:ssrf-guard:AC-20] [@spec:ssrf-guard:AC-7]', () => {
+  const names = ['user-agent', 'soapaction', 'if-none-match', 'x-api-key', 'x-custom'];
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(302, 'https://93.184.216.35/next'),
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    await safeFetch('https://93.184.216.34/start', {
+      headers: Object.fromEntries(names.map((n) => [n, 'v'])),
+    });
+    for (const name of names) {
+      assert.equal(calls[1]?.headers.has(name), headerCrossesOrigin(name), name);
+    }
   });
 });

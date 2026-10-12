@@ -298,6 +298,7 @@ name they are holding.
 | `errorPort` | [error-handling.md](error-handling.md) |
 | `errorResult` | [error-handling.md](error-handling.md) |
 | `evaluate` | [setting-conditions.md](setting-conditions.md) |
+| `headerCrossesOrigin` | [ssrf-guard.md](ssrf-guard.md) |
 | `httpErrorResult` | [error-handling.md](error-handling.md) |
 | `INode.loadOptions` | [author-time-resolution.md](author-time-resolution.md) |
 | `INode.resolveConfigSchema` | [author-time-resolution.md](author-time-resolution.md) |

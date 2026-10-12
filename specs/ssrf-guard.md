@@ -5,9 +5,10 @@ where:
   - safeFetch — the request helper a node reaches a host through
   - assertPublicUrl — the guard on its own, for a caller that opens its own request
   - isBlockedAddress — the address ruling, for a caller that already has one
+  - headerCrossesOrigin — which header names a redirect to another origin keeps
 docs:
   - docs/overview.md
-updated: 2026-09-07
+updated: 2026-10-12
 ---
 
 # The SSRF guard
@@ -105,15 +106,26 @@ workflow.
   header the other end controls
 - verify: unit
 
-### AC-7 — Authentication-bearing headers do not cross an origin boundary on a redirect
+### AC-7 — A secret the caller sent in a header does not cross an origin boundary on a redirect
 
-- **Given** a request carrying `Authorization`, `Cookie` or `Proxy-Authorization`
+- **Given** a request carrying a key or credential in any header — `Authorization`,
+  `Cookie`, `Proxy-Authorization`, or a header of the caller's own naming such as
+  `X-API-Key`
 - **When** it is redirected to a different origin
-- **Then** those headers are dropped before the next hop is made
-- **And** a redirect to the *same* origin keeps them, so an ordinary redirect within
-  one host does not silently lose the caller's credentials
-- **Because** otherwise any host that can answer with a 302 can harvest the
-  credentials meant for somebody else
+- **Then** only the headers that carry no secret — what the request accepts, what its
+  body is and how it is encoded, the conditions, range and idempotency key it is asked
+  under, its SOAP action and who is asking — go on to the next hop, and every other header the caller set is dropped
+  before it is made
+- **And** a redirect to the *same* origin keeps every header, so an ordinary redirect
+  within one host does not silently lose the caller's credentials
+- **Because** otherwise any host that can answer with a redirect can harvest the
+  credentials meant for somebody else, and a node puts its key in whatever header the
+  service asks for. A rule that names the secret headers is only as complete as the
+  last name somebody remembered; one that names the harmless ones costs a header when
+  it is incomplete, never a key
+- **Note** this is about headers only. The body a redirect resends is the *Known* gap
+  below. The headers kept are chosen by name, so a secret put into one of *them* is
+  not covered here — AC-20 is how a credential stays out of them
 - verify: unit
 
 ### AC-8 — A refusal never discloses the address a hostname resolved to
@@ -281,6 +293,21 @@ workflow.
   refuses a range nobody named without refusing the ordinary internet
 - verify: unit
 
+### AC-20 — A credential can ask which header names a redirect to another origin keeps
+
+- **Given** a credential whose header name the author chooses
+- **When** it checks that name with `headerCrossesOrigin`
+- **Then** the answer is `true` for exactly the names AC-7 keeps on a redirect to
+  another origin — whatever their case or surrounding spaces — and `false` for every
+  other name, a key header like `X-API-Key` among them
+- **Because** AC-7 keeps headers by name and cannot tell a harmless `User-Agent` from a
+  key an author decided to send under that name. The credential is the one place that
+  knows its header carries a secret, so it has to refuse a name that crosses — and it
+  can only refuse what this package tells it, rather than a copy of the list that goes
+  stale the next time the list changes
+- **Pair** AC-7, the same list seen from the request instead of from the name
+- verify: unit
+
 ## Elsewhere
 
 - **What following a redirect does to the request** — how many hops are allowed, what a
@@ -294,6 +321,11 @@ workflow.
 
 **Known**
 
+- **A body a redirect resends goes to the other origin too.** The kinds of redirect
+  that preserve the method resend the body as given, and AC-7 keeps secrets out of the
+  headers only — a token request's `client_secret`, or whatever data a node posts,
+  still reaches the host the redirect names.
+  [PO-684](https://linear.app/revenexx/issue/PO-684) is where that is decided.
 - **The handshake with a refused address has already happened.** A connection is
   judged once it stands, so nothing of the request is written to a private address
   (AC-17) — but the TCP handshake, and for an `https` target the TLS handshake, are
@@ -402,3 +434,10 @@ workflow.
     gap of its own, beside the two other residuals the review turned up: a connect that
     lands after its call released, and a proxy dispatcher refusing every call rather than
     weakening the check.
+- [PO-664](https://linear.app/revenexx/issue/PO-664) — AC-7 turned from the three
+  headers a browser strips into the few that may cross: a key in a header of the
+  caller's own naming had been going to whatever host a redirect named
+  - Review found AC-7 promising more than it held twice. It said no secret leaves the
+    origin, while a 307/308 still resends the body — now a *Known* gap, PO-684. And a
+    keep-list by name keeps a key an author sent *as* `User-Agent`; AC-20 gives the
+    credential that chooses the name the question to refuse it with
