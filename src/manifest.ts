@@ -1,4 +1,5 @@
 import { extractCredentialManifests, extractManifests } from './extract.js';
+import { outputProblems } from './branches.js';
 import type {
   ICredential,
   ICredentialDescription,
@@ -125,6 +126,10 @@ export function buildManifest(
   credentials: ICredential[] = [],
   templates: ITemplateDescription[] = [],
 ): NodeManifest {
+  const problems = nodes.flatMap((n) => outputProblems(n.description));
+  if (problems.length > 0) {
+    throw new Error(`Invalid output declaration:\n${problems.map((m) => `  ${m}`).join('\n')}`);
+  }
   const manifest: NodeManifest = {
     manifestVersion: MANIFEST_VERSION,
     nodes: extractManifests(nodes),

@@ -40,6 +40,9 @@ What stays out is the machinery behind the name — that is `docs/`, and
   the workflow carries on: which class of fault takes which way out, the one shape a
   routed failure arrives in, and the `error` output that carries the rule to the author
 
+- [`branch-selection.md`](branch-selection.md) — which output fires: a node with several
+  outputs names the one it took, what counts as several, and what the build refuses
+
 ### Acting as somebody's account
 
 - [`credentials.md`](credentials.md) — standing in for the person who owns the account:
@@ -288,6 +291,7 @@ name they are holding.
 | the `showIf` condition on a setting | [setting-conditions.md](setting-conditions.md) |
 | the `fields` an output declares | [output-fields.md](output-fields.md) |
 | `ApiKeyCredential` | [credentials.md](credentials.md) |
+| `assertBranchNamed` | [branch-selection.md](branch-selection.md) |
 | `assertPublicUrl` | [ssrf-guard.md](ssrf-guard.md) |
 | `backoffDelay` | [retrying-an-operation.md](retrying-an-operation.md) |
 | `BasicAuthCredential` | [credentials.md](credentials.md) |
@@ -295,6 +299,9 @@ name they are holding.
 | `collectImageSources` | [node-images.md](node-images.md) |
 | `copyImages` | [node-images.md](node-images.md) |
 | `DEFAULT_RETRY_POLICY` | [retrying-an-operation.md](retrying-an-operation.md) |
+| `IBranchedNodeResult` | [branch-selection.md](branch-selection.md) |
+| `isMultiPort` | [branch-selection.md](branch-selection.md) |
+| `outputProblems` | [branch-selection.md](branch-selection.md) |
 | `errorPort` | [error-handling.md](error-handling.md) |
 | `errorResult` | [error-handling.md](error-handling.md) |
 | `evaluate` | [setting-conditions.md](setting-conditions.md) |

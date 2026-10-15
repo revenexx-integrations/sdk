@@ -403,6 +403,14 @@ export interface INodeState {
 
 export interface INodeResult {
   outputs: Record<string, unknown>;
+  /**
+   * The output port the node took. Output ports are alternatives — exactly one
+   * fires — so a node with more than one output (an `error` port counts) MUST
+   * name it: left out, the worker fails the step instead of firing every
+   * connection (PO-751). Only a node with a single output may omit it. See
+   * `isMultiPort` for what counts as several, and `assertBranchNamed` to check
+   * a result in the node's own tests.
+   */
   branch?: string;
 }
 

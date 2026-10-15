@@ -18,6 +18,7 @@
 import * as fs from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { outputProblems } from './branches.js';
 import { collectImageSources, copyImages } from './images.js';
 import { buildManifest, packageIconProblem, parsePackageMeta } from './manifest.js';
 import type { ICredential, INode, ITemplateDescription } from './types.js';
@@ -97,6 +98,8 @@ async function runManifest(): Promise<void> {
       '⚠ package.json has no "revenexx.displayName" — the node palette will fall back to the raw package name.',
     );
   }
+  const outputIssues = (mod.NODES as INode[]).flatMap((n) => outputProblems(n.description));
+  if (outputIssues.length > 0) fail(`Invalid output declaration:\n${outputIssues.map((m) => `  ${m}`).join('\n')}`);
   const manifest = buildManifest(mod.NODES as INode[], credentials, templates);
 
   const outDir = resolve(projectRoot, 'dist');
