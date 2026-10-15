@@ -242,13 +242,30 @@ async function guardUrl(
 }
 
 /**
+ * Whether a request body would put anything on the wire. An empty string,
+ * buffer, blob or parameter list sends nothing, so a redirect may carry it
+ * anywhere; every other shape (a stream, form data) is treated as content,
+ * because it cannot be measured without consuming it.
+ */
+function hasContent(body: RequestInit['body']): boolean {
+  if (body == null) return false;
+  if (typeof body === 'string') return body.length > 0;
+  if (body instanceof ArrayBuffer) return body.byteLength > 0;
+  if (ArrayBuffer.isView(body)) return body.byteLength > 0;
+  if (body instanceof Blob) return body.size > 0;
+  if (body instanceof URLSearchParams) return body.toString().length > 0;
+  return true;
+}
+
+/**
  * Perform one request while enforcing the SSRF guard. The initial URL and every
  * redirect target are checked with {@link assertPublicUrl}; redirects are
  * followed manually (`redirect: 'manual'`) so a 3xx `Location` pointing at a
  * private/loopback address is re-checked and rejected rather than transparently
  * followed by the runtime. A cross-origin hop keeps only the headers in
  * the headers {@link headerCrossesOrigin} answers `true` for, an `https`→`http` downgrade is refused, a
- * 307/308 that would resend a body to another origin is refused, and the
+ * redirect that would resend a body to another origin (307/308, and 301/302
+ * on anything but POST) is refused before its target is looked up, and the
  * request is downgraded to `GET` per the usual 301/302/303 rules.
  */
 async function guardedFetch(
@@ -308,12 +325,12 @@ async function guardedFetch(
     if (base.protocol === 'https:' && nextUrl.protocol !== 'https:') {
       throw new NodeError('BLOCKED_ADDRESS', 'Blocked https→http downgrade on redirect', { status: 0 });
     }
-    await guardUrl(nextUrl, ctxSignal, effectiveMs);
 
     const headers = new Headers(currentInit.headers);
     let method = (currentInit.method ?? 'GET').toUpperCase();
-    // NOTE: 307/308 preserve the method and resend `body` as-is — on the same
-    // origin only; to another origin the hop is refused below (PO-684). A
+    // NOTE: 307/308 — and 301/302 on anything but POST — keep the method and
+    // resend `body` as-is: on the same origin only; to another origin the hop
+    // is refused below (PO-684). A
     // one-shot (ReadableStream) body is already consumed by the first hop and
     // will fail here — pass a Buffer/string body if the target may 307/308.
     // This mirrors native fetch's limitation.
@@ -328,17 +345,20 @@ async function guardedFetch(
       headers.delete('content-length');
     }
     // A body the redirect would resend goes nowhere but where the caller sent
-    // it: it may be customer data, or an OAuth client secret. Dropping it and
-    // going on as GET would turn a write into a read the caller believes was a
-    // write, so the hop is refused instead, before anything reaches the other
-    // origin (PO-684). Deterministic, so it is not retried.
-    if (body != null && nextUrl.origin !== base.origin) {
+    // it: it may be customer data, or an OAuth client secret. That is every
+    // redirect that keeps the method — 307 and 308, and 301/302 on PUT, PATCH,
+    // DELETE. Dropping the body and going on would turn a write into a read the
+    // caller believes was a write, so the hop is refused instead (PO-684). It
+    // is checked before the target is looked up, so the other origin's DNS does
+    // not see it either, and it is deterministic, so it is not retried.
+    if (hasContent(body) && nextUrl.origin !== base.origin) {
       throw new NodeError(
         'BLOCKED_ADDRESS',
         `Blocked ${redirectStatus} redirect to another origin: it would resend the request body to ${nextUrl.origin}`,
         { status: 0 },
       );
     }
+    await guardUrl(nextUrl, ctxSignal, effectiveMs);
     // Never leak credentials across an origin boundary on redirect. Browsers and
     // undici strip only `Authorization`, `Cookie` and `Proxy-Authorization`, which
     // is enough where the caller cannot choose a header for its key; a node can,
