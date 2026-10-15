@@ -310,13 +310,16 @@ workflow.
 
 ### AC-21 — A header value that cannot be sent is refused without being quoted
 
-- **Given** a header value with a line break, carriage return or null character inside
-  it, such as a key pasted from a wrapped e-mail
+- **Given** a header value with a character the runtime will not send inside it — a
+  line break, a carriage return, any other control character but the tab, or one beyond
+  Latin-1 — such as a key pasted from a wrapped e-mail
 - **When** a node calls `safeFetch` with it
 - **Then** the call throws `INVALID_HEADER` naming the header and no part of its value,
   makes no request, and is not tried again however many attempts the call allows
 - **And** a value the runtime would send anyway — a line break only at either end, a tab
   inside — is sent as before
+- **And** headers handed over in a shape that is neither an object nor a list of pairs
+  are refused the same way, without being quoted
 - **Because** the runtime refuses such a value with a message that quotes all of it, and
   a node routes that message to its error output, which nothing redacts. The value is
   usually a key, so the refusal would put it in clear text in the run history and in
@@ -337,6 +340,11 @@ workflow.
 
 **Known**
 
+- **AC-21 cannot reach headers a node built itself.** A `Headers` object refuses a line
+  break while it is being built, with the value quoted, in the node's own code — before
+  `safeFetch` is called. A node that wants the guarantee hands its headers over as an
+  object or a list of pairs. On 15 October 2026 the only `new Headers(` outside a test
+  among the node package checkouts was the test double in *devkit*.
 - **A body a redirect resends goes to the other origin too.** The kinds of redirect
   that preserve the method resend the body as given, and AC-7 keeps secrets out of the
   headers only — a token request's `client_secret`, or whatever data a node posts,

@@ -58,31 +58,45 @@ export function headerCrossesOrigin(name: string): boolean {
 }
 
 /**
+ * What the runtime refuses in a header value once surrounding whitespace is
+ * trimmed: every control character except the tab, and anything above Latin-1.
+ * Measured on Node 22, not read from a spec — `Headers` refuses only NUL, LF and
+ * CR, and the dispatcher underneath refuses the rest of the C0 range and DEL.
+ */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is what this pattern is for
+const UNSENDABLE_IN_HEADER_VALUE =/[\0-\x08\x0a-\x1f\x7fĀ-￿]/;
+
+function invalidHeader(detail: string): NodeError {
+  return new NodeError('INVALID_HEADER', detail, { status: 0 });
+}
+
+/**
  * Refuse a header value the runtime would refuse, before the runtime gets to.
  * `fetch` rejects a value with a line feed, carriage return or null character
- * left in it once surrounding whitespace is trimmed — and its message quotes the
- * whole value, which is usually a key a user pasted from a wrapped e-mail. A node
- * routes that message to its error output, which nothing redacts, so the key
- * would stand in the run history (PO-752). This applies the runtime's own rule,
- * so a value it accepts today (a trailing newline, a tab inside) still goes
- * through, and names the header instead of the value.
+ * left in it, and its message quotes the whole value — usually a key a user
+ * pasted from a wrapped e-mail. A node routes that message to its error output,
+ * which nothing redacts, so the key would stand in the run history (PO-752).
+ * The other characters the runtime refuses fail without the value, but as a
+ * generic `fetch failed` that is retried; refusing them here too makes every
+ * value that cannot be sent one deterministic `INVALID_HEADER`. A value the
+ * runtime sends today (a trailing newline, a tab inside) still goes through.
  *
- * A `Headers` instance is skipped: building one already ran the same check, and
- * re-reading it here would only re-validate what is known to be valid.
+ * A `Headers` instance is skipped: building one already threw for LF/CR/NUL,
+ * with the value quoted, in the caller's code before this was reached.
  */
-function assertSendableHeaders(headers: HeadersInit | undefined): void {
-  if (!headers || headers instanceof Headers) return;
-  const pairs: Iterable<readonly [string, unknown]> =
+function assertSendableHeaders(headers: unknown): void {
+  if (headers == null || headers instanceof Headers) return;
+  // Not a shape `fetch` accepts. Its own refusal of a string quotes the string,
+  // and `in` on a primitive throws a TypeError that quotes it too.
+  if (typeof headers !== 'object') throw invalidHeader('Headers must be an object or a list of pairs');
+  const pairs: Iterable<readonly [unknown, unknown]> =
     Symbol.iterator in headers
-      ? (headers as Iterable<readonly [string, unknown]>)
+      ? (headers as Iterable<readonly [unknown, unknown]>)
       : Object.entries(headers);
   for (const [name, value] of pairs) {
-    if (/[\r\n\0]/.test(String(value).replace(/^[\t\n\r ]+|[\t\n\r ]+$/g, ''))) {
-      throw new NodeError(
-        'INVALID_HEADER',
-        `Header "${name}" has a line break or null character in its value and cannot be sent`,
-        { status: 0 },
-      );
+    if (UNSENDABLE_IN_HEADER_VALUE.test(String(value).replace(/^[\t\n\r ]+|[\t\n\r ]+$/g, ''))) {
+      // JSON.stringify escapes a line break in the name, so the message stays one line.
+      throw invalidHeader(`Header ${JSON.stringify(String(name))} has a character in its value that cannot be sent`);
     }
   }
 }
@@ -309,9 +323,12 @@ export async function safeFetch(
       return await guardedFetch(url, fetchOptions, ctxSignal, effectiveMs);
     } catch (err) {
       if (ctxSignal?.aborted) throw ctxSignal.reason;
-      // A blocked address or redirect loop is deterministic — retrying can only
+      // A blocked address, a redirect loop or an unsendable header is deterministic — retrying can only
       // waste time and re-hit the same wall, so surface it immediately.
-      if (err instanceof NodeError && (err.code === 'BLOCKED_ADDRESS' || err.code === 'TOO_MANY_REDIRECTS')) {
+      if (
+        err instanceof NodeError &&
+        (err.code === 'BLOCKED_ADDRESS' || err.code === 'TOO_MANY_REDIRECTS' || err.code === 'INVALID_HEADER')
+      ) {
         throw err;
       }
       lastError = err;

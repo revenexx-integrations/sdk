@@ -1102,25 +1102,24 @@ test('headerCrossesOrigin agrees with what a cross-origin redirect keeps [@spec:
 
 // AC-21 — A header value that cannot be sent is refused without being quoted
 // The value is a key pasted from a wrapped e-mail, in each shape a node hands its
-// headers over in. The runtime's own refusal quotes the whole value; this one may
-// name the header and nothing of what is in it — on the error and on the error
-// output a node routes it to.
-test('safeFetch refuses a header value with a line break, naming the header and not the value [@spec:ssrf-guard:AC-21] [@spec:request-budget:AC-11]', async () => {
-  for (const ch of ['\n', '\r', '\u0000']) {
-    const value = `Bearer abc-SECRET${ch}123`;
-    for (const headers of [{ authorization: value }, [['authorization', value]] as [string, string][]]) {
-      const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
-      let lookups = 0;
-      const orig = ssrfResolver.lookup;
-      ssrfResolver.lookup = async () => { lookups++; return [{ address: '93.184.216.34', family: 4 }]; };
-      try {
-        await withFetch(mock, async () => {
+// headers over in. The runtime's own refusal quotes the whole value for LF, CR and
+// NUL; for the rest it fails as a retried `fetch failed`. This refusal may name the
+// header and nothing of what is in it — on the error and on the error output a node
+// routes it to. The host resolves to a private address, so a refusal that came
+// after the DNS lookup would surface as BLOCKED_ADDRESS instead.
+test('safeFetch refuses a header value that cannot be sent, naming the header and not the value [@spec:ssrf-guard:AC-21] [@spec:request-budget:AC-11]', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withLookup(['10.0.0.5'], () =>
+    withFetch(mock, async () => {
+      for (const ch of ['\n', '\r', '\u0000', '\u0001', '\u001f', '\u007f', '€']) {
+        const value = `Bearer abc-SECRET${ch}123`;
+        for (const headers of [{ authorization: value }, [['authorization', value]] as [string, string][]]) {
           let caught: unknown;
           await assert.rejects(
             () => safeFetch('https://api.example', { headers, retry: { attempts: 3, delayMs: 1 } }),
             (err: unknown) => { caught = err; return true; },
           );
-          assert.ok(caught instanceof NodeError);
+          assert.ok(caught instanceof NodeError, `${JSON.stringify(ch)}: ${String(caught)}`);
           assert.equal(caught.code, 'INVALID_HEADER');
           assert.equal(caught.meta?.['status'], 0);
           const port = JSON.stringify(toErrorResult(caught).outputs);
@@ -1128,14 +1127,32 @@ test('safeFetch refuses a header value with a line break, naming the header and 
             assert.match(text, /authorization/);
             assert.doesNotMatch(text, /SECRET|123/, `the value leaked: ${JSON.stringify(text)}`);
           }
-          assert.equal(calls.length, 0, 'no request may be made, on any attempt');
-          assert.equal(lookups, 0, 'the refusal comes before the DNS lookup');
-        });
-      } finally {
-        ssrfResolver.lookup = orig;
+        }
       }
-    }
-  }
+      assert.equal(calls.length, 0, 'no request may be made, on any attempt');
+    }),
+  );
+});
+
+// AC-21 — A header value that cannot be sent is refused without being quoted
+// Two ways round the check a JavaScript caller can take: headers that are not an
+// object at all, which the runtime refuses by quoting, and a header name carrying a
+// line break, which must not split the message it appears in.
+test('safeFetch refuses headers it cannot read without quoting them, and keeps a name on one line [@spec:ssrf-guard:AC-21]', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withLookup(['10.0.0.5'], () =>
+    withFetch(mock, async () => {
+      await assert.rejects(
+        () => safeFetch('https://api.example', { headers: 'abc-SECRET' as unknown as HeadersInit }),
+        (err: unknown) => err instanceof NodeError && err.code === 'INVALID_HEADER' && !err.message.includes('SECRET'),
+      );
+      await assert.rejects(
+        () => safeFetch('https://api.example', { headers: { 'x-a\ninjected': 'SECRET\n123' } }),
+        (err: unknown) => err instanceof NodeError && err.code === 'INVALID_HEADER' && !/[\r\n]|SECRET/.test(err.message),
+      );
+      assert.equal(calls.length, 0);
+    }),
+  );
 });
 
 // AC-21 — A header value that cannot be sent is refused without being quoted
