@@ -57,6 +57,94 @@ export function headerCrossesOrigin(name: string): boolean {
   return CROSS_ORIGIN_SAFE_HEADERS.has(name.trim().toLowerCase());
 }
 
+/**
+ * What the runtime refuses in a header value once surrounding whitespace is
+ * trimmed: the C0 control characters except the tab, DEL, and anything above
+ * Latin-1. The C1 range (U+0080–U+009F) is sent. Read off the runtime, not a
+ * spec — `Headers` refuses only NUL, LF and CR, and the dispatcher underneath
+ * the rest of C0 and DEL — and held against it on every Node version CI runs by
+ * the AC-21 test that sends each character for real.
+ */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is what this pattern is for
+const UNSENDABLE_IN_HEADER_VALUE = /[\0-\x08\x0a-\x1f\x7f\u0100-\uffff]/;
+
+/** A header name the runtime accepts: an RFC 9110 token. */
+const HEADER_NAME_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+/** The HTTP whitespace the runtime trims from both ends of a value before judging it. */
+function isHttpWhitespace(code: number): boolean {
+  return code === 0x09 || code === 0x0a || code === 0x0d || code === 0x20;
+}
+
+/**
+ * The value with HTTP whitespace trimmed from both ends, by walking indices —
+ * not a regex: `/^\s+|\s+$/g` is quadratic on a long run of whitespace inside
+ * a value, and 200,000 tabs blocked the event loop for seconds, out of reach of
+ * both the timeout and the abort signal.
+ */
+function trimHttpWhitespace(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && isHttpWhitespace(value.charCodeAt(start))) start++;
+  while (end > start && isHttpWhitespace(value.charCodeAt(end - 1))) end--;
+  return value.slice(start, end);
+}
+
+function invalidHeader(detail: string): NodeError {
+  return new NodeError('INVALID_HEADER', detail, { status: 0 });
+}
+
+/**
+ * Translate the caller's headers into the name/value pairs `fetch` will send,
+ * refusing what it would refuse, before it gets to (PO-752). `fetch` rejects a
+ * value with a line feed, carriage return or null character left in it, and its
+ * message quotes the whole value — usually a key a user pasted from a wrapped
+ * e-mail. A node routes that message to its error output, which nothing
+ * redacts, so the key would stand in the run history. The other characters the
+ * runtime refuses fail without the value, but as a generic `fetch failed` that
+ * is retried; refusing them here too makes every value that cannot be sent one
+ * `INVALID_HEADER`. A value the runtime sends today (a trailing newline, a tab
+ * inside) still goes through.
+ *
+ * Every shape `fetch` takes is read — a record, a list of pairs, any iterable
+ * of pairs, a `Headers` object (which accepts characters the dispatcher later
+ * refuses) — and an entry that is not a pair is refused without being quoted,
+ * since the runtime's own refusal of `['Bearer …']` quotes the string. The
+ * pairs are what the caller passes on: an iterable can be read only once, and
+ * reading it here would otherwise send the request without its headers.
+ */
+function sendableHeaders(headers: unknown): Array<[string, string]> {
+  if (typeof headers !== 'object' || headers === null) {
+    // `fetch` refuses a string by quoting it.
+    throw invalidHeader('Headers must be an object or a list of pairs');
+  }
+  // `fetch` refuses a symbol key; Object.entries would drop it, and the request
+  // would go out without that header.
+  if (!(Symbol.iterator in headers) && Object.getOwnPropertySymbols(headers).length > 0) {
+    throw invalidHeader('A header name must be a string, not a symbol');
+  }
+  const entries: unknown[] =
+    Symbol.iterator in headers ? Array.from(headers as Iterable<unknown>) : Object.entries(headers);
+  return entries.map((entry, i) => {
+    const pair =
+      typeof entry === 'object' && entry !== null && Symbol.iterator in entry
+        ? Array.from(entry as Iterable<unknown>)
+        : [];
+    if (pair.length !== 2) throw invalidHeader(`Header entry ${i} is not a name/value pair`);
+    const name = String(pair[0]);
+    const value = String(pair[1]);
+    if (!HEADER_NAME_TOKEN.test(name)) {
+      // The runtime's refusal quotes the name; it is not a secret, but it is
+      // retried like a transient failure. JSON.stringify keeps it on one line.
+      throw invalidHeader(`Header name ${JSON.stringify(name)} cannot be sent`);
+    }
+    if (UNSENDABLE_IN_HEADER_VALUE.test(trimHttpWhitespace(value))) {
+      throw invalidHeader(`Header ${JSON.stringify(name)} has a character in its value that cannot be sent`);
+    }
+    return [name, value];
+  });
+}
+
 export const DEFAULT_RETRY_ATTEMPTS = 0;
 export const MAX_RETRY_ATTEMPTS = 5;
 export const DEFAULT_RETRY_DELAY_MS = 1_000;
@@ -169,8 +257,9 @@ async function guardedFetch(
   effectiveMs: number,
 ): Promise<Response> {
   // The initial request is issued with the caller's URL and init untouched
-  // (only `redirect: 'manual'` is added), so the common no-redirect path stays
-  // byte-for-byte what the caller passed. New URL/Headers objects are built only
+  // (only `redirect: 'manual'` is added, and headers arrive as the pairs
+  // `sendableHeaders` read), so the common no-redirect path stays what the
+  // caller passed. New URL/Headers objects are built only
   // when a redirect is actually followed.
   let currentUrl: string | URL = url;
   let currentInit: RequestInit = { ...fetchOptions, redirect: 'manual' };
@@ -220,7 +309,7 @@ async function guardedFetch(
     }
     await guardUrl(nextUrl, ctxSignal, effectiveMs);
 
-    const headers = new Headers(currentInit.headers ?? undefined);
+    const headers = new Headers(currentInit.headers);
     let method = (currentInit.method ?? 'GET').toUpperCase();
     // NOTE: 307/308 preserve the method and resend `body` as-is. A one-shot
     // (ReadableStream) body is already consumed by the first hop and will fail
@@ -266,6 +355,13 @@ export async function safeFetch(
     : DEFAULT_RETRY_ATTEMPTS;
   const maxAttempts = safeAttempts + 1;
   const retryDelayMs = retry?.delayMs ?? DEFAULT_RETRY_DELAY_MS;
+
+  // Once, ahead of the retry loop and the DNS lookup: a value that cannot be sent
+  // now cannot be sent on the next attempt either, so INVALID_HEADER never
+  // reaches the loop's list of refusals that are not asked again.
+  // A run already cancelled reports its cancellation, not a fault in its data.
+  if (ctxSignal?.aborted) throw ctxSignal.reason;
+  if (fetchOptions.headers !== undefined) fetchOptions.headers = sendableHeaders(fetchOptions.headers);
 
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {

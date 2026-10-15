@@ -8,7 +8,7 @@ where:
   - headerCrossesOrigin — which header names a redirect to another origin keeps
 docs:
   - docs/overview.md
-updated: 2026-10-12
+updated: 2026-10-15
 ---
 
 # The SSRF guard
@@ -308,6 +308,31 @@ workflow.
 - **Pair** AC-7, the same list seen from the request instead of from the name
 - verify: unit
 
+### AC-21 — A header value that cannot be sent is refused without being quoted
+
+- **Given** a header value with a character the runtime will not send inside it — a
+  line break, a carriage return, any other C0 control character but the tab, DEL, or one
+  beyond Latin-1 — such as a key pasted from a wrapped e-mail
+- **When** a node calls `safeFetch` with it
+- **Then** the call throws `INVALID_HEADER` naming the header and no part of its value,
+  makes no request, and is not tried again however many attempts the call allows
+- **And** a header name the runtime will not send — anything but a token, a trailing
+  space included — is refused as `INVALID_HEADER` the same way, before any request
+- **And** a value the runtime would send anyway — a line break only at either end, a tab
+  inside — is sent as before
+- **And** headers handed over in a shape that is neither an object nor a list of pairs
+  (`null` among them), with an entry that is not a pair, or under a symbol key, are refused the same way, without being quoted —
+  and headers that can be read only once still reach the request whole
+- **Because** the runtime refuses such a value with a message that quotes all of it, and
+  a node routes that message to its error output, which nothing redacts. The value is
+  usually a key, so the refusal would put it in clear text in the run history and in
+  whatever a workflow does with its errors
+- **And** what is refused is held against the runtime itself on every Node version the
+  package is tested on: a character this refuses is one the runtime would refuse, and the
+  other way round
+- **Pair** AC-8, the other refusal that may not tell the caller more than they need
+- verify: unit
+
 ## Elsewhere
 
 - **What following a redirect does to the request** — how many hops are allowed, what a
@@ -321,6 +346,11 @@ workflow.
 
 **Known**
 
+- **AC-21 cannot reach headers a node built itself.** A `Headers` object refuses a line
+  break while it is being built, with the value quoted, in the node's own code — before
+  `safeFetch` is called. A node that wants the guarantee hands its headers over as an
+  object or a list of pairs. On 15 October 2026 the only `new Headers(` outside a test
+  among the node package checkouts was the test double in *devkit*.
 - **A body a redirect resends goes to the other origin too.** The kinds of redirect
   that preserve the method resend the body as given, and AC-7 keeps secrets out of the
   headers only — a token request's `client_secret`, or whatever data a node posts,
@@ -441,3 +471,6 @@ workflow.
     origin, while a 307/308 still resends the body — now a *Known* gap, PO-684. And a
     keep-list by name keeps a key an author sent *as* `User-Agent`; AC-20 gives the
     credential that chooses the name the question to refuse it with
+- [PO-752](https://linear.app/revenexx/issue/PO-752) — AC-21: a key with a line break
+  in it had been quoted in full by the runtime's refusal, and from there stood on every
+  node's error output

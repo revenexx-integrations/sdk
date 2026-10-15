@@ -43,9 +43,10 @@ enables the **linter only**. Three things about it are load-bearing:
   also catches `globalThis["fetch"]` and destructuring, but not an alias through a
   variable). It is a *nursery* rule: a biome bump may promote it and change the
   category, which breaks the `biome-ignore lint/nursery/…` lines in the test files
-  loudly rather than silently. Those ignores — three at the mock seams that save the
+  loudly rather than silently. Those ignores — five at the mock seams that save the
   global to restore it, two on the AC-18 tests that need a connection `safeFetch`
-  did not ask for — are per-line on purpose, so the exception is visible where it is
+  did not ask for, one on the AC-21 test that holds the header rule against the
+  runtime's own `fetch` — are per-line on purpose, so the exception is visible where it is
   taken instead of widening a file.
 - **The formatter is deliberately disabled.** Biome disagrees with this repo's
   hand-wrapped source in 13 to 17 of 22 files depending on `lineWidth` (13 at its

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import {
   clampResponseBytes,
   DEFAULT_MAX_RESPONSE_BYTES,
@@ -20,6 +22,7 @@ import {
   timeoutConfigField,
 } from './fetch.js';
 import { NodeError } from './errors.js';
+import { toErrorResult } from './nodeErrors.js';
 import type { IConfigField } from './types.js';
 import { ssrfResolver } from './ssrf.js';
 
@@ -1097,4 +1100,203 @@ test('headerCrossesOrigin agrees with what a cross-origin redirect keeps [@spec:
       assert.equal(calls[1]?.headers.has(name), headerCrossesOrigin(name), name);
     }
   });
+});
+
+// AC-21 — A header value that cannot be sent is refused without being quoted
+// The value is a key pasted from a wrapped e-mail, in each shape a node hands its
+// headers over in. The runtime's own refusal quotes the whole value for LF, CR and
+// NUL; for the rest it fails as a retried `fetch failed`. This refusal may name the
+// header and nothing of what is in it — on the error and on the error output a node
+// routes it to. The host resolves to a private address, so a refusal that came
+// after the DNS lookup would surface as BLOCKED_ADDRESS instead.
+test('safeFetch refuses a header value that cannot be sent, naming the header and not the value [@spec:ssrf-guard:AC-21] [@spec:request-budget:AC-11]', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withLookup(['10.0.0.5'], () =>
+    withFetch(mock, async () => {
+      for (const ch of ['\n', '\r', '\u0000', '\u0001', '\u001f', '\u007f', '€']) {
+        const value = `Bearer abc-SECRET${ch}123`;
+        for (const headers of [{ authorization: value }, [['authorization', value]] as [string, string][]]) {
+          let caught: unknown;
+          await assert.rejects(
+            () => safeFetch('https://api.example', { headers, retry: { attempts: 3, delayMs: 1 } }),
+            (err: unknown) => { caught = err; return true; },
+          );
+          assert.ok(caught instanceof NodeError, `${JSON.stringify(ch)}: ${String(caught)}`);
+          assert.equal(caught.code, 'INVALID_HEADER');
+          assert.equal(caught.meta?.['status'], 0);
+          const port = JSON.stringify(toErrorResult(caught).outputs);
+          for (const text of [caught.message, port]) {
+            assert.match(text, /authorization/);
+            assert.doesNotMatch(text, /SECRET|123/, `the value leaked: ${JSON.stringify(text)}`);
+          }
+        }
+      }
+      assert.equal(calls.length, 0, 'no request may be made, on any attempt');
+    }),
+  );
+});
+
+// AC-21 — A header value that cannot be sent is refused without being quoted
+// Two ways round the check a JavaScript caller can take: headers that are not an
+// object at all, which the runtime refuses by quoting, and a header name carrying a
+// line break, which must not split the message it appears in.
+test('safeFetch refuses headers it cannot read without quoting them, and keeps a name on one line [@spec:ssrf-guard:AC-21]', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withLookup(['10.0.0.5'], () =>
+    withFetch(mock, async () => {
+      await assert.rejects(
+        () => safeFetch('https://api.example', { headers: 'abc-SECRET' as unknown as HeadersInit }),
+        (err: unknown) => err instanceof NodeError && err.code === 'INVALID_HEADER' && !err.message.includes('SECRET'),
+      );
+      await assert.rejects(
+        () => safeFetch('https://api.example', { headers: { 'x-a\ninjected': 'SECRET\n123' } }),
+        (err: unknown) => err instanceof NodeError && err.code === 'INVALID_HEADER' && !/[\r\n]|SECRET/.test(err.message),
+      );
+      assert.equal(calls.length, 0);
+    }),
+  );
+});
+
+// AC-21 — A header value that cannot be sent is refused without being quoted
+// The pair: what the runtime trims or accepts still goes through, so a key saved
+// with a trailing newline keeps working.
+test('safeFetch still sends a value with a line break only at its ends, or a tab inside [@spec:ssrf-guard:AC-21]', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withLookup(['93.184.216.34'], () =>
+    withFetch(mock, async () => {
+      const res = await safeFetch('https://api.example', {
+        headers: { authorization: 'Bearer abc\n', 'x-api-key': '\r\nkey\tpart ', 'x-c1': 'a\u0085b' },
+      });
+      assert.equal(res.status, 200);
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0]?.headers.get('authorization'), 'Bearer abc');
+      assert.equal(calls[0]?.headers.get('x-api-key'), 'key\tpart');
+      assert.equal(calls[0]?.headers.get('x-c1'), 'a\u0085b', 'the C1 range is sent, so it is not refused');
+    }),
+  );
+});
+
+// AC-21 — A header value that cannot be sent is refused without being quoted
+// The shapes besides a record and an array: a Headers object accepts a value the
+// dispatcher later refuses, so it is read too; an entry that is not a pair is
+// refused before the runtime quotes it; and none of them is asked again.
+test('safeFetch reads a Headers object and refuses an entry that is not a pair, without quoting either [@spec:ssrf-guard:AC-21]', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withLookup(['10.0.0.5'], () =>
+    withFetch(mock, async () => {
+      for (const headers of [
+        new Headers({ authorization: 'Bearer abc-SECRET\u0001123' }),
+        ['Bearer abc-SECRET'] as unknown as HeadersInit,
+        [{ authorization: 'Bearer abc-SECRET' }] as unknown as HeadersInit,
+        [['authorization', 'Bearer abc-SECRET', 'extra']] as unknown as HeadersInit,
+        { 'x-api-key ': 'abc-SECRET' },
+        { [Symbol('x-api-key')]: 'abc-SECRET' } as unknown as HeadersInit,
+        null as unknown as HeadersInit,
+      ]) {
+        await assert.rejects(
+          () => safeFetch('https://api.example', { headers, retry: { attempts: 3, delayMs: 1 } }),
+          (err: unknown) => err instanceof NodeError && err.code === 'INVALID_HEADER' && !/SECRET|123/.test(err.message),
+        );
+      }
+      assert.equal(calls.length, 0);
+    }),
+  );
+});
+
+// AC-21 — A header value that cannot be sent is refused without being quoted
+// Reading the headers must not use them up: an iterable that can be read once
+// still reaches the request with every header in it.
+test('safeFetch sends the headers of an iterable that can be read only once [@spec:ssrf-guard:AC-21]', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withLookup(['93.184.216.34'], () =>
+    withFetch(mock, async () => {
+      function* once(): Generator<[string, string]> {
+        yield ['authorization', 'Bearer abc'];
+      }
+      const map = new Map([['x-api-key', 'key']]);
+      for (const headers of [once(), map.entries()]) {
+        await safeFetch('https://api.example', { headers: headers as unknown as HeadersInit });
+      }
+      assert.equal(calls[0]?.headers.get('authorization'), 'Bearer abc');
+      assert.equal(calls[1]?.headers.get('x-api-key'), 'key');
+    }),
+  );
+});
+
+// AC-21 — A header value that cannot be sent is refused without being quoted
+// The check runs on every request with headers, so it may not cost more than the
+// headers are long: a trim by regex took seconds on a long run of whitespace
+// inside a value, with the event loop blocked and the timeout out of reach.
+test('safeFetch checks a value with a long run of whitespace inside it in linear time [@spec:ssrf-guard:AC-21]', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withLookup(['93.184.216.34'], () =>
+    withFetch(mock, async () => {
+      const started = Date.now();
+      await safeFetch('https://api.example', { headers: { 'x-a': `a${'\t'.repeat(200_000)}x` } });
+      assert.ok(Date.now() - started < 1_000, `took ${Date.now() - started}ms`);
+      assert.equal(calls.length, 1);
+    }),
+  );
+});
+
+// AC-4 — Cancelling ends the call, before or during flight
+// A run already cancelled reports the cancellation, even when a header could not
+// have been sent either — the node would otherwise report a fault in its data.
+test('safeFetch reports an earlier cancellation ahead of a header it would refuse [@spec:request-budget:AC-4]', async () => {
+  const ac = new AbortController();
+  const reason = new Error('cancelled');
+  ac.abort(reason);
+  await assert.rejects(
+    () => safeFetch('https://api.example', { signal: ac.signal, headers: { authorization: 'a\nb' } }),
+    (err: unknown) => err === reason,
+  );
+});
+
+// AC-21 — A header value that cannot be sent is refused without being quoted
+// The rule is a copy of what the runtime refuses, so it is held against the
+// runtime itself, on every Node version CI runs: each Latin-1 character, and two
+// beyond, inside a value and inside a name, sent for real to a loopback server.
+// What the runtime sends, safeFetch must send; what it refuses, safeFetch must
+// refuse as INVALID_HEADER.
+test('the characters safeFetch refuses in a header are exactly the ones the runtime refuses [@spec:ssrf-guard:AC-21]', async () => {
+  const server = createServer((_req, res) => res.end());
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  const codes = [...Array(256).keys(), 0x100, 0xffff];
+  const runtimeSends = async (name: string, value: string): Promise<boolean> => {
+    try {
+      // biome-ignore lint/nursery/noJsRestrictedProperties: AC-21 holds the copied rule against the runtime's own fetch, on loopback; see the note above
+      await (await globalThis.fetch(`http://127.0.0.1:${port}/`, { headers: [[name, value]] })).arrayBuffer();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const { fetch: mock } = scriptedFetch([new Response(null, { status: 200 })]);
+  const safeFetchSends = (name: string, value: string): Promise<boolean> =>
+    withLookup(['93.184.216.34'], () =>
+      withFetch(mock, async () => {
+        await safeFetch('https://api.example', { headers: [[name, value]] });
+      }),
+    ).then(
+      () => true,
+      (err: unknown) => {
+        assert.ok(err instanceof NodeError && err.code === 'INVALID_HEADER', String(err));
+        return false;
+      },
+    );
+  try {
+    const disagree: string[] = [];
+    for (const code of codes) {
+      const ch = String.fromCharCode(code);
+      for (const [where, name, value] of [['value', 'x-a', `a${ch}b`], ['name', `x${ch}y`, 'v']] as const) {
+        if ((await runtimeSends(name, value)) !== (await safeFetchSends(name, value))) {
+          disagree.push(`${where} U+${code.toString(16).padStart(4, '0')}`);
+        }
+      }
+    }
+    assert.deepEqual(disagree, [], `safeFetch and Node ${process.version} disagree`);
+  } finally {
+    server.close();
+  }
 });
