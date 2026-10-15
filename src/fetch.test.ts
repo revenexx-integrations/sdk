@@ -964,6 +964,59 @@ test('safeFetch downgrades POST to GET and drops the body on a 303 redirect [@sp
   });
 });
 
+// AC-6 — A body goes nowhere but where the caller sent it
+for (const status of [307, 308]) {
+  test(`safeFetch refuses a cross-origin ${status} that would resend the body, and sends nothing there [@spec:redirect-following:AC-6]`, () => {
+    const { fetch: mock, calls } = scriptedFetch([
+      redirect(status, 'https://93.184.216.35/token'),
+      new Response(null, { status: 200 }),
+    ]);
+    return withFetch(mock, async () => {
+      await assert.rejects(
+        () =>
+          safeFetch('https://93.184.216.34/token', {
+            method: 'POST',
+            body: 'client_secret=S',
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            retry: { attempts: 3, delayMs: 0 },
+          }),
+        (err: unknown) =>
+          err instanceof NodeError &&
+          err.code === 'BLOCKED_ADDRESS' &&
+          err.message === `Blocked ${status} redirect to another origin: it would resend the request body to https://93.184.216.35`,
+      );
+      assert.equal(calls.length, 1, 'the other origin receives nothing, and the refusal is not retried');
+    });
+  });
+}
+
+// AC-6 — A body goes nowhere but where the caller sent it
+test('safeFetch still resends the body on a same-origin 307 [@spec:redirect-following:AC-6]', () => {
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(307, 'https://93.184.216.34/v2/submit'),
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    const res = await safeFetch('https://93.184.216.34/submit', { method: 'POST', body: 'a=1' });
+    assert.equal(res.status, 200);
+    assert.equal(calls[1]?.method, 'POST');
+    assert.equal(calls[1]?.hasBody, true);
+  });
+});
+
+// AC-6 — A body goes nowhere but where the caller sent it
+test('safeFetch follows a cross-origin 307 of a request without a body', () => {
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(307, 'https://93.184.216.35/file'),
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    const res = await safeFetch('https://93.184.216.34/file');
+    assert.equal(res.status, 200);
+    assert.equal(calls[1]?.url, 'https://93.184.216.35/file');
+  });
+});
+
 // AC-7 — A secret the caller sent in a header does not cross an origin boundary on a redirect
 test('safeFetch strips auth-bearing headers on a cross-origin redirect [@spec:ssrf-guard:AC-7]', () => {
   const { fetch: mock, calls } = scriptedFetch([
@@ -1017,8 +1070,7 @@ test('safeFetch drops a key in a header of its own on a cross-origin redirect [@
   ]);
   return withFetch(mock, async () => {
     await safeFetch('https://93.184.216.34/start', {
-      method: 'POST',
-      body: '<soap:Envelope/>',
+      // No body: a cross-origin 307 with one is refused outright (AC-6 of redirect-following).
       headers: {
         'x-api-key': 'secret-key',
         'api-key': 'brevo-key',
@@ -1061,8 +1113,7 @@ test('safeFetch keeps the headers that carry no secret on a cross-origin redirec
   ]);
   return withFetch(mock, async () => {
     await safeFetch('https://93.184.216.34/start', {
-      method: 'POST',
-      body: '<soap:Envelope/>',
+      // No body: a cross-origin 307 with one is refused outright (AC-6 of redirect-following).
       headers: kept,
     });
     for (const [name, value] of Object.entries(kept)) {
