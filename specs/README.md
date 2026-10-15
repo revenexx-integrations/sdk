@@ -299,20 +299,19 @@ name they are holding.
 | `collectImageSources` | [node-images.md](node-images.md) |
 | `copyImages` | [node-images.md](node-images.md) |
 | `DEFAULT_RETRY_POLICY` | [retrying-an-operation.md](retrying-an-operation.md) |
-| `IBranchedNodeResult` | [branch-selection.md](branch-selection.md) |
-| `isMultiPort` | [branch-selection.md](branch-selection.md) |
-| `outputProblems` | [branch-selection.md](branch-selection.md) |
 | `errorPort` | [error-handling.md](error-handling.md) |
 | `errorResult` | [error-handling.md](error-handling.md) |
 | `evaluate` | [setting-conditions.md](setting-conditions.md) |
 | `headerCrossesOrigin` | [ssrf-guard.md](ssrf-guard.md) |
 | `httpErrorResult` | [error-handling.md](error-handling.md) |
+| `IBranchedNodeResult` | [branch-selection.md](branch-selection.md) |
 | `INode.loadOptions` | [author-time-resolution.md](author-time-resolution.md) |
 | `INode.resolveConfigSchema` | [author-time-resolution.md](author-time-resolution.md) |
 | `INode.resolveOutputs` | [author-time-resolution.md](author-time-resolution.md) |
 | `INodeContext.state` | [workflow-state.md](workflow-state.md) |
 | `INodeState` | [workflow-state.md](workflow-state.md) |
 | `isBlockedAddress` | [ssrf-guard.md](ssrf-guard.md) |
+| `isMultiPort` | [branch-selection.md](branch-selection.md) |
 | `maxBytesConfigField` | [response-reading.md](response-reading.md), [offered-settings.md](offered-settings.md) |
 | `NodeError` | [error-handling.md](error-handling.md) |
 | `NodeErrorOutput` | [error-handling.md](error-handling.md) |
@@ -321,6 +320,8 @@ name they are holding.
 | `OAuth2AuthCodeCredential` | [credentials.md](credentials.md) |
 | `OAuth2ClientCredentialsCredential` | [credentials.md](credentials.md) |
 | `OPERATORS` | [setting-conditions.md](setting-conditions.md) |
+| `outputProblems` | [branch-selection.md](branch-selection.md) |
+| `outputWarnings` | [branch-selection.md](branch-selection.md) |
 | `packageIconProblem` | [package-manifest.md](package-manifest.md) |
 | `parsePackageMeta` | [package-manifest.md](package-manifest.md) |
 | `readArrayBuffer` | [response-reading.md](response-reading.md) |
