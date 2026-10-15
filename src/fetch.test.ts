@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import {
   clampResponseBytes,
   DEFAULT_MAX_RESPONSE_BYTES,
@@ -1187,6 +1189,9 @@ test('safeFetch reads a Headers object and refuses an entry that is not a pair, 
         ['Bearer abc-SECRET'] as unknown as HeadersInit,
         [{ authorization: 'Bearer abc-SECRET' }] as unknown as HeadersInit,
         [['authorization', 'Bearer abc-SECRET', 'extra']] as unknown as HeadersInit,
+        { 'x-api-key ': 'abc-SECRET' },
+        { [Symbol('x-api-key')]: 'abc-SECRET' } as unknown as HeadersInit,
+        null as unknown as HeadersInit,
       ]) {
         await assert.rejects(
           () => safeFetch('https://api.example', { headers, retry: { attempts: 3, delayMs: 1 } }),
@@ -1216,4 +1221,82 @@ test('safeFetch sends the headers of an iterable that can be read only once [@sp
       assert.equal(calls[1]?.headers.get('x-api-key'), 'key');
     }),
   );
+});
+
+// AC-21 — A header value that cannot be sent is refused without being quoted
+// The check runs on every request with headers, so it may not cost more than the
+// headers are long: a trim by regex took seconds on a long run of whitespace
+// inside a value, with the event loop blocked and the timeout out of reach.
+test('safeFetch checks a value with a long run of whitespace inside it in linear time [@spec:ssrf-guard:AC-21]', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withLookup(['93.184.216.34'], () =>
+    withFetch(mock, async () => {
+      const started = Date.now();
+      await safeFetch('https://api.example', { headers: { 'x-a': `a${'\t'.repeat(200_000)}x` } });
+      assert.ok(Date.now() - started < 1_000, `took ${Date.now() - started}ms`);
+      assert.equal(calls.length, 1);
+    }),
+  );
+});
+
+// AC-4 — Cancelling ends the call, before or during flight
+// A run already cancelled reports the cancellation, even when a header could not
+// have been sent either — the node would otherwise report a fault in its data.
+test('safeFetch reports an earlier cancellation ahead of a header it would refuse [@spec:request-budget:AC-4]', async () => {
+  const ac = new AbortController();
+  const reason = new Error('cancelled');
+  ac.abort(reason);
+  await assert.rejects(
+    () => safeFetch('https://api.example', { signal: ac.signal, headers: { authorization: 'a\nb' } }),
+    (err: unknown) => err === reason,
+  );
+});
+
+// AC-21 — A header value that cannot be sent is refused without being quoted
+// The rule is a copy of what the runtime refuses, so it is held against the
+// runtime itself, on every Node version CI runs: each Latin-1 character, and two
+// beyond, inside a value and inside a name, sent for real to a loopback server.
+// What the runtime sends, safeFetch must send; what it refuses, safeFetch must
+// refuse as INVALID_HEADER.
+test('the characters safeFetch refuses in a header are exactly the ones the runtime refuses [@spec:ssrf-guard:AC-21]', async () => {
+  const server = createServer((_req, res) => res.end());
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  const codes = [...Array(256).keys(), 0x100, 0xffff];
+  const runtimeSends = async (name: string, value: string): Promise<boolean> => {
+    try {
+      // biome-ignore lint/nursery/noJsRestrictedProperties: AC-21 holds the copied rule against the runtime's own fetch, on loopback; see the note above
+      await (await globalThis.fetch(`http://127.0.0.1:${port}/`, { headers: [[name, value]] })).arrayBuffer();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const { fetch: mock } = scriptedFetch([new Response(null, { status: 200 })]);
+  const safeFetchSends = (name: string, value: string): Promise<boolean> =>
+    withLookup(['93.184.216.34'], () =>
+      withFetch(mock, async () => {
+        await safeFetch('https://api.example', { headers: [[name, value]] });
+      }),
+    ).then(
+      () => true,
+      (err: unknown) => {
+        assert.ok(err instanceof NodeError && err.code === 'INVALID_HEADER', String(err));
+        return false;
+      },
+    );
+  try {
+    const disagree: string[] = [];
+    for (const code of codes) {
+      const ch = String.fromCharCode(code);
+      for (const [where, name, value] of [['value', 'x-a', `a${ch}b`], ['name', `x${ch}y`, 'v']] as const) {
+        if ((await runtimeSends(name, value)) !== (await safeFetchSends(name, value))) {
+          disagree.push(`${where} U+${code.toString(16).padStart(4, '0')}`);
+        }
+      }
+    }
+    assert.deepEqual(disagree, [], `safeFetch and Node ${process.version} disagree`);
+  } finally {
+    server.close();
+  }
 });

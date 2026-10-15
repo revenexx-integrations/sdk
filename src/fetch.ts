@@ -60,12 +60,35 @@ export function headerCrossesOrigin(name: string): boolean {
 /**
  * What the runtime refuses in a header value once surrounding whitespace is
  * trimmed: the C0 control characters except the tab, DEL, and anything above
- * Latin-1. The C1 range (U+0080–U+009F) is sent. Measured on Node 22, not read
- * from a spec — `Headers` refuses only NUL, LF and CR, and the dispatcher
- * underneath refuses the rest of C0 and DEL.
+ * Latin-1. The C1 range (U+0080–U+009F) is sent. Read off the runtime, not a
+ * spec — `Headers` refuses only NUL, LF and CR, and the dispatcher underneath
+ * the rest of C0 and DEL — and held against it on every Node version CI runs by
+ * the AC-21 test that sends each character for real.
  */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is what this pattern is for
 const UNSENDABLE_IN_HEADER_VALUE = /[\0-\x08\x0a-\x1f\x7f\u0100-\uffff]/;
+
+/** A header name the runtime accepts: an RFC 9110 token. */
+const HEADER_NAME_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+/** The HTTP whitespace the runtime trims from both ends of a value before judging it. */
+function isHttpWhitespace(code: number): boolean {
+  return code === 0x09 || code === 0x0a || code === 0x0d || code === 0x20;
+}
+
+/**
+ * The value with HTTP whitespace trimmed from both ends, by walking indices —
+ * not a regex: `/^\s+|\s+$/g` is quadratic on a long run of whitespace inside
+ * a value, and 200,000 tabs blocked the event loop for seconds, out of reach of
+ * both the timeout and the abort signal.
+ */
+function trimHttpWhitespace(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && isHttpWhitespace(value.charCodeAt(start))) start++;
+  while (end > start && isHttpWhitespace(value.charCodeAt(end - 1))) end--;
+  return value.slice(start, end);
+}
 
 function invalidHeader(detail: string): NodeError {
   return new NodeError('INVALID_HEADER', detail, { status: 0 });
@@ -95,6 +118,11 @@ function sendableHeaders(headers: unknown): Array<[string, string]> {
     // `fetch` refuses a string by quoting it.
     throw invalidHeader('Headers must be an object or a list of pairs');
   }
+  // `fetch` refuses a symbol key; Object.entries would drop it, and the request
+  // would go out without that header.
+  if (!(Symbol.iterator in headers) && Object.getOwnPropertySymbols(headers).length > 0) {
+    throw invalidHeader('A header name must be a string, not a symbol');
+  }
   const entries: unknown[] =
     Symbol.iterator in headers ? Array.from(headers as Iterable<unknown>) : Object.entries(headers);
   return entries.map((entry, i) => {
@@ -105,8 +133,12 @@ function sendableHeaders(headers: unknown): Array<[string, string]> {
     if (pair.length !== 2) throw invalidHeader(`Header entry ${i} is not a name/value pair`);
     const name = String(pair[0]);
     const value = String(pair[1]);
-    if (UNSENDABLE_IN_HEADER_VALUE.test(value.replace(/^[\t\n\r ]+|[\t\n\r ]+$/g, ''))) {
-      // JSON.stringify escapes a line break in the name, so the message stays one line.
+    if (!HEADER_NAME_TOKEN.test(name)) {
+      // The runtime's refusal quotes the name; it is not a secret, but it is
+      // retried like a transient failure. JSON.stringify keeps it on one line.
+      throw invalidHeader(`Header name ${JSON.stringify(name)} cannot be sent`);
+    }
+    if (UNSENDABLE_IN_HEADER_VALUE.test(trimHttpWhitespace(value))) {
       throw invalidHeader(`Header ${JSON.stringify(name)} has a character in its value that cannot be sent`);
     }
     return [name, value];
@@ -277,7 +309,7 @@ async function guardedFetch(
     }
     await guardUrl(nextUrl, ctxSignal, effectiveMs);
 
-    const headers = new Headers(currentInit.headers ?? undefined);
+    const headers = new Headers(currentInit.headers);
     let method = (currentInit.method ?? 'GET').toUpperCase();
     // NOTE: 307/308 preserve the method and resend `body` as-is. A one-shot
     // (ReadableStream) body is already consumed by the first hop and will fail
@@ -327,6 +359,8 @@ export async function safeFetch(
   // Once, ahead of the retry loop and the DNS lookup: a value that cannot be sent
   // now cannot be sent on the next attempt either, so INVALID_HEADER never
   // reaches the loop's list of refusals that are not asked again.
+  // A run already cancelled reports its cancellation, not a fault in its data.
+  if (ctxSignal?.aborted) throw ctxSignal.reason;
   if (fetchOptions.headers !== undefined) fetchOptions.headers = sendableHeaders(fetchOptions.headers);
 
   let lastError: unknown;

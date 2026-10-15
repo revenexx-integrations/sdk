@@ -316,15 +316,20 @@ workflow.
 - **When** a node calls `safeFetch` with it
 - **Then** the call throws `INVALID_HEADER` naming the header and no part of its value,
   makes no request, and is not tried again however many attempts the call allows
+- **And** a header name the runtime will not send — anything but a token, a trailing
+  space included — is refused as `INVALID_HEADER` the same way, before any request
 - **And** a value the runtime would send anyway — a line break only at either end, a tab
   inside — is sent as before
-- **And** headers handed over in a shape that is neither an object nor a list of pairs,
-  or with an entry that is not a pair, are refused the same way, without being quoted —
+- **And** headers handed over in a shape that is neither an object nor a list of pairs
+  (`null` among them), with an entry that is not a pair, or under a symbol key, are refused the same way, without being quoted —
   and headers that can be read only once still reach the request whole
 - **Because** the runtime refuses such a value with a message that quotes all of it, and
   a node routes that message to its error output, which nothing redacts. The value is
   usually a key, so the refusal would put it in clear text in the run history and in
   whatever a workflow does with its errors
+- **And** what is refused is held against the runtime itself on every Node version the
+  package is tested on: a character this refuses is one the runtime would refuse, and the
+  other way round
 - **Pair** AC-8, the other refusal that may not tell the caller more than they need
 - verify: unit
 
