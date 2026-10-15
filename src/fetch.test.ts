@@ -20,6 +20,7 @@ import {
   timeoutConfigField,
 } from './fetch.js';
 import { NodeError } from './errors.js';
+import { toErrorResult } from './nodeErrors.js';
 import type { IConfigField } from './types.js';
 import { ssrfResolver } from './ssrf.js';
 
@@ -1097,4 +1098,60 @@ test('headerCrossesOrigin agrees with what a cross-origin redirect keeps [@spec:
       assert.equal(calls[1]?.headers.has(name), headerCrossesOrigin(name), name);
     }
   });
+});
+
+// AC-21 — A header value that cannot be sent is refused without being quoted
+// The value is a key pasted from a wrapped e-mail, in each shape a node hands its
+// headers over in. The runtime's own refusal quotes the whole value; this one may
+// name the header and nothing of what is in it — on the error and on the error
+// output a node routes it to.
+test('safeFetch refuses a header value with a line break, naming the header and not the value [@spec:ssrf-guard:AC-21] [@spec:request-budget:AC-11]', async () => {
+  for (const ch of ['\n', '\r', '\u0000']) {
+    const value = `Bearer abc-SECRET${ch}123`;
+    for (const headers of [{ authorization: value }, [['authorization', value]] as [string, string][]]) {
+      const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+      let lookups = 0;
+      const orig = ssrfResolver.lookup;
+      ssrfResolver.lookup = async () => { lookups++; return [{ address: '93.184.216.34', family: 4 }]; };
+      try {
+        await withFetch(mock, async () => {
+          let caught: unknown;
+          await assert.rejects(
+            () => safeFetch('https://api.example', { headers, retry: { attempts: 3, delayMs: 1 } }),
+            (err: unknown) => { caught = err; return true; },
+          );
+          assert.ok(caught instanceof NodeError);
+          assert.equal(caught.code, 'INVALID_HEADER');
+          assert.equal(caught.meta?.['status'], 0);
+          const port = JSON.stringify(toErrorResult(caught).outputs);
+          for (const text of [caught.message, port]) {
+            assert.match(text, /authorization/);
+            assert.doesNotMatch(text, /SECRET|123/, `the value leaked: ${JSON.stringify(text)}`);
+          }
+          assert.equal(calls.length, 0, 'no request may be made, on any attempt');
+          assert.equal(lookups, 0, 'the refusal comes before the DNS lookup');
+        });
+      } finally {
+        ssrfResolver.lookup = orig;
+      }
+    }
+  }
+});
+
+// AC-21 — A header value that cannot be sent is refused without being quoted
+// The pair: what the runtime trims or accepts still goes through, so a key saved
+// with a trailing newline keeps working.
+test('safeFetch still sends a value with a line break only at its ends, or a tab inside [@spec:ssrf-guard:AC-21]', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withLookup(['93.184.216.34'], () =>
+    withFetch(mock, async () => {
+      const res = await safeFetch('https://api.example', {
+        headers: { authorization: 'Bearer abc\n', 'x-api-key': '\r\nkey\tpart ' },
+      });
+      assert.equal(res.status, 200);
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0]?.headers.get('authorization'), 'Bearer abc');
+      assert.equal(calls[0]?.headers.get('x-api-key'), 'key\tpart');
+    }),
+  );
 });

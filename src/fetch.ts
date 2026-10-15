@@ -57,6 +57,36 @@ export function headerCrossesOrigin(name: string): boolean {
   return CROSS_ORIGIN_SAFE_HEADERS.has(name.trim().toLowerCase());
 }
 
+/**
+ * Refuse a header value the runtime would refuse, before the runtime gets to.
+ * `fetch` rejects a value with a line feed, carriage return or null character
+ * left in it once surrounding whitespace is trimmed — and its message quotes the
+ * whole value, which is usually a key a user pasted from a wrapped e-mail. A node
+ * routes that message to its error output, which nothing redacts, so the key
+ * would stand in the run history (PO-752). This applies the runtime's own rule,
+ * so a value it accepts today (a trailing newline, a tab inside) still goes
+ * through, and names the header instead of the value.
+ *
+ * A `Headers` instance is skipped: building one already ran the same check, and
+ * re-reading it here would only re-validate what is known to be valid.
+ */
+function assertSendableHeaders(headers: HeadersInit | undefined): void {
+  if (!headers || headers instanceof Headers) return;
+  const pairs: Iterable<readonly [string, unknown]> =
+    Symbol.iterator in headers
+      ? (headers as Iterable<readonly [string, unknown]>)
+      : Object.entries(headers);
+  for (const [name, value] of pairs) {
+    if (/[\r\n\0]/.test(String(value).replace(/^[\t\n\r ]+|[\t\n\r ]+$/g, ''))) {
+      throw new NodeError(
+        'INVALID_HEADER',
+        `Header "${name}" has a line break or null character in its value and cannot be sent`,
+        { status: 0 },
+      );
+    }
+  }
+}
+
 export const DEFAULT_RETRY_ATTEMPTS = 0;
 export const MAX_RETRY_ATTEMPTS = 5;
 export const DEFAULT_RETRY_DELAY_MS = 1_000;
@@ -266,6 +296,10 @@ export async function safeFetch(
     : DEFAULT_RETRY_ATTEMPTS;
   const maxAttempts = safeAttempts + 1;
   const retryDelayMs = retry?.delayMs ?? DEFAULT_RETRY_DELAY_MS;
+
+  // Once, ahead of the loop and the DNS lookup: a value that cannot be sent now
+  // cannot be sent on the next attempt either.
+  assertSendableHeaders(fetchOptions.headers);
 
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {

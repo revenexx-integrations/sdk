@@ -129,7 +129,8 @@ signal the engine passes in, which ends the call wherever it has got to.
 ### AC-11 — A refusal that cannot change is not asked again
 
 - **Given** a call with retries allowed, whose target is refused for a reason that will
-  be the same every time — a blocked address, a chain that never ends
+  be the same every time — a blocked address, a chain that never ends, a header value
+  that cannot be sent
 - **When** it fails
 - **Then** it fails once, without using any of the retry budget
 - **Because** a retry can only change the outcome of something transient; asking again

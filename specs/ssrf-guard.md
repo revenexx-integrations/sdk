@@ -8,7 +8,7 @@ where:
   - headerCrossesOrigin — which header names a redirect to another origin keeps
 docs:
   - docs/overview.md
-updated: 2026-10-12
+updated: 2026-10-15
 ---
 
 # The SSRF guard
@@ -308,6 +308,22 @@ workflow.
 - **Pair** AC-7, the same list seen from the request instead of from the name
 - verify: unit
 
+### AC-21 — A header value that cannot be sent is refused without being quoted
+
+- **Given** a header value with a line break, carriage return or null character inside
+  it, such as a key pasted from a wrapped e-mail
+- **When** a node calls `safeFetch` with it
+- **Then** the call throws `INVALID_HEADER` naming the header and no part of its value,
+  makes no request, and is not tried again however many attempts the call allows
+- **And** a value the runtime would send anyway — a line break only at either end, a tab
+  inside — is sent as before
+- **Because** the runtime refuses such a value with a message that quotes all of it, and
+  a node routes that message to its error output, which nothing redacts. The value is
+  usually a key, so the refusal would put it in clear text in the run history and in
+  whatever a workflow does with its errors
+- **Pair** AC-8, the other refusal that may not tell the caller more than they need
+- verify: unit
+
 ## Elsewhere
 
 - **What following a redirect does to the request** — how many hops are allowed, what a
@@ -441,3 +457,6 @@ workflow.
     origin, while a 307/308 still resends the body — now a *Known* gap, PO-684. And a
     keep-list by name keeps a key an author sent *as* `User-Agent`; AC-20 gives the
     credential that chooses the name the question to refuse it with
+- [PO-752](https://linear.app/revenexx/issue/PO-752) — AC-21: a key with a line break
+  in it had been quoted in full by the runtime's refusal, and from there stood on every
+  node's error output
