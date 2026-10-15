@@ -1163,12 +1163,57 @@ test('safeFetch still sends a value with a line break only at its ends, or a tab
   return withLookup(['93.184.216.34'], () =>
     withFetch(mock, async () => {
       const res = await safeFetch('https://api.example', {
-        headers: { authorization: 'Bearer abc\n', 'x-api-key': '\r\nkey\tpart ' },
+        headers: { authorization: 'Bearer abc\n', 'x-api-key': '\r\nkey\tpart ', 'x-c1': 'a\u0085b' },
       });
       assert.equal(res.status, 200);
       assert.equal(calls.length, 1);
       assert.equal(calls[0]?.headers.get('authorization'), 'Bearer abc');
       assert.equal(calls[0]?.headers.get('x-api-key'), 'key\tpart');
+      assert.equal(calls[0]?.headers.get('x-c1'), 'a\u0085b', 'the C1 range is sent, so it is not refused');
+    }),
+  );
+});
+
+// AC-21 — A header value that cannot be sent is refused without being quoted
+// The shapes besides a record and an array: a Headers object accepts a value the
+// dispatcher later refuses, so it is read too; an entry that is not a pair is
+// refused before the runtime quotes it; and none of them is asked again.
+test('safeFetch reads a Headers object and refuses an entry that is not a pair, without quoting either [@spec:ssrf-guard:AC-21]', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withLookup(['10.0.0.5'], () =>
+    withFetch(mock, async () => {
+      for (const headers of [
+        new Headers({ authorization: 'Bearer abc-SECRET\u0001123' }),
+        ['Bearer abc-SECRET'] as unknown as HeadersInit,
+        [{ authorization: 'Bearer abc-SECRET' }] as unknown as HeadersInit,
+        [['authorization', 'Bearer abc-SECRET', 'extra']] as unknown as HeadersInit,
+      ]) {
+        await assert.rejects(
+          () => safeFetch('https://api.example', { headers, retry: { attempts: 3, delayMs: 1 } }),
+          (err: unknown) => err instanceof NodeError && err.code === 'INVALID_HEADER' && !/SECRET|123/.test(err.message),
+        );
+      }
+      assert.equal(calls.length, 0);
+    }),
+  );
+});
+
+// AC-21 — A header value that cannot be sent is refused without being quoted
+// Reading the headers must not use them up: an iterable that can be read once
+// still reaches the request with every header in it.
+test('safeFetch sends the headers of an iterable that can be read only once [@spec:ssrf-guard:AC-21]', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withLookup(['93.184.216.34'], () =>
+    withFetch(mock, async () => {
+      function* once(): Generator<[string, string]> {
+        yield ['authorization', 'Bearer abc'];
+      }
+      const map = new Map([['x-api-key', 'key']]);
+      for (const headers of [once(), map.entries()]) {
+        await safeFetch('https://api.example', { headers: headers as unknown as HeadersInit });
+      }
+      assert.equal(calls[0]?.headers.get('authorization'), 'Bearer abc');
+      assert.equal(calls[1]?.headers.get('x-api-key'), 'key');
     }),
   );
 });

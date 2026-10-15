@@ -311,15 +311,16 @@ workflow.
 ### AC-21 — A header value that cannot be sent is refused without being quoted
 
 - **Given** a header value with a character the runtime will not send inside it — a
-  line break, a carriage return, any other control character but the tab, or one beyond
-  Latin-1 — such as a key pasted from a wrapped e-mail
+  line break, a carriage return, any other C0 control character but the tab, DEL, or one
+  beyond Latin-1 — such as a key pasted from a wrapped e-mail
 - **When** a node calls `safeFetch` with it
 - **Then** the call throws `INVALID_HEADER` naming the header and no part of its value,
   makes no request, and is not tried again however many attempts the call allows
 - **And** a value the runtime would send anyway — a line break only at either end, a tab
   inside — is sent as before
-- **And** headers handed over in a shape that is neither an object nor a list of pairs
-  are refused the same way, without being quoted
+- **And** headers handed over in a shape that is neither an object nor a list of pairs,
+  or with an entry that is not a pair, are refused the same way, without being quoted —
+  and headers that can be read only once still reach the request whole
 - **Because** the runtime refuses such a value with a message that quotes all of it, and
   a node routes that message to its error output, which nothing redacts. The value is
   usually a key, so the refusal would put it in clear text in the run history and in
