@@ -6,6 +6,7 @@ export * from './credentialType.js';
 export * from './errors.js';
 export * from './nodeErrors.js';
 export * from './extract.js';
+export * from './branches.js';
 export * from './fetch.js';
 // Only the stable guard helpers/types are public. `ssrfResolver` is deliberately
 // NOT re-exported: it is a mutable test seam, and exposing it on the package's
