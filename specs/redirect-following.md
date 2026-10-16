@@ -5,7 +5,7 @@ where:
   - safeFetch — every hop it follows on the caller's behalf
 docs:
   - docs/overview.md
-updated: 2026-09-01
+updated: 2026-10-15
 ---
 
 # What a redirect does to the request
@@ -80,6 +80,23 @@ way whichever host answered would prefer.
   than not following them
 - verify: unit
 
+### AC-6 — A body goes nowhere but where the caller sent it
+
+- **Given** a request carrying a body, answered by a redirect to another origin that keeps
+  the method — a 307 or 308, or a 301 or 302 on anything but a submission that turns
+  into a retrieval
+- **When** the hop would be followed
+- **Then** the call fails with `BLOCKED_ADDRESS`, naming the status and the other origin,
+  before that origin is looked up or sent anything, and it is not retried. The same
+  redirect on the same origin is followed with the body; one whose body is empty, or
+  that has none, is followed to any origin
+- **Because** the body can be customer data or an OAuth client secret, and the server
+  that answers decides where a redirect points. Dropping the body and going on would
+  turn a write into a read the caller believes was a write
+- **Pair** the same-origin hop is still followed with its body, so this cannot hold
+  because such redirects stopped being followed at all
+- verify: unit
+
 ## Elsewhere
 
 - **Where a hop is allowed to go** — the address rules, the refusal to downgrade the
@@ -94,7 +111,7 @@ way whichever host answered would prefer.
 **Known**
 
 - **A body that can only be read once cannot survive a hop that resends it.** The kinds
-  of redirect that preserve the method resend the body as given, and a streamed body has
+  of redirect that preserve the method resend the body as given, on the same origin, and a streamed body has
   already been consumed by the first hop — so it fails there. Nothing here promises
   otherwise, and the `docs/` companion says to pass a buffered body where a host may
   answer that way.
@@ -109,6 +126,12 @@ way whichever host answered would prefer.
 
 ## Tickets
 
+- [PO-684](https://linear.app/revenexx/issue/PO-684) — added AC-6: a redirect that would
+  resend a body to another origin is refused — 307 and 308, and 301 and 302 on PUT,
+  PATCH or DELETE, which keep their method and body as well
+  - Refused rather than downgraded to a bodiless request, which would make the caller
+    believe a write had happened; and rather than an allowlist per call, which every
+    package would have to remember.
 - [PO-135](https://linear.app/revenexx/issue/PO-135) — `safeFetch`, which followed
   redirects through the runtime at first
 - [PO-172](https://linear.app/revenexx/issue/PO-172) — hops became this package's

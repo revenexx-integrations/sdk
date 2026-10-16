@@ -1,6 +1,6 @@
 {
   "name": "@revenexx/integrations-node-sdk",
-  "version": "1.8.1",
+  "version": "1.9.1",
   "description": "TypeScript interfaces and utilities for Revenexx integration nodes",
   "license": "MIT",
   "author": "revenexx GmbH",
@@ -42,7 +42,7 @@
     "provenance": true
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && tsc -p tsconfig.build.json",
     "dev": "tsup --watch",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "spec:check": "node scripts/spec-check.mjs",
@@ -58,9 +58,9 @@
     "@biomejs/biome": "^2.5.10",
     "@changesets/cli": "^3.0.3",
     "@types/node": "^24.0.0",
-    "tsup": "^8.0.0",
+    "tsup": "^9.0.0",
     "tsx": "^4.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "ipaddr.js": "2.5.0"

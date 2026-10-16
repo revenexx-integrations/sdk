@@ -3,9 +3,9 @@ import { defineConfig } from 'tsup';
 export default defineConfig({
   entry: ['src/index.ts', 'src/cli.ts'],
   format: ['esm', 'cjs'],
-  // The CLI is a bin, never imported as a library — only emit declarations
-  // for the library entry, not dead `dist/cli.d.ts`.
-  dts: { entry: ['src/index.ts'] },
+  // Declarations come from TypeScript 7's own compiler (tsconfig.build.json):
+  // tsup's declaration build needs the compiler API TypeScript 7 no longer ships.
+  dts: false,
   clean: true,
   // No sourcemaps in the published artifact: this is a thin contract/types
   // library, src/ isn't shipped, and the .d.ts already drives type navigation.
