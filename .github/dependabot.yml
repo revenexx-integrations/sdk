@@ -1,36 +1,75 @@
 version: 2
 
-# Anders als integrations-nodes-core konsumiert das SDK keine privaten
-# @revenexx-Pakete (es *ist* dieses Paket) — alle devDependencies kommen aus
-# der public npm-Registry. Daher keine `registries:`-Sektion und kein
-# NPM_GH_TOKEN-Secret nötig.
+# The same file sits in every repository of revenexx-integrations (PO-760). Its
+# source is scripts/templates/ in integrations-meta: change it there, and
+# scripts/sync-across-packages.py carries it to all of them. A copy changed here
+# alone is what checks/dependency-uniformity.py reports.
+#
+# Two mechanisms reach this repository, and only one of them is declared here:
+#
+#   * Dependabot SECURITY updates open a pull request when an advisory lands
+#     against something in the lockfile. They are a repository setting, they
+#     cover every ecosystem whether or not it is listed below, and they do not
+#     wait for the schedule.
+#   * Dependabot VERSION updates are the routine bump, and those are what this
+#     file declares.
+#
+# Monthly, because advisories arrive as security updates the moment they land:
+# the routine bump only carries what nobody is exposed by, and a weekly one
+# re-ran CI on every open group every week, in every package.
+#
+# Minor and patch updates arrive as one pull request. A major arrives on its
+# own, one per dependency, because a major wants reading — riding it into a
+# group blocks every patch nobody disputes behind an upgrade somebody has to
+# think about.
+#
+# Not here, on purpose:
+#
+#   * GitHub Actions. Every package pins the same commits, and an action bumped
+#     in one package makes that package the odd one out. integrations-meta moves
+#     an action in all of them at once (scripts/sync-across-packages.py), and its
+#     dependency-uniformity check reports when a newer release exists.
+#   * Our own packages (@revenexx/integrations-node-*). An SDK or devkit release
+#     concerns every package, so the same script moves it in all of them in one
+#     run, instead of one pull request per repository.
+#
+# A Dependabot pull request needs no changeset: the CI skips that check for it.
+# A bump that has to reach a release now gets one by hand.
 
 updates:
-  # npm-Dependencies (aktuell nur devDependencies)
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     commit-message:
       prefix: "chore"
-      prefix-development: "chore"
     open-pull-requests-limit: 5
+    ignore:
+      # Moved for every package at once by integrations-meta (see above).
+      - dependency-name: "@revenexx/integrations-node-*"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
+      # TypeScript 7 breaks the declaration build. PO-803 lifts this.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # Vitest 5 moves with the devkit test harness. PO-804 lifts this.
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      # The types describe the Node release the packages run on (24), and move
+      # with it, not ahead of it.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
-      # devDependencies gebündelt
-      dev-dependencies:
-        dependency-type: "development"
-      # Produktiv-Deps: minor/patch zusammen, major bleibt einzeln
-      # (aktuell keine, für Parität mit nodes-core beibehalten)
-      production-minor-patch:
-        dependency-type: "production"
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      npm-minor-and-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
         update-types:
           - "minor"
           - "patch"
-
-  # GitHub-Actions aktuell halten (wie im integrations-Repo)
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "ci"
