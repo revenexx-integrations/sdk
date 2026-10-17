@@ -378,6 +378,26 @@ workflow.
 - **Pair** AC-23, where refusing is the default
 - verify: unit
 
+### AC-25 — A URL with a user name or password in it is refused without being quoted
+
+- **Given** an address with a user name or a password in it, such as
+  `https://user:secret@host/path`, typed into a node's settings or named by a redirect
+- **When** a node calls `safeFetch` with it, or a hop leads to it
+- **Then** the call fails with `INVALID_URL` before anything is sent to that address,
+  and is not asked again; the message names the problem and no part of the address —
+  no user, password, host, path or query
+- **And** an address that cannot be read as a URL at all is refused the same way, as
+  `INVALID_URL`, quoting nothing and asked only once
+- **And** with a binding to another origin (AC-22) as well, the address is refused as
+  `INVALID_URL`, so neither refusal names the user or the password
+- **And** a token exchange that a token endpoint refuses names that endpoint by origin
+  and path only, never by its query string
+- **Because** the runtime refuses such an address too, but its message quotes the whole
+  of it, and a node puts that message on its error port, which the run history keeps
+  uncleaned. An author who cannot pick a Basic credential types the password into the
+  address
+- verify: unit
+
 ## Elsewhere
 
 - **What following a redirect does to the request** — how many hops are allowed, what a
@@ -471,6 +491,10 @@ workflow.
   class depends on where the value came from.
 
 ## Tickets
+
+- [PO-763](https://linear.app/revenexx/issue/PO-763) — added AC-25: an address with a
+  user name or password is refused as `INVALID_URL` without being quoted, and a token
+  exchange names its endpoint without the query
 
 - [PO-688](https://linear.app/revenexx/issue/PO-688) — added AC-22 through AC-24: a
   request can be bound to its credential's origin, and is then refused anywhere else,

@@ -143,13 +143,26 @@ export abstract class BaseCredential implements ICredential {
       // Surface only the standard OAuth error fields (RFC 6749 §5.2), never the
       // raw body — token endpoints can echo request params or diagnostics that
       // may contain secrets/PII, which would then leak via logs/error reporting.
-      throw new Error(`token endpoint ${url} -> ${res.status}${formatOAuthError(text)}`);
+      throw new Error(`token endpoint ${endpointForMessage(url)} -> ${res.status}${formatOAuthError(text)}`);
     }
     try {
       return JSON.parse(text) as OAuthTokenResponse;
     } catch {
-      throw new Error(`token endpoint ${url} returned non-JSON body`);
+      throw new Error(`token endpoint ${endpointForMessage(url)} returned non-JSON body`);
     }
+  }
+}
+
+/**
+ * The token endpoint as an error message may name it: origin and path, never a
+ * user, password or query string an author put into the address (PO-763).
+ */
+function endpointForMessage(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.origin}${u.pathname}`;
+  } catch {
+    return '(unreadable address)';
   }
 }
 
