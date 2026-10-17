@@ -8,7 +8,7 @@ where:
   - headerCrossesOrigin — which header names a redirect to another origin keeps
 docs:
   - docs/overview.md
-updated: 2026-10-15
+updated: 2026-10-17
 ---
 
 # The SSRF guard
@@ -333,6 +333,51 @@ workflow.
 - **Pair** AC-8, the other refusal that may not tell the caller more than they need
 - verify: unit
 
+### AC-22 — A request bound to its credential's origin is sent nowhere else
+
+- **Given** a `safeFetch` call that carries a credential and binds it to that
+  credential's origin with the `credential` option
+- **When** the address it is asked to reach lies on another origin
+- **Then** the call fails with `CREDENTIAL_ORIGIN` before anything is looked up or sent,
+  and is not asked again; the message names the two origins and nothing else of the
+  address — no user, password, path or query
+- **And** a call to the bound origin goes through with whatever path and query it has,
+  and a binding that is not an http or https address is itself refused with
+  `CREDENTIAL_ORIGIN`
+- **Because** a node that takes its target from a setting or from incoming data sends its
+  key wherever that value points, and the header rules of AC-7 only act on a redirect.
+  Binding the whole request covers a secret wherever it sits — a header, the query, the
+  path or the body — without anybody having to name which part carries it
+- verify: unit
+
+### AC-23 — A redirect cannot take a bound request off its origin
+
+- **Given** a request bound to its credential's origin
+- **When** a server answers with a redirect to another origin, after any number of hops
+  within its own
+- **Then** the call fails with `CREDENTIAL_ORIGIN`, naming the status and both origins,
+  before the other origin is looked up or sent anything, and is not asked again
+- **Because** every hop is judged against the binding, not against the hop before it, a
+  detour through the bound origin does not carry the request out of it; and stripping
+  the secret headers, as AC-7 does for an unbound request, would still send a secret in
+  the query, the path or the body
+- **Pair** AC-22, the same refusal on the first hop
+- verify: unit
+
+### AC-24 — A bound request may follow a redirect off its origin without its secret
+
+- **Given** a request bound with `crossOriginRedirect: 'strip'` — a download that its
+  server sends on to a content network or a signed storage link
+- **When** it is redirected to another origin
+- **Then** the hop is followed without any header the caller set — not even the ones
+  AC-7 lets cross, because a bound request declared all of itself secret and a key can
+  sit under any name — and a body that would be resent is still refused
+- **Because** some services hand a file out from another host, and refusing every such
+  hop would make the binding unusable for them. The caller chooses it per call, knowing
+  that a secret in the query or the path is not protected on that hop
+- **Pair** AC-23, where refusing is the default
+- verify: unit
+
 ## Elsewhere
 
 - **What following a redirect does to the request** — how many hops are allowed, what a
@@ -426,6 +471,13 @@ workflow.
   class depends on where the value came from.
 
 ## Tickets
+
+- [PO-688](https://linear.app/revenexx/issue/PO-688) — added AC-22 through AC-24: a
+  request can be bound to its credential's origin, and is then refused anywhere else,
+  with `CREDENTIAL_ORIGIN`
+  - A binding of the whole request rather than of named headers, because a list of
+    secret headers is the gap PO-688 came from; and a code of its own rather than
+    `BLOCKED_ADDRESS`, which means a private target (PO-758).
 
 - [PO-135](https://linear.app/revenexx/issue/PO-135) — `safeFetch` itself, with its
   timeout and retry budget; no address ruling yet

@@ -1414,3 +1414,164 @@ test('the characters safeFetch refuses in a header are exactly the ones the runt
     server.close();
   }
 });
+
+// AC-22 — A request bound to its credential's origin is sent nowhere else
+test('safeFetch refuses a bound request to another origin before it sends anything, naming origins only [@spec:ssrf-guard:AC-22]', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withFetch(mock, async () => {
+    await assert.rejects(
+      () =>
+        safeFetch('https://user:pw@93.184.216.35/v1/items?token=T', {
+          headers: { authorization: 'Bearer secret' },
+          credential: { origin: 'https://93.184.216.34' },
+          retry: { attempts: 3, delayMs: 0 },
+        }),
+      (err: unknown) =>
+        err instanceof NodeError &&
+        err.code === 'CREDENTIAL_ORIGIN' &&
+        err.message === 'Refused a request to https://93.184.216.35: the credential it carries is bound to https://93.184.216.34',
+    );
+    assert.equal(calls.length, 0, 'nothing is sent, and the refusal is not retried');
+  });
+});
+
+// AC-22 — A request bound to its credential's origin is sent nowhere else
+test('safeFetch sends a bound request to its own origin, whatever its path [@spec:ssrf-guard:AC-22]', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response('ok', { status: 200 })]);
+  return withFetch(mock, async () => {
+    const res = await safeFetch('https://93.184.216.34/v1/items?page=2', {
+      headers: { authorization: 'Bearer secret' },
+      credential: { origin: new URL('https://93.184.216.34/v1/') },
+    });
+    assert.equal(res.status, 200);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.headers.get('authorization'), 'Bearer secret');
+  });
+});
+
+// AC-22 — A request bound to its credential's origin is sent nowhere else
+test('safeFetch refuses a binding that is not an http(s) address [@spec:ssrf-guard:AC-22]', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withFetch(mock, async () => {
+    for (const origin of ['not a url', 'file:///etc/passwd', 'wss://93.184.216.34', 'blob:https://93.184.216.34/x']) {
+      await assert.rejects(
+        () => safeFetch('https://93.184.216.34/', { credential: { origin } }),
+        (err: unknown) => err instanceof NodeError && err.code === 'CREDENTIAL_ORIGIN' && !err.message.includes('passwd'),
+      );
+    }
+    assert.equal(calls.length, 0);
+  });
+});
+
+// AC-23 — A redirect cannot take a bound request off its origin
+for (const status of [301, 302, 303, 307, 308]) {
+  test(`safeFetch refuses a ${status} that would take a bound GET to another origin [@spec:ssrf-guard:AC-23]`, () => {
+    const { fetch: mock, calls } = scriptedFetch([
+      redirect(status, 'https://93.184.216.35/elsewhere?token=T'),
+      new Response(null, { status: 200 }),
+    ]);
+    return withFetch(mock, async () => {
+      await assert.rejects(
+        () =>
+          safeFetch('https://93.184.216.34/start', {
+            headers: { 'x-api-token': 'secret' },
+            credential: { origin: 'https://93.184.216.34' },
+            retry: { attempts: 3, delayMs: 0 },
+          }),
+        (err: unknown) =>
+          err instanceof NodeError &&
+          err.code === 'CREDENTIAL_ORIGIN' &&
+          err.message === `Refused a ${status} redirect to https://93.184.216.35: the credential it carries is bound to https://93.184.216.34`,
+      );
+      assert.equal(calls.length, 1, 'the other origin receives nothing, and the refusal is not retried');
+    });
+  });
+}
+
+// AC-23 — A redirect cannot take a bound request off its origin
+test('safeFetch judges every hop against the binding, so a detour through its own origin does not help [@spec:ssrf-guard:AC-23]', () => {
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(302, 'https://93.184.216.34/hop'),
+    redirect(302, 'https://93.184.216.35/collect'),
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    await assert.rejects(
+      () => safeFetch('https://93.184.216.34/start', { credential: { origin: 'https://93.184.216.34' } }),
+      (err: unknown) => err instanceof NodeError && err.code === 'CREDENTIAL_ORIGIN',
+    );
+    assert.deepEqual(
+      calls.map((c) => c.url),
+      ['https://93.184.216.34/start', 'https://93.184.216.34/hop'],
+    );
+  });
+});
+
+// AC-23 — A redirect cannot take a bound request off its origin
+test('safeFetch refuses a bound hop before it looks the other host up [@spec:ssrf-guard:AC-23]', () => {
+  const { fetch: mock } = scriptedFetch([
+    redirect(302, 'https://collector.example/next'),
+    new Response(null, { status: 200 }),
+  ]);
+  const looked: string[] = [];
+  const orig = ssrfResolver.lookup;
+  ssrfResolver.lookup = async (host: string) => {
+    looked.push(host);
+    return [{ address: '93.184.216.35', family: 4 }];
+  };
+  return withFetch(mock, async () => {
+    try {
+      await assert.rejects(
+        () => safeFetch('https://93.184.216.34/start', { credential: { origin: 'https://93.184.216.34' } }),
+        (err: unknown) => err instanceof NodeError && err.code === 'CREDENTIAL_ORIGIN',
+      );
+      assert.deepEqual(looked, [], 'the other host is never looked up');
+    } finally {
+      ssrfResolver.lookup = orig;
+    }
+  });
+});
+
+// AC-24 — A bound request may follow a redirect off its origin without its secret
+test('safeFetch follows a redirect off the bound origin under strip, keeping no header the caller set [@spec:ssrf-guard:AC-24]', () => {
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(302, 'https://93.184.216.35/cdn/file.pdf'),
+    new Response('pdf', { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    const res = await safeFetch('https://93.184.216.34/files/1', {
+      headers: {
+        authorization: 'Bearer secret',
+        'x-api-key': 'k',
+        'idempotency-key': 'key-under-a-harmless-name',
+        soapaction: 'another',
+        accept: 'application/pdf',
+      },
+      credential: { origin: 'https://93.184.216.34', crossOriginRedirect: 'strip' },
+    });
+    assert.equal(res.status, 200);
+    assert.equal(calls[1]?.url, 'https://93.184.216.35/cdn/file.pdf');
+    assert.deepEqual([...(calls[1]?.headers.keys() ?? [])], [], 'no header the caller set reaches the other origin');
+    assert.equal(calls[0]?.headers.get('idempotency-key'), 'key-under-a-harmless-name');
+  });
+});
+
+// AC-24 — A bound request may follow a redirect off its origin without its secret
+test('safeFetch still refuses to resend a body off the bound origin under strip [@spec:ssrf-guard:AC-24]', () => {
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(307, 'https://93.184.216.35/token'),
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    await assert.rejects(
+      () =>
+        safeFetch('https://93.184.216.34/token', {
+          method: 'POST',
+          body: 'client_secret=S',
+          credential: { origin: 'https://93.184.216.34', crossOriginRedirect: 'strip' },
+        }),
+      (err: unknown) => err instanceof NodeError && /would resend the request body/.test(err.message),
+    );
+    assert.equal(calls.length, 1);
+  });
+});
