@@ -1,5 +1,15 @@
 # @revenexx/integrations-node-sdk
 
+## 1.10.0
+
+### Minor Changes
+
+- bf3f5a2: `safeFetch` can bind a request to the origin of the credential it carries: `credential: { origin }`. The request is then refused with `CREDENTIAL_ORIGIN` anywhere else, on the first hop and on every redirect, before the other host is looked up or sent anything, and wherever the secret sits: header, query, path or body. `crossOriginRedirect: 'strip'` lets a download follow its server to another host without any header it set (PO-688).
+
+### Patch Changes
+
+- 2d84927: A URL with a user name or password in it, as the address of a call or of a redirect, is refused with `INVALID_URL` before anything is sent, and the message quotes no part of it; so is an address that cannot be read as a URL at all, which the runtime refused with the whole string attached and which was then retried. Until now the runtime refused it with the whole URL in the message, password and query string included, and that message reached the error port. A token exchange that its endpoint refuses names the endpoint by origin and path only (PO-763).
+
 ## 1.9.1
 
 ### Patch Changes
