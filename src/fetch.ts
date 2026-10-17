@@ -318,6 +318,24 @@ function hasContent(body: RequestInit['body']): boolean {
  * on anything but POST) is refused before its target is looked up, and the
  * request is downgraded to `GET` per the usual 301/302/303 rules.
  */
+/**
+ * A URL with a user name or password in it is refused before anything is sent
+ * (PO-763). The runtime's `fetch` would refuse it too, but its message quotes the
+ * whole URL — password and query string included — and a node puts that message
+ * on its error port. This one names the problem, never the address.
+ */
+function refuseUserinfo(url: URL, status = 0): void {
+  if (url.username !== '' || url.password !== '') {
+    throw new NodeError(
+      'INVALID_URL',
+      status === 0
+        ? 'Refused a URL with a user name or password in it: pass them in a credential, not in the address'
+        : `Refused a ${status} redirect to a URL with a user name or password in it`,
+      { status: 0 },
+    );
+  }
+}
+
 async function guardedFetch(
   url: string | URL,
   fetchOptions: RequestInit,
@@ -370,6 +388,7 @@ async function guardedFetch(
     } catch {
       throw new NodeError('BLOCKED_ADDRESS', 'Blocked redirect with an invalid Location header', { status: 0 });
     }
+    refuseUserinfo(nextUrl, redirectStatus);
     // A request bound to its credential's origin never leaves it (PO-688). The
     // binding is compared, not the previous hop, so A → A′ → B is caught at the
     // second hop as surely as A → B at the first; and it is checked before the
@@ -459,19 +478,20 @@ export async function safeFetch(
   // A run already cancelled reports its cancellation, not a fault in its data.
   if (ctxSignal?.aborted) throw ctxSignal.reason;
   if (fetchOptions.headers !== undefined) fetchOptions.headers = sendableHeaders(fetchOptions.headers);
+  // A URL that cannot be read is left to the guard, which refuses it on its own terms.
+  let parsed: URL | undefined;
+  try {
+    parsed = url instanceof URL ? url : new URL(url);
+  } catch {
+    parsed = undefined;
+  }
+  if (parsed) refuseUserinfo(parsed);
   // The same for a request bound to its credential's origin: the first hop is
-  // judged here, once, before any lookup or attempt (PO-688). An address that
-  // cannot be read is left to the guard, which refuses it on its own terms.
+  // judged here, once, before any lookup or attempt (PO-688).
   let binding: { origin: string; crossOriginRedirect: 'refuse' | 'strip' } | undefined;
   if (credential) {
     binding = { origin: boundOrigin(credential), crossOriginRedirect: credential.crossOriginRedirect ?? 'refuse' };
-    let target: string | undefined;
-    try {
-      target = new URL(url).origin;
-    } catch {
-      target = undefined;
-    }
-    if (target !== undefined && target !== binding.origin) throw credentialOriginRefusal(target, binding.origin);
+    if (parsed && parsed.origin !== binding.origin) throw credentialOriginRefusal(parsed.origin, binding.origin);
   }
 
   let lastError: unknown;
@@ -486,7 +506,10 @@ export async function safeFetch(
       // waste time and re-hit the same wall, so surface it immediately.
       if (
         err instanceof NodeError &&
-        (err.code === 'BLOCKED_ADDRESS' || err.code === 'TOO_MANY_REDIRECTS' || err.code === 'CREDENTIAL_ORIGIN')
+        (err.code === 'BLOCKED_ADDRESS' ||
+          err.code === 'TOO_MANY_REDIRECTS' ||
+          err.code === 'CREDENTIAL_ORIGIN' ||
+          err.code === 'INVALID_URL')
       ) {
         throw err;
       }

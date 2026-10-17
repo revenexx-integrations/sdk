@@ -1421,7 +1421,7 @@ test('safeFetch refuses a bound request to another origin before it sends anythi
   return withFetch(mock, async () => {
     await assert.rejects(
       () =>
-        safeFetch('https://user:pw@93.184.216.35/v1/items?token=T', {
+        safeFetch('https://93.184.216.35/v1/items?token=T', {
           headers: { authorization: 'Bearer secret' },
           credential: { origin: 'https://93.184.216.34' },
           retry: { attempts: 3, delayMs: 0 },
@@ -1571,6 +1571,41 @@ test('safeFetch still refuses to resend a body off the bound origin under strip 
           credential: { origin: 'https://93.184.216.34', crossOriginRedirect: 'strip' },
         }),
       (err: unknown) => err instanceof NodeError && /would resend the request body/.test(err.message),
+    );
+    assert.equal(calls.length, 1);
+  });
+});
+
+// AC-25 — A URL with a user name or password in it is refused without being quoted
+test('safeFetch refuses a URL with a user and password in it, sends nothing and quotes none of it [@spec:ssrf-guard:AC-25]', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withFetch(mock, async () => {
+    for (const url of ['https://user:S3cret@93.184.216.34/path?token=T', 'https://user@93.184.216.34/', new URL('https://:S3cret@93.184.216.34/')]) {
+      await assert.rejects(
+        () => safeFetch(url, { retry: { attempts: 3, delayMs: 0 } }),
+        (err: unknown) =>
+          err instanceof NodeError &&
+          err.code === 'INVALID_URL' &&
+          !/S3cret|token=T|93\.184|user[:@]/.test(err.message),
+      );
+    }
+    assert.equal(calls.length, 0, 'nothing is sent, and the refusal is not retried');
+  });
+});
+
+// AC-25 — A URL with a user name or password in it is refused without being quoted
+test('safeFetch refuses a redirect to a URL with a password in it, without quoting it [@spec:ssrf-guard:AC-25]', () => {
+  const { fetch: mock, calls } = scriptedFetch([
+    redirect(302, 'https://u:S3cret@93.184.216.34/next?token=T'),
+    new Response(null, { status: 200 }),
+  ]);
+  return withFetch(mock, async () => {
+    await assert.rejects(
+      () => safeFetch('https://93.184.216.34/start'),
+      (err: unknown) =>
+        err instanceof NodeError &&
+        err.code === 'INVALID_URL' &&
+        err.message === 'Refused a 302 redirect to a URL with a user name or password in it',
     );
     assert.equal(calls.length, 1);
   });
