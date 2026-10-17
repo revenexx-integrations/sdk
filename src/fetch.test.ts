@@ -1453,7 +1453,7 @@ test('safeFetch sends a bound request to its own origin, whatever its path [@spe
 test('safeFetch refuses a binding that is not an http(s) address [@spec:ssrf-guard:AC-22]', () => {
   const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
   return withFetch(mock, async () => {
-    for (const origin of ['not a url', 'file:///etc/passwd']) {
+    for (const origin of ['not a url', 'file:///etc/passwd', 'wss://93.184.216.34', 'blob:https://93.184.216.34/x']) {
       await assert.rejects(
         () => safeFetch('https://93.184.216.34/', { credential: { origin } }),
         (err: unknown) => err instanceof NodeError && err.code === 'CREDENTIAL_ORIGIN' && !err.message.includes('passwd'),
@@ -1533,21 +1533,26 @@ test('safeFetch refuses a bound hop before it looks the other host up [@spec:ssr
 });
 
 // AC-24 — A bound request may follow a redirect off its origin without its secret
-test('safeFetch follows a redirect off the bound origin under strip, without the secret headers [@spec:ssrf-guard:AC-24]', () => {
+test('safeFetch follows a redirect off the bound origin under strip, keeping no header the caller set [@spec:ssrf-guard:AC-24]', () => {
   const { fetch: mock, calls } = scriptedFetch([
     redirect(302, 'https://93.184.216.35/cdn/file.pdf'),
     new Response('pdf', { status: 200 }),
   ]);
   return withFetch(mock, async () => {
     const res = await safeFetch('https://93.184.216.34/files/1', {
-      headers: { authorization: 'Bearer secret', 'x-api-key': 'k', accept: 'application/pdf' },
+      headers: {
+        authorization: 'Bearer secret',
+        'x-api-key': 'k',
+        'idempotency-key': 'key-under-a-harmless-name',
+        soapaction: 'another',
+        accept: 'application/pdf',
+      },
       credential: { origin: 'https://93.184.216.34', crossOriginRedirect: 'strip' },
     });
     assert.equal(res.status, 200);
     assert.equal(calls[1]?.url, 'https://93.184.216.35/cdn/file.pdf');
-    assert.equal(calls[1]?.headers.get('authorization'), null);
-    assert.equal(calls[1]?.headers.get('x-api-key'), null);
-    assert.equal(calls[1]?.headers.get('accept'), 'application/pdf');
+    assert.deepEqual([...(calls[1]?.headers.keys() ?? [])], [], 'no header the caller set reaches the other origin');
+    assert.equal(calls[0]?.headers.get('idempotency-key'), 'key-under-a-harmless-name');
   });
 });
 

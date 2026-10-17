@@ -207,16 +207,19 @@ export interface SafeFetchOptions extends RequestInit {
 
 /** The bound origin of a credential binding, or a `CREDENTIAL_ORIGIN` refusal when it is not an address. */
 function boundOrigin(credential: SafeFetchCredential): string {
-  let origin: string;
+  let parsed: URL | undefined;
   try {
-    origin = new URL(credential.origin).origin;
+    parsed = new URL(credential.origin);
   } catch {
-    origin = 'null';
+    parsed = undefined;
   }
-  if (origin === 'null') {
+  // Judged by protocol, not by `origin === 'null'`: `blob:https://x/…` has the
+  // origin `https://x`, and `wss:` has one of its own, yet neither is an address
+  // this binding may name.
+  if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) {
     throw new NodeError('CREDENTIAL_ORIGIN', 'The origin a credential is bound to is not an http(s) address', { status: 0 });
   }
-  return origin;
+  return parsed.origin;
 }
 
 /** A request, or a hop of it, that would carry a bound credential to another origin. Names origins only. */
@@ -418,7 +421,12 @@ async function guardedFetch(
     // undici strip only `Authorization`, `Cookie` and `Proxy-Authorization`, which
     // is enough where the caller cannot choose a header for its key; a node can,
     // so everything not known to be harmless is dropped instead (PO-664).
-    if (nextUrl.origin !== base.origin) {
+    if (binding && nextUrl.origin !== binding.origin) {
+      // A bound request declared every part of itself secret, so a hop off its
+      // origin under 'strip' keeps no header the caller set: a key can sit under
+      // any name, `Idempotency-Key` and `SOAPAction` included (AC-24).
+      for (const name of [...headers.keys()]) headers.delete(name);
+    } else if (nextUrl.origin !== base.origin) {
       for (const name of [...headers.keys()]) {
         if (!headerCrossesOrigin(name)) headers.delete(name);
       }

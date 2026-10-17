@@ -369,8 +369,9 @@ workflow.
 - **Given** a request bound with `crossOriginRedirect: 'strip'` — a download that its
   server sends on to a content network or a signed storage link
 - **When** it is redirected to another origin
-- **Then** the hop is followed the way an unbound one is: only the headers of AC-7 go
-  on, and a body that would be resent is still refused
+- **Then** the hop is followed without any header the caller set — not even the ones
+  AC-7 lets cross, because a bound request declared all of itself secret and a key can
+  sit under any name — and a body that would be resent is still refused
 - **Because** some services hand a file out from another host, and refusing every such
   hop would make the binding unusable for them. The caller chooses it per call, knowing
   that a secret in the query or the path is not protected on that hop
