@@ -1610,3 +1610,37 @@ test('safeFetch refuses a redirect to a URL with a password in it, without quoti
     assert.equal(calls.length, 1);
   });
 });
+
+// AC-25 — A URL with a user name or password in it is refused without being quoted
+test('safeFetch refuses an address it cannot read without quoting it, and does not retry [@spec:ssrf-guard:AC-25]', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withFetch(mock, async () => {
+    await assert.rejects(
+      () => safeFetch('https://user:S3cret@93.184.216.34:99999/p?token=T', { retry: { attempts: 3, delayMs: 0 } }),
+      (err: unknown) =>
+        err instanceof NodeError &&
+        err.code === 'INVALID_URL' &&
+        !/S3cret|token=T|93\.184|user[:@]/.test(err.message) &&
+        !JSON.stringify(err).includes('S3cret'),
+    );
+    assert.equal(calls.length, 0);
+  });
+});
+
+// AC-22 with AC-25 — a bound request to another origin with a password in its address
+test('safeFetch refuses a bound request with a password in its address as INVALID_URL, naming neither [@spec:ssrf-guard:AC-22]', () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  return withFetch(mock, async () => {
+    await assert.rejects(
+      () =>
+        safeFetch('https://user:S3cret@93.184.216.35/v1?token=T', {
+          credential: { origin: 'https://93.184.216.34' },
+        }),
+      (err: unknown) =>
+        err instanceof NodeError &&
+        err.code === 'INVALID_URL' &&
+        !/S3cret|token=T|user[:@]/.test(err.message),
+    );
+    assert.equal(calls.length, 0);
+  });
+});

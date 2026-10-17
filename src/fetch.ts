@@ -308,17 +308,6 @@ function hasContent(body: RequestInit['body']): boolean {
 }
 
 /**
- * Perform one request while enforcing the SSRF guard. The initial URL and every
- * redirect target are checked with {@link assertPublicUrl}; redirects are
- * followed manually (`redirect: 'manual'`) so a 3xx `Location` pointing at a
- * private/loopback address is re-checked and rejected rather than transparently
- * followed by the runtime. A cross-origin hop keeps only the headers in
- * the headers {@link headerCrossesOrigin} answers `true` for, an `https`→`http` downgrade is refused, a
- * redirect that would resend a body to another origin (307/308, and 301/302
- * on anything but POST) is refused before its target is looked up, and the
- * request is downgraded to `GET` per the usual 301/302/303 rules.
- */
-/**
  * A URL with a user name or password in it is refused before anything is sent
  * (PO-763). The runtime's `fetch` would refuse it too, but its message quotes the
  * whole URL — password and query string included — and a node puts that message
@@ -336,6 +325,17 @@ function refuseUserinfo(url: URL, status = 0): void {
   }
 }
 
+/**
+ * Perform one request while enforcing the SSRF guard. The initial URL and every
+ * redirect target are checked with {@link assertPublicUrl}; redirects are
+ * followed manually (`redirect: 'manual'`) so a 3xx `Location` pointing at a
+ * private/loopback address is re-checked and rejected rather than transparently
+ * followed by the runtime. A cross-origin hop keeps only the headers in
+ * the headers {@link headerCrossesOrigin} answers `true` for, an `https`→`http` downgrade is refused, a
+ * redirect that would resend a body to another origin (307/308, and 301/302
+ * on anything but POST) is refused before its target is looked up, and the
+ * request is downgraded to `GET` per the usual 301/302/303 rules.
+ */
 async function guardedFetch(
   url: string | URL,
   fetchOptions: RequestInit,
@@ -478,20 +478,22 @@ export async function safeFetch(
   // A run already cancelled reports its cancellation, not a fault in its data.
   if (ctxSignal?.aborted) throw ctxSignal.reason;
   if (fetchOptions.headers !== undefined) fetchOptions.headers = sendableHeaders(fetchOptions.headers);
-  // A URL that cannot be read is left to the guard, which refuses it on its own terms.
-  let parsed: URL | undefined;
+  // An address the URL parser cannot read is refused here too: the runtime's own
+  // TypeError carries the whole string in `input`, password and query included,
+  // and as a plain error it would be retried (PO-763).
+  let parsed: URL;
   try {
     parsed = url instanceof URL ? url : new URL(url);
   } catch {
-    parsed = undefined;
+    throw new NodeError('INVALID_URL', 'Refused an address that cannot be read as a URL', { status: 0 });
   }
-  if (parsed) refuseUserinfo(parsed);
+  refuseUserinfo(parsed);
   // The same for a request bound to its credential's origin: the first hop is
   // judged here, once, before any lookup or attempt (PO-688).
   let binding: { origin: string; crossOriginRedirect: 'refuse' | 'strip' } | undefined;
   if (credential) {
     binding = { origin: boundOrigin(credential), crossOriginRedirect: credential.crossOriginRedirect ?? 'refuse' };
-    if (parsed && parsed.origin !== binding.origin) throw credentialOriginRefusal(parsed.origin, binding.origin);
+    if (parsed.origin !== binding.origin) throw credentialOriginRefusal(parsed.origin, binding.origin);
   }
 
   let lastError: unknown;

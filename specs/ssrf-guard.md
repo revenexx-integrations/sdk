@@ -386,6 +386,10 @@ workflow.
 - **Then** the call fails with `INVALID_URL` before anything is sent to that address,
   and is not asked again; the message names the problem and no part of the address —
   no user, password, host, path or query
+- **And** an address that cannot be read as a URL at all is refused the same way, as
+  `INVALID_URL`, quoting nothing and asked only once
+- **And** with a binding to another origin (AC-22) as well, the address is refused as
+  `INVALID_URL`, so neither refusal names the user or the password
 - **And** a token exchange that a token endpoint refuses names that endpoint by origin
   and path only, never by its query string
 - **Because** the runtime refuses such an address too, but its message quotes the whole
