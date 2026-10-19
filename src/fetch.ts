@@ -175,11 +175,61 @@ export interface SafeFetchRetry {
   delayMs?: number;
 }
 
+/**
+ * Binds a request to the one origin its credential belongs to (PO-688).
+ *
+ * Setting it declares the whole request secret-bearing — headers, query, path
+ * and body alike — so nothing has to name which part carries the secret: a
+ * request to any other origin is refused with `CREDENTIAL_ORIGIN`, on the first
+ * hop and on every redirect, before that origin is looked up or sent anything.
+ */
+export interface SafeFetchCredential {
+  /** The only origin this request may reach, e.g. `https://api.pipedrive.com`. */
+  origin: string | URL;
+  /**
+   * What a redirect off that origin does. `'refuse'` (the default) fails the
+   * call. `'strip'` follows it the way an unbound request would — every header
+   * not known to be harmless dropped, a body refused — for a download that is
+   * redirected to a CDN or a signed storage link. A secret in the query or the
+   * path is not protected on such a hop.
+   */
+  crossOriginRedirect?: 'refuse' | 'strip';
+}
+
 export interface SafeFetchOptions extends RequestInit {
   timeoutMs?: number;
   /** Pass `ctx.signal` so the workflow engine can cancel the request. */
   signal?: AbortSignal;
   retry?: SafeFetchRetry;
+  /** Bind the request to the origin of the credential it carries. */
+  credential?: SafeFetchCredential;
+}
+
+/** The bound origin of a credential binding, or a `CREDENTIAL_ORIGIN` refusal when it is not an address. */
+function boundOrigin(credential: SafeFetchCredential): string {
+  let parsed: URL | undefined;
+  try {
+    parsed = new URL(credential.origin);
+  } catch {
+    parsed = undefined;
+  }
+  // Judged by protocol, not by `origin === 'null'`: `blob:https://x/…` has the
+  // origin `https://x`, and `wss:` has one of its own, yet neither is an address
+  // this binding may name.
+  if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) {
+    throw new NodeError('CREDENTIAL_ORIGIN', 'The origin a credential is bound to is not an http(s) address', { status: 0 });
+  }
+  return parsed.origin;
+}
+
+/** A request, or a hop of it, that would carry a bound credential to another origin. Names origins only. */
+function credentialOriginRefusal(target: string, bound: string, hop?: number): NodeError {
+  const what = hop === undefined ? 'a request' : `a ${hop} redirect`;
+  return new NodeError(
+    'CREDENTIAL_ORIGIN',
+    `Refused ${what} to ${target}: the credential it carries is bound to ${bound}`,
+    { status: 0 },
+  );
 }
 
 /**
@@ -258,6 +308,24 @@ function hasContent(body: RequestInit['body']): boolean {
 }
 
 /**
+ * A URL with a user name or password in it is refused before anything is sent
+ * (PO-763). The runtime's `fetch` would refuse it too, but its message quotes the
+ * whole URL — password and query string included — and a node puts that message
+ * on its error port. This one names the problem, never the address.
+ */
+function refuseUserinfo(url: URL, status = 0): void {
+  if (url.username !== '' || url.password !== '') {
+    throw new NodeError(
+      'INVALID_URL',
+      status === 0
+        ? 'Refused a URL with a user name or password in it: pass them in a credential, not in the address'
+        : `Refused a ${status} redirect to a URL with a user name or password in it`,
+      { status: 0 },
+    );
+  }
+}
+
+/**
  * Perform one request while enforcing the SSRF guard. The initial URL and every
  * redirect target are checked with {@link assertPublicUrl}; redirects are
  * followed manually (`redirect: 'manual'`) so a 3xx `Location` pointing at a
@@ -273,6 +341,7 @@ async function guardedFetch(
   fetchOptions: RequestInit,
   ctxSignal: AbortSignal | undefined,
   effectiveMs: number,
+  binding?: { origin: string; crossOriginRedirect: 'refuse' | 'strip' },
 ): Promise<Response> {
   // The initial request is issued with the caller's URL and init untouched
   // (only `redirect: 'manual'` is added, and headers arrive as the pairs
@@ -319,6 +388,14 @@ async function guardedFetch(
     } catch {
       throw new NodeError('BLOCKED_ADDRESS', 'Blocked redirect with an invalid Location header', { status: 0 });
     }
+    refuseUserinfo(nextUrl, redirectStatus);
+    // A request bound to its credential's origin never leaves it (PO-688). The
+    // binding is compared, not the previous hop, so A → A′ → B is caught at the
+    // second hop as surely as A → B at the first; and it is checked before the
+    // target is looked up, so the other origin's DNS does not see it either.
+    if (binding && binding.crossOriginRedirect === 'refuse' && nextUrl.origin !== binding.origin) {
+      throw credentialOriginRefusal(nextUrl.origin, binding.origin, redirectStatus);
+    }
     // Refuse an https→http downgrade on redirect: a request that started over TLS
     // must not be bounced down to plaintext, which would expose it (and any
     // still-attached same-origin credentials) on the wire.
@@ -363,7 +440,12 @@ async function guardedFetch(
     // undici strip only `Authorization`, `Cookie` and `Proxy-Authorization`, which
     // is enough where the caller cannot choose a header for its key; a node can,
     // so everything not known to be harmless is dropped instead (PO-664).
-    if (nextUrl.origin !== base.origin) {
+    if (binding && nextUrl.origin !== binding.origin) {
+      // A bound request declared every part of itself secret, so a hop off its
+      // origin under 'strip' keeps no header the caller set: a key can sit under
+      // any name, `Idempotency-Key` and `SOAPAction` included (AC-24).
+      for (const name of [...headers.keys()]) headers.delete(name);
+    } else if (nextUrl.origin !== base.origin) {
       for (const name of [...headers.keys()]) {
         if (!headerCrossesOrigin(name)) headers.delete(name);
       }
@@ -378,7 +460,7 @@ export async function safeFetch(
   url: string | URL,
   options: SafeFetchOptions = {},
 ): Promise<Response> {
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, signal: ctxSignal, retry, ...fetchOptions } = options;
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, signal: ctxSignal, retry, credential, ...fetchOptions } = options;
   const effectiveMs =
     Number.isFinite(timeoutMs) && timeoutMs > 0
       ? Math.min(timeoutMs, MAX_TIMEOUT_MS)
@@ -396,18 +478,41 @@ export async function safeFetch(
   // A run already cancelled reports its cancellation, not a fault in its data.
   if (ctxSignal?.aborted) throw ctxSignal.reason;
   if (fetchOptions.headers !== undefined) fetchOptions.headers = sendableHeaders(fetchOptions.headers);
+  // An address the URL parser cannot read is refused here too: the runtime's own
+  // TypeError carries the whole string in `input`, password and query included,
+  // and as a plain error it would be retried (PO-763).
+  let parsed: URL;
+  try {
+    parsed = url instanceof URL ? url : new URL(url);
+  } catch {
+    throw new NodeError('INVALID_URL', 'Refused an address that cannot be read as a URL', { status: 0 });
+  }
+  refuseUserinfo(parsed);
+  // The same for a request bound to its credential's origin: the first hop is
+  // judged here, once, before any lookup or attempt (PO-688).
+  let binding: { origin: string; crossOriginRedirect: 'refuse' | 'strip' } | undefined;
+  if (credential) {
+    binding = { origin: boundOrigin(credential), crossOriginRedirect: credential.crossOriginRedirect ?? 'refuse' };
+    if (parsed.origin !== binding.origin) throw credentialOriginRefusal(parsed.origin, binding.origin);
+  }
 
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (ctxSignal?.aborted) throw ctxSignal.reason;
 
     try {
-      return await guardedFetch(url, fetchOptions, ctxSignal, effectiveMs);
+      return await guardedFetch(url, fetchOptions, ctxSignal, effectiveMs, binding);
     } catch (err) {
       if (ctxSignal?.aborted) throw ctxSignal.reason;
       // A blocked address or redirect loop is deterministic — retrying can only
       // waste time and re-hit the same wall, so surface it immediately.
-      if (err instanceof NodeError && (err.code === 'BLOCKED_ADDRESS' || err.code === 'TOO_MANY_REDIRECTS')) {
+      if (
+        err instanceof NodeError &&
+        (err.code === 'BLOCKED_ADDRESS' ||
+          err.code === 'TOO_MANY_REDIRECTS' ||
+          err.code === 'CREDENTIAL_ORIGIN' ||
+          err.code === 'INVALID_URL')
+      ) {
         throw err;
       }
       lastError = err;

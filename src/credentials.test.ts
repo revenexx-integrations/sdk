@@ -502,3 +502,25 @@ test('token-endpoint errors surface OAuth fields but never the raw body [@spec:c
       !err.message.includes('DO_NOT_LEAK'),
   );
 });
+
+// ssrf-guard AC-25 — the token exchange names its endpoint by origin and path only
+test('postForm names a refusing token endpoint without its query string [@spec:ssrf-guard:AC-25]', async (t) => {
+  // biome-ignore lint/nursery/noJsRestrictedProperties: saving the global to restore it after the test — the seam that installs the mock, not a request
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('{"error":"invalid_client"}', { status: 401 });
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  class QueryTokenCredential extends BusinessCentralCredential {
+    protected tokenUrl(_config: Config): string {
+      return 'https://93.184.216.34/oauth/token?api_key=S3cret';
+    }
+  }
+  await assert.rejects(
+    () => new QueryTokenCredential().resolve(ctx(), { clientId: 'id', clientSecret: 'sec' }, null),
+    (err: unknown) =>
+      err instanceof Error &&
+      err.message.startsWith('token endpoint https://93.184.216.34/oauth/token -> 401') &&
+      !err.message.includes('S3cret'),
+  );
+});
