@@ -258,6 +258,15 @@ interface INodeResult {
 }
 ```
 
+Output ports are alternatives: exactly one fires. A node with **more than one output**
+(an `error` output counts; so does a `resolveOutputs` set) must name the one it took in
+`branch`; only a node with a single output may leave it out. The worker fails such a step
+from the integrations release that carries PO-751 — until then a missing `branch` fires
+every output. Check a result in the node's own tests with `assertBranchNamed(node, result)`.
+`rvnxx-nodes manifest` warns when a node's several outputs cannot be told apart (an unnamed
+or repeated output name, a fallback name that repeats a fixed one); from the next major
+version that is an error.
+
 ---
 
 ### `NodeError`
