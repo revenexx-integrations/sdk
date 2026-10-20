@@ -11,7 +11,7 @@ metadata:
     - integrations
 spec:
   type: library
-  owner: group:default/platform
+  owner: group:default/integration-engineering
   system: revenue-cloud
   lifecycle: production
   providesApis: []
