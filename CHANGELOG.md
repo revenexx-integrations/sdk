@@ -1,5 +1,11 @@
 # @revenexx/integrations-node-sdk
 
+## 1.12.0
+
+### Minor Changes
+
+- 76555c1: A run can reach its own tenant's VPN routes (PO-828). The process hosting a run installs the exact `"<ip>:<port>"` pairs it may reach on `globalThis` under `Symbol.for('revenexx.ssrf.allowedTargets')` before any node bundle is loaded — `installAllowedTargets` does that once, `allowedTargets` reads it back, and `isAllowedTarget(ip, port)` answers for a caller with its own socket. `assertPublicUrl`, the connect-time check in `safeFetch` and every redirect hop let a private address through only when exactly that address and port are listed; the same address on another port, any other private address and a redirect off the listed target are refused as before, and a list that is absent, malformed or still writable allows nothing. A credential kind can declare which of its fields a VPN route replaces (`network` on `ICredentialDescription`, PO-829), a setting can pick a route (`type: 'vpn-route'` with `routeKind`, PO-831), a node receives it as a `ResolvedVpnRoute`, and the two failure codes are exported as `VPN_UNAVAILABLE` and `VPN_ROUTE_MISSING` (with `VpnErrorCode` and `isVpnErrorCode`). **`network`, `vpn-route` and `routeKind` are accepted by the registry only once integrations#406 is deployed**; until then a package declaring them is refused on upload. An allow-list entry may only name an RFC 1918 or IPv6 unique-local address.
+
 ## 1.11.0
 
 ### Minor Changes
