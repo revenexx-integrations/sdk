@@ -1,6 +1,7 @@
 import { subscribe } from 'node:diagnostics_channel';
 import { isIP } from 'node:net';
 import ipaddr from 'ipaddr.js';
+import { allowedTargets, isAllowedTarget } from './allowedTargets.js';
 import { NodeError } from './errors.js';
 
 /**
@@ -216,7 +217,7 @@ function targetKey(hostname: string, port: string, protocol: string): string {
 /** The shape this guard reads off an `undici:client:connected` message. */
 interface ConnectedMessage {
   connectParams?: { hostname?: string; port?: string; protocol?: string };
-  socket?: { remoteAddress?: string | undefined; destroy: (err?: Error) => void };
+  socket?: { remoteAddress?: string | undefined; remotePort?: number | undefined; destroy: (err?: Error) => void };
 }
 
 /**
@@ -283,8 +284,42 @@ function judgeConnection(message: unknown): void {
   if (guardRelaxedForLocalDev()) return;
   const peer = socket.remoteAddress;
   // An address we cannot read is treated like one we cannot parse: fail closed.
+  // A private peer passes only when its exact address and port are on the run's
+  // allow-list (PO-828) — the port the socket reached, not the one asked for.
   if (peer != null && !isBlockedAddress(peer)) return;
+  const remotePort = socket.remotePort;
+  if (peer != null && allowedTargets().length > 0 && !Number.isInteger(remotePort)) {
+    // Closed, but for what it is: without the port the allow-list cannot be asked,
+    // and calling that a private address would send the operator after the list.
+    reportUnreadablePeerPort();
+    socket.destroy(unreadablePortError(normalizeHost(hostname)));
+    return;
+  }
+  if (peer != null && isAllowedTarget(peer, remotePort as number)) return;
   socket.destroy(connectBlockedError(normalizeHost(hostname), peer));
+}
+
+/**
+ * A private peer whose port the socket does not report cannot be held against the
+ * run's allow-list, which is keyed by address *and* port. Refused — failing open
+ * would allow every port of a listed address — and said so once, like
+ * {@link reportUnreadableMessage}, because it means the socket shape changed.
+ */
+let unreadablePeerPortLogged = false;
+function reportUnreadablePeerPort(): void {
+  if (unreadablePeerPortLogged) return;
+  unreadablePeerPortLogged = true;
+  console.warn(
+    '[ssrf] a connection reported no remote port: the SSRF allow-list cannot be consulted, so private peers are refused.',
+  );
+}
+
+function unreadablePortError(host: string): NodeError {
+  return new NodeError(
+    'BLOCKED_ADDRESS',
+    `Blocked request to ${host}: the port the connection landed on could not be read, so the allow-list could not be consulted`,
+    { status: 0 },
+  );
 }
 
 /**
@@ -374,6 +409,11 @@ async function resolveHost(lookup: LookupFn, host: string, signal?: AbortSignal)
  * actually reached (PO-184). A caller that opens its own request after
  * `assertPublicUrl` gets the check and not that second half.
  *
+ * A private address passes only where exactly that address **and** the URL's
+ * effective port are on the run's allow-list (PO-828, see `isAllowedTarget`) —
+ * every other answer still decides as before, so one allowed address among
+ * private ones does not carry the rest.
+ *
  * Pass `signal` (the per-request timeout/cancellation budget) so a hung or
  * hostile DNS resolve cannot block the guard past that budget — see
  * {@link resolveHost}.
@@ -404,9 +444,13 @@ export async function assertPublicUrl(
     throw new NodeError('BLOCKED_ADDRESS', `Blocked loopback host: ${host}`, { status: 0 });
   }
 
+  // The port the connection will use: the one written, or the scheme's default.
+  const port = u.port === '' ? (u.protocol === 'https:' ? 443 : 80) : Number(u.port);
+  const refused = (address: string): boolean => isBlockedAddress(address) && !isAllowedTarget(address, port);
+
   // Literal IP: check directly, no DNS. (net.isIP returns 0 for non-IP hosts.)
   if (isIP(host) !== 0) {
-    if (isBlockedAddress(host)) throw blockedError(host, host);
+    if (refused(host)) throw blockedError(host, host);
     return;
   }
 
@@ -416,6 +460,6 @@ export async function assertPublicUrl(
     throw new NodeError('BLOCKED_ADDRESS', `Could not resolve host: ${host}`, { status: 0 });
   }
   for (const a of addresses) {
-    if (isBlockedAddress(a.address)) throw blockedError(host, a.address);
+    if (refused(a.address)) throw blockedError(host, a.address);
   }
 }

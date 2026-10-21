@@ -7,7 +7,7 @@ where:
   - packageIconProblem — whether a declared folder icon would be refused
 docs:
   - docs/overview.md
-updated: 2026-10-07
+updated: 2026-10-21
 ---
 
 # What a package tells the registry
@@ -162,6 +162,20 @@ nothing to compare against, because there is no second source.
 - **Pair** AC-7
 - verify: unit
 
+### AC-14 — What a VPN route replaces, and a setting that picks one, are carried as declared
+
+- **Given** a credential kind that declares which of its fields a VPN route replaces
+  (`network`), and a node with a `vpn-route` setting that names the kind of route it
+  wants (`routeKind`)
+- **When** the manifest is built
+- **Then** both arrive exactly as declared, and a credential kind or a setting that
+  declares none carries none
+- **Because** the studio offers a VPN route only where the kind says what the route
+  replaces, and the platform substitutes exactly those fields; a declaration lost or
+  defaulted on the way is a choice the author did not make
+- **Pair** AC-2, the same build for a credential kind without the declaration
+- verify: unit
+
 ## Elsewhere
 
 - **The image files themselves** — which are collected and how they reach the build —
@@ -194,3 +208,10 @@ nothing to compare against, because there is no second source.
   tests that already proved it
 - [PO-537](https://linear.app/revenexx/issue/PO-537) — a package orders the nodes inside a
   palette folder: AC-11 and AC-12
+- [PO-829](https://linear.app/revenexx/issue/PO-829) and
+  [PO-831](https://linear.app/revenexx/issue/PO-831) — a credential kind declares what a
+  VPN route replaces, and a setting can pick a route: AC-14
+  - The registry's own schema refuses a key it does not list, so a package declaring
+    either is refused on upload until the registry learns both
+    ([integrations#406](https://github.com/revenexx/integrations/pull/406)).
+    This spec promises only that they travel.

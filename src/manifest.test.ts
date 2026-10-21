@@ -91,6 +91,41 @@ test('buildManifest includes templates verbatim when provided [@spec:package-man
   assert.equal(manifest.templates?.[0]?.triggers?.[0]?.config?.subject, 'slack.chat.message.created');
 });
 
+// AC-14 — What a VPN route replaces, and a setting that picks one, are carried as declared
+test('buildManifest carries a credential network declaration and a vpn-route setting as declared [@spec:package-manifest:AC-14]', () => {
+  const routedCredential: ICredential = {
+    ...fakeCredential,
+    description: {
+      ...fakeCredential.description,
+      slug: 'revenexx:sap',
+      fields: [
+        { key: 'host', label: 'Host', type: 'string', required: true },
+        { key: 'port', label: 'Port', type: 'number', required: true },
+      ],
+      network: { kind: 'tcp', hostField: 'host', portField: 'port' },
+    },
+  };
+  const routedNode: INode = {
+    ...fakeNode,
+    description: {
+      ...fakeNode.description,
+      slug: 'revenexx:http-request',
+      config: [
+        { key: 'route', label: 'Network', type: 'vpn-route', routeKind: 'tcp' },
+        { key: 'url', label: 'URL', type: 'string' },
+      ],
+    },
+  };
+  const manifest = buildManifest([routedNode], [routedCredential, fakeCredential]);
+
+  assert.deepEqual(manifest.credentials?.[0]?.network, { kind: 'tcp', hostField: 'host', portField: 'port' });
+  assert.equal('network' in (manifest.credentials?.[1] ?? {}), false);
+  const [route, url] = manifest.nodes[0]?.config ?? [];
+  assert.equal(route?.type, 'vpn-route');
+  assert.equal(route?.routeKind, 'tcp');
+  assert.equal(url !== undefined && 'routeKind' in url, false);
+});
+
 // AC-5 — The manifest never carries a block about the package itself
 test('buildManifest never emits a package block [@spec:package-manifest:AC-5]', () => {
   assert.equal('package' in buildManifest([fakeNode]), false);

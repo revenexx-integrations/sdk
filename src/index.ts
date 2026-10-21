@@ -19,6 +19,9 @@ export * from './fetch.js';
 // second way out to the network with a foot-gun attached.
 export { assertPublicUrl, isBlockedAddress } from './ssrf.js';
 export type { LookupAddress, LookupFn } from './ssrf.js';
+// The per-run allow-list (PO-828). The global symbol is the contract; these read
+// and install it, and none of them can widen a list once it is installed.
+export { allowedTargets, installAllowedTargets, isAllowedTarget } from './allowedTargets.js';
 export * from './retry.js';
 export * from './manifest.js';
 export * from './credentials.js';
