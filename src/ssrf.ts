@@ -1,6 +1,7 @@
 import { subscribe } from 'node:diagnostics_channel';
 import { isIP } from 'node:net';
 import ipaddr from 'ipaddr.js';
+import { isAllowedTarget } from './allowedTargets.js';
 import { NodeError } from './errors.js';
 
 /**
@@ -216,7 +217,7 @@ function targetKey(hostname: string, port: string, protocol: string): string {
 /** The shape this guard reads off an `undici:client:connected` message. */
 interface ConnectedMessage {
   connectParams?: { hostname?: string; port?: string; protocol?: string };
-  socket?: { remoteAddress?: string | undefined; destroy: (err?: Error) => void };
+  socket?: { remoteAddress?: string | undefined; remotePort?: number | undefined; destroy: (err?: Error) => void };
 }
 
 /**
@@ -283,7 +284,9 @@ function judgeConnection(message: unknown): void {
   if (guardRelaxedForLocalDev()) return;
   const peer = socket.remoteAddress;
   // An address we cannot read is treated like one we cannot parse: fail closed.
-  if (peer != null && !isBlockedAddress(peer)) return;
+  // A private peer passes only when its exact address and port are on the run's
+  // allow-list (PO-828) — the port the socket reached, not the one asked for.
+  if (peer != null && (!isBlockedAddress(peer) || isAllowedTarget(peer, socket.remotePort ?? 0))) return;
   socket.destroy(connectBlockedError(normalizeHost(hostname), peer));
 }
 
@@ -374,6 +377,11 @@ async function resolveHost(lookup: LookupFn, host: string, signal?: AbortSignal)
  * actually reached (PO-184). A caller that opens its own request after
  * `assertPublicUrl` gets the check and not that second half.
  *
+ * A private address passes only where exactly that address **and** the URL's
+ * effective port are on the run's allow-list (PO-828, see `isAllowedTarget`) —
+ * every other answer still decides as before, so one allowed address among
+ * private ones does not carry the rest.
+ *
  * Pass `signal` (the per-request timeout/cancellation budget) so a hung or
  * hostile DNS resolve cannot block the guard past that budget — see
  * {@link resolveHost}.
@@ -404,9 +412,13 @@ export async function assertPublicUrl(
     throw new NodeError('BLOCKED_ADDRESS', `Blocked loopback host: ${host}`, { status: 0 });
   }
 
+  // The port the connection will use: the one written, or the scheme's default.
+  const port = u.port === '' ? (u.protocol === 'https:' ? 443 : 80) : Number(u.port);
+  const refused = (address: string): boolean => isBlockedAddress(address) && !isAllowedTarget(address, port);
+
   // Literal IP: check directly, no DNS. (net.isIP returns 0 for non-IP hosts.)
   if (isIP(host) !== 0) {
-    if (isBlockedAddress(host)) throw blockedError(host, host);
+    if (refused(host)) throw blockedError(host, host);
     return;
   }
 
@@ -416,6 +428,6 @@ export async function assertPublicUrl(
     throw new NodeError('BLOCKED_ADDRESS', `Could not resolve host: ${host}`, { status: 0 });
   }
   for (const a of addresses) {
-    if (isBlockedAddress(a.address)) throw blockedError(host, a.address);
+    if (refused(a.address)) throw blockedError(host, a.address);
   }
 }

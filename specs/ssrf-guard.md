@@ -6,9 +6,12 @@ where:
   - assertPublicUrl — the guard on its own, for a caller that opens its own request
   - isBlockedAddress — the address ruling, for a caller that already has one
   - headerCrossesOrigin — which header names a redirect to another origin keeps
+  - installAllowedTargets — the host installs the run's allow-list, once
+  - allowedTargets — the allow-list as installed
+  - isAllowedTarget — whether one address and port are on it, for a caller that opens its own socket
 docs:
   - docs/overview.md
-updated: 2026-10-17
+updated: 2026-10-21
 ---
 
 # The SSRF guard
@@ -28,6 +31,11 @@ judged, every redirect hop is judged again, and a refusal is a `BLOCKED_ADDRESS`
 error rather than a response. The one relaxation that exists is an environment
 variable the local development stack sets, and it cannot be reached from a
 workflow.
+
+The one narrowing of that rule is the run's own allow-list: the exact address and
+port pairs at which the platform serves the tenant's VPN routes, installed by the
+process that hosts the run before any node is loaded. A pair on it is reachable
+although it is private; nothing else changes, and nothing a node does can add to it.
 
 **A request this package refuses is a request that was never sent.**
 
@@ -398,6 +406,84 @@ workflow.
   address
 - verify: unit
 
+### AC-26 — A run reaches its own VPN targets although they are private
+
+- **Given** the host has installed the run's allow-list with `installAllowedTargets`,
+  naming `"<ip>:<port>"` pairs such as `10.31.0.7:8080`
+- **When** a target whose address and port are exactly such a pair is judged — by
+  `assertPublicUrl` with the URL's port or its scheme's default, by `safeFetch` before
+  sending and again on the address and port the connection lands on, or by
+  `isAllowedTarget` for a caller with a socket of its own
+- **Then** it passes, whichever form the address is written in — an IPv6 address
+  compressed or not, in brackets or not, an IPv4 address as the mapped IPv6 form a
+  socket may report it in — and `allowedTargets` reads back the list as installed
+- **Because** a tenant's VPN routes are served at private addresses by design, and a
+  guard that refused them would make a route chosen in the studio unreachable from the
+  run it was chosen for
+- **Pair** AC-27, the same address on a port the list does not name
+- verify: unit
+
+### AC-27 — The port is part of the target
+
+- **Given** an address on the allow-list with one port
+- **When** the same address is reached on another port — written in the URL, implied by
+  the scheme, or landed on by a connection whose name resolved publicly when it was
+  judged
+- **Then** it is refused with `BLOCKED_ADDRESS` and nothing reaches that port
+- **Because** the relay that serves the routes is one host with many services on it,
+  and a grant for its proxy port is not a grant for its other ports
+- verify: unit
+
+### AC-28 — Every address not on the list is judged as before
+
+- **Given** an allow-list is installed
+- **When** a private address that is not on it is judged — another address in the same
+  range, the metadata service, or a name that resolves to a listed address *and* an
+  unlisted private one
+- **Then** it is refused, exactly as it would be with no list
+- **Because** the list narrows the rule for the pairs it names and for nothing else; one
+  listed answer among several does not carry the others, for the reason AC-3 gives
+- **Pair** AC-26
+- verify: unit
+
+### AC-29 — A redirect from a listed target is judged again
+
+- **Given** a listed target that answers with a redirect
+- **When** the redirect names the same address on another port, or another private
+  address
+- **Then** it is not followed and the call throws `BLOCKED_ADDRESS`
+- **And** a redirect that stays on the listed address and port is followed
+- **Because** the host behind a VPN route is somebody else's system, and a redirect from
+  it is as untrusted as one from the public internet (AC-5)
+- verify: unit
+
+### AC-30 — The list cannot be widened once it is installed
+
+- **Given** an installed allow-list
+- **When** anything in the process tries to replace it, redefine it, delete it, install
+  it again, or add an entry to it
+- **Then** each attempt fails and the list stays as installed
+- **Because** the host installs it before any node is loaded, and node code runs in the
+  same process afterwards; a list that node code could extend would be a list any
+  workflow author could extend
+- verify: unit
+
+### AC-31 — A list that is absent or malformed allows nothing
+
+- **Given** no allow-list installed, or a property under its name that is not a frozen
+  list of well-formed `"<ip>:<port>"` entries held where it cannot be changed — a writable
+  or reconfigurable property, an accessor, an entry without a port, with a port out of
+  range, with a host name, or an IPv6 address without brackets
+- **When** `allowedTargets` or `isAllowedTarget` reads it
+- **Then** it reads as an empty list and allows nothing — not the entries that happened
+  to be well formed
+- **And** `installAllowedTargets` refuses a malformed entry rather than installing a list
+  that would then read as empty
+- **Because** a property that is not shaped the way the host installs it was not
+  installed by the host, and honouring part of it would let whoever set it decide which
+  private addresses a run reaches
+- verify: unit
+
 ## Elsewhere
 
 - **What following a redirect does to the request** — how many hops are allowed, what a
@@ -478,6 +564,14 @@ workflow.
   and not safety, which is the opposite of what the defaulting rule cost. But it is
   ours to move, and nothing here notices when it should be moved.
 
+- **A process that never installs the list leaves its name free.** The list is read
+  off a global the host defines before any node is loaded, and AC-30 holds only once it
+  is defined. A host that installs nothing when a run has no VPN routes leaves the
+  first code to run free to define it — node code included — with whatever pairs it
+  likes. The hosts are asked to install the list on every run, empty when there are no
+  routes; nothing in this package can tell a list the host installed from one somebody
+  else installed first.
+
 **Undecided**
 
 - **What a refusal costs a running workflow is not promised anywhere.** A blocked
@@ -491,6 +585,14 @@ workflow.
   class depends on where the value came from.
 
 ## Tickets
+
+- [PO-828](https://linear.app/revenexx/issue/PO-828) — added AC-26 through AC-31: the
+  run's allow-list of VPN targets, which the guard honours before sending, at connect
+  time and on every redirect hop
+  - A global property rather than a setter, because every node bundle carries its own
+    copy of this package and only a global is shared by all of them. Exact address and
+    port rather than a range, so a grant for the relay's proxy is not a grant for the
+    relay.
 
 - [PO-763](https://linear.app/revenexx/issue/PO-763) — added AC-25: an address with a
   user name or password is refused as `INVALID_URL` without being quoted, and a token

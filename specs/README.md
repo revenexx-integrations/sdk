@@ -18,8 +18,8 @@ What stays out is the machinery behind the name — that is `docs/`, and
 
 - [`ssrf-guard.md`](ssrf-guard.md) — what a request is allowed to reach: which targets
   are refused before a request is made, how the address a connection lands on is judged
-  too, how each redirect hop is judged again, and what a refusal is allowed to tell the
-  caller
+  too, how each redirect hop is judged again, what a refusal is allowed to tell the
+  caller, and the run's allow-list of its own VPN targets
 - [`request-budget.md`](request-budget.md) — what one request may cost: how long an
   attempt may take, how often it is retried, how cancellation ends it, and how both
   budgets reach a workflow author as bounded settings
@@ -290,6 +290,8 @@ name they are holding.
 | the `dynamic`, `dependsOn`, `dynamic-schema` and `resolveOutputs` markers | [author-time-resolution.md](author-time-resolution.md) |
 | the `showIf` condition on a setting | [setting-conditions.md](setting-conditions.md) |
 | the `fields` an output declares | [output-fields.md](output-fields.md) |
+| the `network` a credential kind declares, and the `vpn-route` setting with its `routeKind` | [package-manifest.md](package-manifest.md) |
+| `allowedTargets` | [ssrf-guard.md](ssrf-guard.md) |
 | `ApiKeyCredential` | [credentials.md](credentials.md) |
 | `assertBranchNamed` | [branch-selection.md](branch-selection.md) |
 | `assertPublicUrl` | [ssrf-guard.md](ssrf-guard.md) |
@@ -310,6 +312,8 @@ name they are holding.
 | `INode.resolveOutputs` | [author-time-resolution.md](author-time-resolution.md) |
 | `INodeContext.state` | [workflow-state.md](workflow-state.md) |
 | `INodeState` | [workflow-state.md](workflow-state.md) |
+| `installAllowedTargets` | [ssrf-guard.md](ssrf-guard.md) |
+| `isAllowedTarget` | [ssrf-guard.md](ssrf-guard.md) |
 | `isBlockedAddress` | [ssrf-guard.md](ssrf-guard.md) |
 | `isMultiPort` | [branch-selection.md](branch-selection.md) |
 | `maxBytesConfigField` | [response-reading.md](response-reading.md), [offered-settings.md](offered-settings.md) |
@@ -351,7 +355,8 @@ second question.** Some of it is: the `INode` and `ICredential` contract, and th
 `rvnxx-nodes` CLI that every node package's build runs, are the two entries in
 *What is not promised yet* above. The rest is not accounted
 for anywhere — `BaseCredential`, the `extract*` helpers, `clampResponseBytes`,
-`MANIFEST_VERSION`, the `DEFAULT_*` and `MAX_*` constants, and the `state-ref` setting with
+`MANIFEST_VERSION`, the `DEFAULT_*` and `MAX_*` constants, the `VPN_*` codes and
+`ResolvedVpnRoute` (what the platform hands a node, which this package only names), and the `state-ref` setting with
 its `stateRole` are exported, unpromised, and unrecorded. (The last of those is unpromised
 on purpose and says so: [workflow-state.md](workflow-state.md) records in its gaps that
 nothing here holds what the marker means.) (The `MAX_*` figures are the ceilings `response-reading.md` AC-5 and

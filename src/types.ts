@@ -21,7 +21,36 @@ export type ConfigType =
   | 'state-ref'
   // A marker field: the flat set of fields that replaces it is resolved at
   // author time by the node's `resolveConfigSchema` callback (PO-143).
-  | 'dynamic-schema';
+  | 'dynamic-schema'
+  // A route of one of the tenant's VPN connections, or the public internet
+  // (PO-831). Stored as `{ connection, route } | null`; the node receives a
+  // `ResolvedVpnRoute` at run time. `routeKind` filters the picker.
+  | 'vpn-route';
+
+/**
+ * What a node receives at run time for a `vpn-route` setting (PO-831).
+ *
+ * The editor stores `{ connection: string; route: string }`, or `null` (or no
+ * value) for the public internet. Before `execute`, the worker replaces a stored
+ * reference with the route as it stands now, so the node never resolves it
+ * itself; a connection that is not active fails the step as `VPN_UNAVAILABLE`,
+ * one that is gone as `VPN_ROUTE_MISSING` (see `VPN_ERROR_CODES`). A setting left
+ * on the public internet stays `null` or absent.
+ */
+export interface ResolvedVpnRoute {
+  /** The VPN connection's name. */
+  connection: string;
+  /** The route's name within that connection. */
+  route: string;
+  kind: 'http' | 'tcp';
+  /**
+   * Where the run reaches the route: for `http` a base URL
+   * (`http://10.31.0.7:8080/sap-odata/`), for `tcp` a `host:port`
+   * (`10.31.0.7:20001`). The address is on the run's allow-list, so
+   * `safeFetch` reaches it although it is private.
+   */
+  endpoint: string;
+}
 
 /**
  * Semantic category of an image, driving how the registry/CDN organises and
@@ -213,6 +242,12 @@ export interface IConfigFieldBase {
    * the node whose config names it.
    */
   stateRole?: 'mapping' | 'cursor' | 'dedupe' | 'digest';
+  /**
+   * Only meaningful when `type === 'vpn-route'`: which kind of route the picker
+   * offers (PO-831) — `http` for a node that sends HTTP requests through the
+   * relay's proxy, `tcp` for one that opens a socket. Defaults to `'http'`.
+   */
+  routeKind?: 'http' | 'tcp';
 }
 
 export interface IConfigField extends IConfigFieldBase {
@@ -556,6 +591,21 @@ export interface ICredentialDescription {
   images?: IImage[];
   authKind: CredentialAuthKind;
   fields: ICredentialField[];
+  /**
+   * Which of this type's fields a VPN route replaces (PO-829). A type without it
+   * cannot be routed through a VPN, and the studio offers no choice.
+   *
+   * - `tcp` — the route's relay address and port replace the `hostField` and
+   *   `portField` values (both keys of `fields`).
+   * - `http` — the route's endpoint replaces the base of the `urlField` value,
+   *   keeping any path the author typed after it.
+   *
+   * The stored configuration is never rewritten; the platform substitutes the
+   * route's current endpoint each time the credential is tested or resolved.
+   */
+  network?:
+    | { kind: 'tcp'; hostField: string; portField: string }
+    | { kind: 'http'; urlField: string };
 }
 
 /**
