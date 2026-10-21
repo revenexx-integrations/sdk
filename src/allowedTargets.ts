@@ -4,7 +4,8 @@ import ipaddr from 'ipaddr.js';
 /**
  * The per-run allow-list of the SSRF guard (PO-828): the exact `ip:port` pairs a
  * run may reach although the address is private — its own tenant's VPN routes,
- * served by the relay at `10.31.0.0/16`.
+ * served by the relay at a private overlay address (an RFC 1918 or IPv6
+ * unique-local one — no other address may be listed).
  *
  * **The global symbol is the contract, not this module.** Every node bundle carries
  * its own copy of this package, so a module-level setter would reach only the copy
@@ -54,8 +55,32 @@ function validPort(port: number): boolean {
   return Number.isInteger(port) && port >= 1 && port <= 65_535;
 }
 
-/** `"<ip>:<port>"` or `"[v6]:<port>"` as its canonical key, or `undefined` when malformed. */
-function parseTarget(entry: unknown): string | undefined {
+/**
+ * The ranges a VPN target may sit in: an RFC 1918 IPv4 address or an IPv6
+ * unique-local one. The relay is reached at a private overlay address, and the
+ * overlay's range is the deployment's to choose, so the rule is the class of
+ * address and not one network. What it keeps out is everything a wrong list must
+ * never open — loopback, link-local with the metadata service in it, unspecified,
+ * multicast, broadcast, carrier-grade NAT, reserved and public space.
+ */
+const TARGET_RANGES = new Set(['private', 'uniqueLocal']);
+
+/**
+ * Test-only: `RVNXX_SSRF_TARGETS_ALLOW_LOOPBACK` also accepts `127.0.0.0/8` and `::1`
+ * entries, because a test can only listen on loopback. Read on every call. No
+ * production process sets it, and the worker's sandbox passes a node only `PATH`
+ * and `RVNXX_SSRF_ALLOW_PRIVATE`, so node code cannot see or set it for its host.
+ */
+function loopbackTargetsAllowed(): boolean {
+  const raw = process.env['RVNXX_SSRF_TARGETS_ALLOW_LOOPBACK'];
+  return raw != null && ['1', 'true', 'yes'].includes(raw.trim().toLowerCase());
+}
+
+/**
+ * `"<ip>:<port>"` or `"[v6]:<port>"` as its canonical key, or `undefined` when it is
+ * malformed or names an address outside {@link TARGET_RANGES}.
+ */
+function parseTarget(entry: unknown, allowLoopback: boolean): string | undefined {
   if (typeof entry !== 'string') return undefined;
   const v4 = V4_ENTRY.exec(entry);
   const m = v4 ?? V6_ENTRY.exec(entry);
@@ -65,43 +90,73 @@ function parseTarget(entry: unknown): string | undefined {
   if (v4 && !ipaddr.IPv4.isValidFourPartDecimal(host)) return undefined;
   if (!validPort(port)) return undefined;
   const address = canonicalAddress(host);
-  return address === undefined ? undefined : `${address}:${port}`;
+  if (address === undefined) return undefined;
+  const range = ipaddr.parse(address).range();
+  if (!TARGET_RANGES.has(range) && !(allowLoopback && range === 'loopback')) return undefined;
+  return `${address}:${port}`;
+}
+
+/** Test seam: how many times a list has been validated. Not re-exported from the package. */
+export const allowListStats = { validations: 0 };
+
+/**
+ * The validated keys of a list, or `null` when the list is malformed — kept per
+ * frozen array, so a list is validated once and not on every address a call judges.
+ * The loopback switch is part of the key, since it changes the verdict.
+ */
+const keysByList = new WeakMap<readonly unknown[], Map<boolean, ReadonlySet<string> | null>>();
+
+function keysOf(list: readonly unknown[]): ReadonlySet<string> | null {
+  const allowLoopback = loopbackTargetsAllowed();
+  let byMode = keysByList.get(list);
+  if (byMode === undefined) {
+    byMode = new Map();
+    keysByList.set(list, byMode);
+  }
+  const cached = byMode.get(allowLoopback);
+  if (cached !== undefined) return cached;
+  allowListStats.validations++;
+  const keys = new Set<string>();
+  let result: ReadonlySet<string> | null = keys;
+  for (const entry of list) {
+    const key = parseTarget(entry, allowLoopback);
+    if (key === undefined) {
+      result = null;
+      break;
+    }
+    keys.add(key);
+  }
+  byMode.set(allowLoopback, result);
+  return result;
+}
+
+/** The frozen array on `holder` and its keys, or `null` when there is none or it is malformed. */
+function installedList(holder: object): { list: readonly string[]; keys: ReadonlySet<string> } | null {
+  const descriptor = Object.getOwnPropertyDescriptor(holder, ALLOWED_TARGETS_SYMBOL);
+  if (descriptor === undefined || !('value' in descriptor)) return null;
+  if (descriptor.writable || descriptor.configurable) return null;
+  const value: unknown = descriptor.value;
+  if (!Array.isArray(value) || !Object.isFrozen(value)) return null;
+  const keys = keysOf(value);
+  return keys === null ? null : { list: value as readonly string[], keys };
 }
 
 /**
  * Read the list off `holder` — `globalThis` in production, a fresh object in the
  * tests that need a shape the one-shot global cannot be given twice. Anything but a
- * frozen array of well-formed entries on a non-writable, non-configurable data
- * property is malformed and reads as the empty list: fail closed, never partly.
+ * frozen array of valid entries on a non-writable, non-configurable data property
+ * reads as the empty list: fail closed, never partly.
  */
 export function readAllowedTargets(holder: object): readonly string[] {
-  const descriptor = Object.getOwnPropertyDescriptor(holder, ALLOWED_TARGETS_SYMBOL);
-  if (descriptor === undefined || !('value' in descriptor)) return EMPTY;
-  if (descriptor.writable || descriptor.configurable) return EMPTY;
-  const value: unknown = descriptor.value;
-  if (!Array.isArray(value) || !Object.isFrozen(value)) return EMPTY;
-  for (const entry of value) if (parseTarget(entry) === undefined) return EMPTY;
-  return value as readonly string[];
-}
-
-/** The parsed form of a list, kept per list so a call does not re-parse it. */
-const keysByList = new WeakMap<readonly string[], ReadonlySet<string>>();
-
-function keysOf(list: readonly string[]): ReadonlySet<string> {
-  let keys = keysByList.get(list);
-  if (keys === undefined) {
-    keys = new Set(list.map((entry) => parseTarget(entry) as string));
-    keysByList.set(list, keys);
-  }
-  return keys;
+  return installedList(holder)?.list ?? EMPTY;
 }
 
 /** {@link isAllowedTarget} against the list on `holder`. */
 export function isAllowedTargetOn(holder: object, ip: string, port: number): boolean {
-  const list = readAllowedTargets(holder);
-  if (list.length === 0 || !validPort(port)) return false;
+  const installed = installedList(holder);
+  if (installed === null || !validPort(port)) return false;
   const address = canonicalAddress(ip);
-  return address !== undefined && keysOf(list).has(`${address}:${port}`);
+  return address !== undefined && installed.keys.has(`${address}:${port}`);
 }
 
 /** {@link installAllowedTargets} onto `holder`. */
@@ -111,8 +166,10 @@ export function installAllowedTargetsOn(holder: object, targets: readonly string
   }
   if (!Array.isArray(targets)) throw new TypeError('The SSRF allow-list must be an array of "<ip>:<port>" strings');
   for (const entry of targets) {
-    if (parseTarget(entry) === undefined) {
-      throw new TypeError(`Not an allowed target: ${JSON.stringify(entry)} (expected "<ip>:<port>" or "[v6]:<port>")`);
+    if (parseTarget(entry, loopbackTargetsAllowed()) === undefined) {
+      throw new TypeError(
+        `Not an allowed target: ${JSON.stringify(entry)} (expected "<ip>:<port>" or "[v6]:<port>" at an RFC 1918 or unique-local address)`,
+      );
     }
   }
   Object.defineProperty(holder, ALLOWED_TARGETS_SYMBOL, {
@@ -126,12 +183,13 @@ export function installAllowedTargetsOn(holder: object, targets: readonly string
 /**
  * Install the per-run allow-list on `globalThis`. For the trusted host, before any
  * node bundle is imported; one-shot — a second call throws, as does an entry that is
- * not `"<ip>:<port>"` (IPv4 dotted) or `"[v6]:<port>"`.
+ * not `"<ip>:<port>"` (IPv4 dotted) or `"[v6]:<port>"`, or whose address is not an
+ * RFC 1918 or IPv6 unique-local one.
  *
  * Install it even when the list is empty. A process that never installs one leaves
  * the property free for the first code that runs to define it — node code included.
  *
- * Promised behaviour: specs/ssrf-guard.md (AC-26 to AC-30).
+ * Promised behaviour: specs/ssrf-guard.md (AC-26 to AC-31).
  */
 export function installAllowedTargets(targets: readonly string[]): void {
   installAllowedTargetsOn(globalThis, targets);

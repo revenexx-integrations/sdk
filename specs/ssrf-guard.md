@@ -417,6 +417,10 @@ although it is private; nothing else changes, and nothing a node does can add to
 - **Then** it passes, whichever form the address is written in — an IPv6 address
   compressed or not, in brackets or not, an IPv4 address as the mapped IPv6 form a
   socket may report it in — and `allowedTargets` reads back the list as installed
+- **And** a name that resolves to a listed pair passes too — except `localhost` and the
+  names beneath it, which are refused whatever the list says, because loopback is never
+  a place a VPN route is served (AC-31) and those names are refused without asking DNS
+  (AC-12)
 - **Because** a tenant's VPN routes are served at private addresses by design, and a
   guard that refused them would make a route chosen in the studio unreachable from the
   run it was chosen for
@@ -430,6 +434,10 @@ although it is private; nothing else changes, and nothing a node does can add to
   the scheme, or landed on by a connection whose name resolved publicly when it was
   judged
 - **Then** it is refused with `BLOCKED_ADDRESS` and nothing reaches that port
+- **And** a connection to a private address whose port cannot be read is refused too,
+  with a message saying the port could not be read rather than that the address is
+  private — the list cannot be asked without the port, and failing open would allow
+  every port of a listed address
 - **Because** the relay that serves the routes is one host with many services on it,
   and a grant for its proxy port is not a grant for its other ports
 - verify: unit
@@ -474,6 +482,10 @@ although it is private; nothing else changes, and nothing a node does can add to
   list of well-formed `"<ip>:<port>"` entries held where it cannot be changed — a writable
   or reconfigurable property, an accessor, an entry without a port, with a port out of
   range, with a host name, or an IPv6 address without brackets
+- **Or** a list with an entry whose address is not an RFC 1918 IPv4 address or an IPv6
+  unique-local one: loopback, link-local (the metadata service `169.254.169.254` and
+  `fe80::/10` among it), unspecified, multicast, broadcast, carrier-grade NAT, reserved
+  or public
 - **When** `allowedTargets` or `isAllowedTarget` reads it
 - **Then** it reads as an empty list and allows nothing — not the entries that happened
   to be well formed
@@ -481,7 +493,12 @@ although it is private; nothing else changes, and nothing a node does can add to
   that would then read as empty
 - **Because** a property that is not shaped the way the host installs it was not
   installed by the host, and honouring part of it would let whoever set it decide which
-  private addresses a run reaches
+  private addresses a run reaches. And a route is only ever served at a private overlay
+  address, so a list naming anything else was built from wrong data — opening the
+  metadata service to every node in the run is the cost of honouring it
+- **Note** a test can only listen on loopback, so `RVNXX_SSRF_TARGETS_ALLOW_LOOPBACK`
+  additionally admits `127.0.0.0/8` and `::1` entries. It is for this package's tests
+  alone: no production process sets it, and the sandbox a node runs in is not handed it
 - verify: unit
 
 ## Elsewhere

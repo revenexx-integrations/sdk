@@ -212,5 +212,6 @@ nothing to compare against, because there is no second source.
   [PO-831](https://linear.app/revenexx/issue/PO-831) — a credential kind declares what a
   VPN route replaces, and a setting can pick a route: AC-14
   - The registry's own schema refuses a key it does not list, so a package declaring
-    either is refused on upload until the registry learns both. This spec promises only
-    that they travel.
+    either is refused on upload until the registry learns both
+    ([integrations#406](https://github.com/revenexx/integrations/pull/406)).
+    This spec promises only that they travel.

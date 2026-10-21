@@ -20,8 +20,19 @@ export class NodeError extends Error {
  * - `VPN_ROUTE_MISSING` — the connection or the route no longer exists;
  *   message `VPN route <connection>/<route> no longer exists`.
  */
-export const VPN_UNAVAILABLE = 'VPN_UNAVAILABLE';
-export const VPN_ROUTE_MISSING = 'VPN_ROUTE_MISSING';
+export const VPN_UNAVAILABLE = 'VPN_UNAVAILABLE' as const;
+export const VPN_ROUTE_MISSING = 'VPN_ROUTE_MISSING' as const;
 
 /** Every VPN failure code, for a reader that has to recognise one. */
-export const VPN_ERROR_CODES: readonly string[] = Object.freeze([VPN_UNAVAILABLE, VPN_ROUTE_MISSING]);
+export const VPN_ERROR_CODES = Object.freeze([VPN_UNAVAILABLE, VPN_ROUTE_MISSING] as const);
+
+/** One of {@link VPN_ERROR_CODES}. */
+export type VpnErrorCode = (typeof VPN_ERROR_CODES)[number];
+
+/**
+ * Whether `code` is a VPN failure code, narrowing it. `VPN_ERROR_CODES.includes`
+ * does not accept a plain `string`, which is what `NodeError.code` is.
+ */
+export function isVpnErrorCode(code: string): code is VpnErrorCode {
+  return (VPN_ERROR_CODES as readonly string[]).includes(code);
+}

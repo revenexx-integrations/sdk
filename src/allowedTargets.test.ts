@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { channel } from 'node:diagnostics_channel';
 import { createRequire } from 'node:module';
 import { createServer, type RequestListener } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { after, test } from 'node:test';
 import {
   ALLOWED_TARGETS_SYMBOL,
+  allowListStats,
   allowedTargets,
   installAllowedTargets,
   installAllowedTargetsOn,
@@ -14,7 +16,7 @@ import {
 } from './allowedTargets.js';
 import { NodeError } from './errors.js';
 import { safeFetch } from './fetch.js';
-import { assertPublicUrl, type LookupAddress, type LookupFn, ssrfResolver } from './ssrf.js';
+import { assertPublicUrl, guardConnectionsTo, type LookupAddress, type LookupFn, ssrfResolver } from './ssrf.js';
 
 // The allow-list is a one-shot, non-configurable property of `globalThis`, so this
 // file installs it once, at the top, for every test in it — node:test runs each
@@ -22,6 +24,24 @@ import { assertPublicUrl, type LookupAddress, type LookupFn, ssrfResolver } from
 // cannot be given twice (absent, malformed) are read off fresh objects through the
 // same reader the exported functions use.
 //
+// A test can only listen on loopback, which no production list may name, so this
+// process turns on the test-only switch that admits loopback entries. The tests that
+// hold the production rule turn it off around themselves (see `withLoopback`).
+const LOOPBACK_SWITCH = 'RVNXX_SSRF_TARGETS_ALLOW_LOOPBACK';
+process.env[LOOPBACK_SWITCH] = '1';
+
+function withLoopback<T>(value: string | undefined, fn: () => T): T {
+  const prev = process.env[LOOPBACK_SWITCH];
+  if (value === undefined) delete process.env[LOOPBACK_SWITCH];
+  else process.env[LOOPBACK_SWITCH] = value;
+  try {
+    return fn();
+  } finally {
+    if (prev === undefined) delete process.env[LOOPBACK_SWITCH];
+    else process.env[LOOPBACK_SWITCH] = prev;
+  }
+}
+
 // Two loopback servers stand in for a VPN route and for a private service the run
 // was not granted: the same address, one port on the list and one not. Both are
 // started before the list is installed, because the list names their ports.
@@ -145,6 +165,12 @@ test('safeFetch reaches a listed target, by address and through a name that conn
   assert.equal(granted.hits() - before, 2);
 });
 
+test('a name that resolves to a listed loopback pair is still refused when it is a localhost name [@spec:ssrf-guard:AC-26]', async () => {
+  await assertPublicUrl(`http://127.0.0.1:${granted.port}/`);
+  await assertBlocked(() => assertPublicUrl(`http://localhost:${granted.port}/`, { lookup: lookup('127.0.0.1') }));
+  await assertBlocked(() => assertPublicUrl(`http://app.localhost:${granted.port}/`, { lookup: lookup('127.0.0.1') }));
+});
+
 // AC-27 — The port is part of the target
 test('assertPublicUrl refuses a listed address on a port that is not listed [@spec:ssrf-guard:AC-27]', async () => {
   assert.equal(isAllowedTarget('10.31.0.7', 22), false);
@@ -163,6 +189,23 @@ test('safeFetch refuses the same address on another port, before sending and at 
     ),
   );
   assert.equal(notGranted.hits(), 0, 'no request may reach a port the run was not granted');
+});
+
+test('a private peer whose port the socket does not report is refused, saying so [@spec:ssrf-guard:AC-27]', () => {
+  const release = guardConnectionsTo(new URL('http://noport.test:8080/'));
+  let reason: unknown;
+  try {
+    channel('undici:client:connected').publish({
+      connectParams: { hostname: 'noport.test', port: '8080', protocol: 'http:' },
+      socket: { remoteAddress: '10.31.0.7', remotePort: undefined, destroy: (err?: Error) => { reason = err; } },
+    });
+  } finally {
+    release();
+  }
+  assert.ok(reason instanceof NodeError, 'the socket must be destroyed');
+  assert.equal(reason.code, 'BLOCKED_ADDRESS');
+  assert.match(reason.message, /port the connection landed on could not be read/);
+  assert.doesNotMatch(reason.message, /private or reserved/);
 });
 
 // AC-28 — Every other private address is refused as before
@@ -248,6 +291,66 @@ for (const [what, holder] of MALFORMED) {
     assert.equal(isAllowedTargetOn(holder, '10.31.0.7', 8080), false);
   });
 }
+
+const OUTSIDE_TARGET_RANGES: Array<[string, string]> = [
+  ['the cloud metadata service', '169.254.169.254:80'],
+  ['IPv4 link-local', '169.254.1.1:8080'],
+  ['IPv6 link-local', '[fe80::1]:443'],
+  ['IPv4 loopback', '127.0.0.1:8080'],
+  ['IPv6 loopback', '[::1]:8080'],
+  ['the IPv4 unspecified address', '0.0.0.0:8080'],
+  ['the IPv6 unspecified address', '[::]:8080'],
+  ['IPv4 multicast', '224.0.0.1:8080'],
+  ['IPv6 multicast', '[ff02::1]:8080'],
+  ['broadcast', '255.255.255.255:8080'],
+  ['carrier-grade NAT', '100.64.0.1:8080'],
+  ['a public IPv4 address', '8.8.8.8:443'],
+  ['a public IPv6 address', '[2001:4860:4860::8888]:443'],
+  ['an IPv4 documentation range', '192.0.2.1:8080'],
+  ['the IPv4 future-use range', '240.0.0.1:8080'],
+  ['an IPv6 documentation range', '[2001:db8::1]:443'],
+  ['loopback written as mapped IPv6', '[::ffff:127.0.0.1]:8080'],
+];
+
+for (const [what, entry] of OUTSIDE_TARGET_RANGES) {
+  test(`a list naming ${what} (${entry}) reads as empty and allows nothing [@spec:ssrf-guard:AC-31]`, () =>
+    withLoopback(undefined, () => {
+      const holder = holderWith(sealed(Object.freeze(['10.31.0.7:8080', entry])));
+      assert.deepEqual(readAllowedTargets(holder), []);
+      assert.equal(isAllowedTargetOn(holder, '10.31.0.7', 8080), false);
+      assert.throws(() => installAllowedTargetsOn({}, [entry]), TypeError);
+    }));
+}
+
+test('an RFC 1918 or unique-local entry in any of their ranges is accepted [@spec:ssrf-guard:AC-31]', () =>
+  withLoopback(undefined, () => {
+    const list = ['10.0.0.9:80', '172.16.0.1:80', '172.31.255.254:80', '192.168.1.1:80', '[fc00::1]:443', '[fd12:3456::1]:443'];
+    const holder = holderWith(sealed(Object.freeze(list)));
+    assert.deepEqual([...readAllowedTargets(holder)], list);
+    assert.equal(isAllowedTargetOn(holder, '172.31.255.254', 80), true);
+    assert.equal(isAllowedTargetOn(holder, 'fd12:3456::1', 443), true);
+  }));
+
+test('the loopback switch admits loopback entries only while it is on, and never the metadata service [@spec:ssrf-guard:AC-31]', () => {
+  const holder = holderWith(sealed(Object.freeze(['127.0.0.1:8080', '[::1]:8080'])));
+  withLoopback('1', () => assert.equal(isAllowedTargetOn(holder, '127.0.0.1', 8080), true));
+  withLoopback(undefined, () => assert.equal(isAllowedTargetOn(holder, '127.0.0.1', 8080), false));
+  withLoopback('0', () => assert.equal(isAllowedTargetOn(holder, '::1', 8080), false));
+  withLoopback('1', () => {
+    const metadata = holderWith(sealed(Object.freeze(['169.254.169.254:80'])));
+    assert.deepEqual(readAllowedTargets(metadata), []);
+  });
+});
+
+test('a list is validated once, not on every read [@spec:ssrf-guard:AC-31]', () => {
+  const holder = holderWith(sealed(Object.freeze(['10.31.0.7:8080', '10.31.0.7:20001'])));
+  const before = allowListStats.validations;
+  for (let i = 0; i < 50; i++) {
+    readAllowedTargets(holder);
+    isAllowedTargetOn(holder, '10.31.0.7', 8080);
+  }
+  assert.equal(allowListStats.validations - before, 1);
+});
 
 test('installAllowedTargets refuses a malformed entry rather than installing it [@spec:ssrf-guard:AC-31]', () => {
   const holder = {};

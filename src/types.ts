@@ -25,6 +25,8 @@ export type ConfigType =
   // A route of one of the tenant's VPN connections, or the public internet
   // (PO-831). Stored as `{ connection, route } | null`; the node receives a
   // `ResolvedVpnRoute` at run time. `routeKind` filters the picker.
+  // Accepted by the registry only once integrations#406 is deployed: until then a
+  // package declaring it is refused on upload.
   | 'vpn-route';
 
 /**
@@ -246,6 +248,9 @@ export interface IConfigFieldBase {
    * Only meaningful when `type === 'vpn-route'`: which kind of route the picker
    * offers (PO-831) — `http` for a node that sends HTTP requests through the
    * relay's proxy, `tcp` for one that opens a socket. Defaults to `'http'`.
+   *
+   * **Accepted by the registry only once integrations#406 is deployed** — until
+   * then a package declaring it is refused on upload.
    */
   routeKind?: 'http' | 'tcp';
 }
@@ -602,6 +607,9 @@ export interface ICredentialDescription {
    *
    * The stored configuration is never rewritten; the platform substitutes the
    * route's current endpoint each time the credential is tested or resolved.
+   *
+   * **Accepted by the registry only once integrations#406 is deployed** — until
+   * then a package declaring it is refused on upload.
    */
   network?:
     | { kind: 'tcp'; hostField: string; portField: string }

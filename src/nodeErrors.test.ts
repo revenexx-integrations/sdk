@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { NodeError } from './errors.js';
+import { isVpnErrorCode, NodeError, VPN_ERROR_CODES, VPN_ROUTE_MISSING, VPN_UNAVAILABLE, type VpnErrorCode } from './errors.js';
 import { errorPort, errorResult, httpErrorResult, toErrorOutput, toErrorResult } from './nodeErrors.js';
 import { extractManifest } from './extract.js';
 import type { INode } from './types.js';
@@ -130,4 +130,26 @@ test('the port tells an author what will not reach it [@spec:error-handling:AC-3
   const de = (port.description as Record<string, string>)['de'] ?? '';
   assert.match(en, /cannot run as configured fails the run/);
   assert.match(de, /nicht laufen kann, lässt den Run scheitern/);
+});
+
+// The VPN codes keep their literal types, so a reader can narrow on them and a switch
+// over them is checked for completeness by the compiler (PO-828 review).
+test('the VPN error codes narrow, and a switch over them is exhaustive', () => {
+  const describe = (code: VpnErrorCode): string => {
+    switch (code) {
+      case VPN_UNAVAILABLE:
+        return 'unavailable';
+      case VPN_ROUTE_MISSING:
+        return 'missing';
+      default: {
+        const unreachable: never = code;
+        return unreachable;
+      }
+    }
+  };
+  const code: string = 'VPN_ROUTE_MISSING';
+  assert.equal(isVpnErrorCode(code) ? describe(code) : 'other', 'missing');
+  assert.equal(isVpnErrorCode('BLOCKED_ADDRESS'), false);
+  assert.deepEqual([...VPN_ERROR_CODES], ['VPN_UNAVAILABLE', 'VPN_ROUTE_MISSING']);
+  assert.equal(Object.isFrozen(VPN_ERROR_CODES), true);
 });
