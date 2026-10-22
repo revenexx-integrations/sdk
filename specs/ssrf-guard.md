@@ -11,7 +11,7 @@ where:
   - isAllowedTarget — whether one address and port are on it, for a caller that opens its own socket
 docs:
   - docs/overview.md
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # The SSRF guard
@@ -501,6 +501,27 @@ although it is private; nothing else changes, and nothing a node does can add to
   alone: no production process sets it, and the sandbox a node runs in is not handed it
 - verify: unit
 
+### AC-32 — A refused address is never connected to
+
+- **Given** a name that answers with a private or reserved address when the connection
+  for a hop is opened — whether or not it answered publicly when the target was judged
+- **When** a node calls `safeFetch`
+- **Then** no socket is opened to that address: no TCP handshake and no TLS handshake
+  reaches it, and the call throws `BLOCKED_ADDRESS` with the same message whether a
+  service listens on that port or not
+- **Because** a connection that is refused only once it stands has already told the
+  caller something: an open port completes the handshake and a closed one does not, and
+  the two came back as different errors. Whoever controls the DNS behind a URL could map
+  which ports answer on the network the worker sits in, one call at a time, without a
+  byte of any request arriving anywhere
+- **Note** the connection is opened by a dispatcher of this package's own, which judges
+  every address it is about to connect to and connects only to those it approved; a
+  `dispatcher` a caller passes in the options is replaced by it. The connect-time
+  judgement of AC-17 stays behind it as the second line
+- **Pair** AC-17, the same race refused one step later; AC-32 is what makes the refusal
+  arrive before the network notices
+- verify: unit
+
 ## Elsewhere
 
 - **What following a redirect does to the request** — how many hops are allowed, what a
@@ -524,18 +545,6 @@ although it is private; nothing else changes, and nothing a node does can add to
   headers only — a token request's `client_secret`, or whatever data a node posts,
   still reaches the host the redirect names.
   [PO-684](https://linear.app/revenexx/issue/PO-684) is where that is decided.
-- **The handshake with a refused address has already happened.** A connection is
-  judged once it stands, so nothing of the request is written to a private address
-  (AC-17) — but the TCP handshake, and for an `https` target the TLS handshake, are
-  complete by then. Whoever aimed a call there still learns whether something answers
-  on that address and port, and a service that acts on a bare connection has acted.
-  Refusing before the handshake would take the address the judgement approved and open
-  the socket to exactly that, which is not something this package can ask for from
-  where it sits.
-- **A connection somebody else opened is not judged again.** Connections are pooled
-  per host, and only a new one is announced; if something else in the process reached
-  the same host first, a later call may travel on a connection this guard never saw.
-  Nothing here can tell that from a connection of its own.
 - **And the mirror image: a connection somebody else opens to a target a call *is*
   reaching is judged as ours, and dropped.** The announcement carries the target, not
   the caller, so host and port together are as narrow as the scope can be made
@@ -545,23 +554,13 @@ although it is private; nothing else changes, and nothing a node does can add to
   a target that passed the pre-flight check, so it resolved public at that moment,
   which is what keeps it narrow; what makes it awkward is the attribution, since the
   refusal reaches that caller as the `fetch failed` undici reports a dropped socket as.
-- **A connection that completes after the call it belongs to is not judged.** The
-  registration lasts as long as the call, not as long as the connect: a fetch that
-  times out while its socket is still being opened releases its target, and the
-  connect that lands afterwards finds nothing registered. The handshake with that
-  address has then happened unjudged. Whether the unjudged socket can go on to carry
-  a request depends on undici not pooling a socket whose fetch was aborted mid-connect
-  — which it does not today, and which nothing here pins.
-- **The guard assumes the worker opens its own connections.** If a global proxy
-  dispatcher is ever installed, the target is resolved at the proxy instead and the
-  address this guard judged is no longer the one the bytes reach — and the connection
-  it would judge is the one to the proxy, so neither half of the guard sees the real
-  target. It can also fail the other way, into an outage rather than a hole: the
-  connect-time half refuses a peer address it cannot read, and a connection over a
-  Unix socket has no peer address at all, so every call through such a dispatcher
-  would be refused. Which of the two a given proxy produces is not verified here.
-  Nothing detects either from this side; it is a property of how the worker is
-  configured.
+- **`safeFetch` does not go through a proxy the host installs.** It connects through
+  a dispatcher of its own (AC-32), so a global dispatcher — a proxy the worker sets, or
+  the one Node builds from the proxy environment variables — does not carry its
+  requests; they go out directly. That fails the safe way, since the guard judges the
+  address the bytes really reach, but a deployment whose egress has to pass a proxy
+  would find `safeFetch` going around it. Such a proxy would have to be built into the
+  guarded dispatcher, with the judgement moved to the proxy's side.
 
 - **The classification is only as current as the version it travels with.** The ruling
   defers to a vetted, maintained classification of the address space rather than to one
@@ -669,3 +668,10 @@ although it is private; nothing else changes, and nothing a node does can add to
 - [PO-752](https://linear.app/revenexx/issue/PO-752) — AC-21: a key with a line break
   in it had been quoted in full by the runtime's refusal, and from there stood on every
   node's error output
+- [IN-28](https://linear.app/revenexx/issue/IN-28) — AC-32: the address is judged
+  before the socket is opened, not once it stands. It closed the *Known* gap that the
+  handshake with a refused address had already happened, which let an open port answer
+  differently from a closed one, and with it two of the residuals PO-184 left: a pooled
+  connection this guard never saw, and a connect that lands after its call released.
+  What it costs is the `undici` dependency the connector comes from, which every
+  workflow bundle now carries — about 416 KB minified, measured on 22 October 2026
