@@ -1,6 +1,8 @@
 import { subscribe } from 'node:diagnostics_channel';
-import { isIP } from 'node:net';
+import dns from 'node:dns';
+import { isIP, type LookupFunction } from 'node:net';
 import ipaddr from 'ipaddr.js';
+import { Agent, buildConnector } from 'undici';
 import { allowedTargets, isAllowedTarget } from './allowedTargets.js';
 import { NodeError } from './errors.js';
 
@@ -175,9 +177,10 @@ function blockedError(host: string, address: string): NodeError {
  * every connection it opens on the `undici:client:connected` diagnostics
  * channel, synchronously, **before** the request is written to the socket; a
  * subscriber that destroys the socket there refuses the target without a single
- * request byte leaving the process. What remains is the TCP (and for `https:`
- * the TLS) handshake, which has already happened by then — see the gap recorded
- * in `specs/ssrf-guard.md`.
+ * request byte leaving the process. The TCP (and for `https:` the TLS) handshake
+ * has already happened by then; keeping that from a refused address is the job of
+ * {@link guardedDispatcher}, one step earlier (IN-28), and this stays behind it as
+ * the second line.
  *
  * Two properties keep this from being a process-wide policy, which it must not
  * be: the worker legitimately talks to internal services of its own, and this is
@@ -323,6 +326,80 @@ function unreadablePortError(host: string): NodeError {
 }
 
 /**
+ * The half of the guard that runs before a socket exists (IN-28).
+ *
+ * Judging the socket once it stands keeps the request off a private address, but
+ * the TCP and TLS handshakes have happened by then — and an open port answers that
+ * differently from a closed one, which turns any node into a port scanner for
+ * whoever controls a name's DNS. So `safeFetch` connects through a dispatcher of
+ * its own, whose `lookup` judges every answer the connection is about to use and
+ * hands the socket only answers it approved. A refused name opens no socket at
+ * all, and an open port and a closed one end in the same `BLOCKED_ADDRESS`.
+ *
+ * The rules are `assertPublicUrl`'s: one refused answer refuses the name, a private
+ * answer passes only as an exact address-and-port pair on the run's allow-list
+ * (PO-828), and the local-development relaxation applies. The port is why there is
+ * a connector per port — `lookup` is asked about a name, never a port — so the map
+ * holds at most one entry for each port the process has reached.
+ *
+ * `dns.lookup` is read off the module object on every call, not bound at import,
+ * because that is the seam the tests script a second DNS answer through.
+ */
+function judgingLookup(port: number): LookupFunction {
+  return (hostname, options, callback) => {
+    dns.lookup(hostname, { ...options, all: true }, (err, addresses) => {
+      if (err) {
+        callback(err, '');
+        return;
+      }
+      if (!guardRelaxedForLocalDev()) {
+        if (addresses.length === 0) {
+          callback(new NodeError('BLOCKED_ADDRESS', `Could not resolve host: ${hostname}`, { status: 0 }) as never, '');
+          return;
+        }
+        for (const a of addresses) {
+          if (isBlockedAddress(a.address) && !isAllowedTarget(a.address, port)) {
+            callback(blockedError(normalizeHost(hostname), a.address) as never, '');
+            return;
+          }
+        }
+      }
+      if (options.all) callback(null, addresses);
+      else callback(null, (addresses[0] as dns.LookupAddress).address, (addresses[0] as dns.LookupAddress).family);
+    });
+  };
+}
+
+const connectors = new Map<number, buildConnector.connector>();
+
+function connectorFor(port: number): buildConnector.connector {
+  let connector = connectors.get(port);
+  if (connector === undefined) {
+    connector = buildConnector({ lookup: judgingLookup(port) });
+    connectors.set(port, connector);
+  }
+  return connector;
+}
+
+let dispatcher: Agent | undefined;
+
+/**
+ * The dispatcher `safeFetch` hands every request to. One per process, so
+ * keep-alive survives across calls; its pool holds only connections a `safeFetch`
+ * call opened. Deliberately **not** re-exported from `index.ts`, for the reason
+ * {@link guardConnectionsTo} is not.
+ */
+export function guardedDispatcher(): Agent {
+  dispatcher ??= new Agent({
+    connect: (opts, callback) => {
+      const port = opts.port === '' ? (opts.protocol === 'https:' ? 443 : 80) : Number(opts.port);
+      return connectorFor(port)(opts, callback);
+    },
+  });
+  return dispatcher;
+}
+
+/**
  * Put `url`'s host **and port** under the connect-time guard and return the
  * release for it. Ref-counted, so concurrent calls to one target do not release
  * each other. Host and port together are as narrow as the scope can be made: the
@@ -331,8 +408,8 @@ function unreadablePortError(host: string): NodeError {
  *
  * The window is the call, not the connection. A connect that completes after the
  * release — the fetch it belonged to having already timed out or aborted — finds
- * its target unregistered and is not judged; see the gap in
- * `specs/ssrf-guard.md`.
+ * its target unregistered and is not judged here; the address it connected to was
+ * judged before the socket opened, by {@link guardedDispatcher}.
  *
  * Deliberately **not** re-exported from `index.ts`. The guard is engaged by
  * `safeFetch`, which is the one sanctioned way out to the network (PO-185); an

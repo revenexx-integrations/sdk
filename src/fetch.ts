@@ -1,5 +1,5 @@
 import { NodeError } from './errors.js';
-import { assertPublicUrl, connectionRefusal, guardConnectionsTo } from './ssrf.js';
+import { assertPublicUrl, connectionRefusal, guardConnectionsTo, guardedDispatcher } from './ssrf.js';
 import type { IConfigField } from './types.js';
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
@@ -248,7 +248,9 @@ async function timedFetch(
   const timer = setTimeout(() => ac.abort(), effectiveMs);
   const signal = ctxSignal ? AbortSignal.any([ctxSignal, ac.signal]) : ac.signal;
   try {
-    return await fetch(url, { ...fetchOptions, signal });
+    // The guarded dispatcher goes last, so a `dispatcher` a caller slipped into the
+    // options cannot route the request around the check it makes (IN-28).
+    return await fetch(url, { ...fetchOptions, signal, dispatcher: guardedDispatcher() } as RequestInit);
   } catch (err) {
     // A socket the connect-time guard dropped comes back as a generic
     // `TypeError('fetch failed')` — unwrap it first, before the abort/timeout

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
-import type { AddressInfo } from 'node:net';
+import { type AddressInfo, createServer as createNetServer } from 'node:net';
 import { test } from 'node:test';
 import ipaddr from 'ipaddr.js';
 import { NodeError } from './errors.js';
@@ -350,10 +350,9 @@ test('RVNXX_SSRF_ALLOW_PRIVATE with a falsy value keeps the guard active [@spec:
 // All three reach that server over `http:`, so the `https:` path through the same
 // branch — where the peer address has to be readable off a `TLSSocket` for the
 // fail-closed side not to fire — is not covered here. Covering it needs a
-// certificate the client trusts, or verification turned off, and this package has
-// no `undici` dependency to scope either to a single request: the only handles are
-// a certificate fixture in the repository or a process-wide
-// `NODE_TLS_REJECT_UNAUTHORIZED=0`. An untested path, not a known defect.
+// certificate the client trusts, or verification turned off for this one request —
+// which since IN-28 would mean a second guarded dispatcher, built for the test, or a
+// certificate fixture in the repository. An untested path, not a known defect.
 
 /** A loopback HTTP server that counts the requests that actually reach it. */
 async function loopbackServer(): Promise<{ port: number; hits: () => number; close: () => Promise<void> }> {
@@ -425,6 +424,46 @@ test('safeFetch refuses a target that resolved publicly at check time and connec
     assert.equal(server.hits(), 0, 'the request must never reach the host the connection landed on');
   } finally {
     await server.close();
+  }
+});
+
+// AC-32 — A refused address is never connected to, so an open port and a closed one look the same
+test('a refused address gets no handshake, open port or closed [@spec:ssrf-guard:AC-32]', async () => {
+  // A bare TCP listener, because what is counted is a handshake, not a request.
+  let accepted = 0;
+  const listener = createNetServer((socket) => {
+    accepted++;
+    socket.destroy();
+  });
+  await new Promise<void>((resolve) => listener.listen(0, '127.0.0.1', () => resolve()));
+  const open = (listener.address() as AddressInfo).port;
+  // A port that was free a moment ago and is closed now.
+  const closed = await new Promise<number>((resolve) => {
+    const probe = createNetServer();
+    probe.listen(0, '127.0.0.1', () => {
+      const port = (probe.address() as AddressInfo).port;
+      probe.close(() => resolve(port));
+    });
+  });
+  const refusal = async (port: number): Promise<string> => {
+    try {
+      await safeFetch(`http://${REBINDING_HOST}:${port}/`, { timeoutMs: 2_000 });
+    } catch (err) {
+      assert.ok(err instanceof NodeError, `expected NodeError, got ${String(err)}`);
+      assert.equal(err.code, 'BLOCKED_ADDRESS');
+      return err.message;
+    }
+    assert.fail('the call must be refused');
+  };
+  try {
+    await withResolver(lookup('93.184.216.34'), () =>
+      withConnectAddress(REBINDING_HOST, '127.0.0.1', async () => {
+        assert.equal(await refusal(open), await refusal(closed), 'an open port must not answer differently');
+      }),
+    );
+    assert.equal(accepted, 0, 'no handshake may reach a refused address');
+  } finally {
+    await new Promise<void>((resolve) => listener.close(() => resolve()));
   }
 });
 
