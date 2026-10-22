@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { type AddressInfo, createServer as createNetServer } from 'node:net';
 import { test } from 'node:test';
 import ipaddr from 'ipaddr.js';
+import { Agent, request } from 'undici';
 import { NodeError } from './errors.js';
 import { safeFetch } from './fetch.js';
 import {
@@ -424,6 +425,54 @@ test('safeFetch refuses a target that resolved publicly at check time and connec
     assert.equal(server.hits(), 0, 'the request must never reach the host the connection landed on');
   } finally {
     await server.close();
+  }
+});
+
+// AC-17 — the second line on its own. Since IN-28 a `safeFetch` call never gets as
+// far as a connection to a refused address, so the test above is refused by the
+// dispatcher's lookup and the connect-time judgement never runs in it. This one
+// opens the connection through an undici `Agent` that is not the guarded one —
+// undici's `request`, not a `fetch`, so it is no exception to the `fetch` rules —
+// and that announces itself on the same channel, which is all the judgement
+// listens to. If the judgement stopped dropping the socket, only this goes red.
+test('the connect-time judgement drops a private peer the lookup did not see [@spec:ssrf-guard:AC-17]', async () => {
+  const server = await loopbackServer();
+  const agent = new Agent();
+  const release = guardConnectionsTo(new URL(`http://${REBINDING_HOST}:${server.port}/`));
+  try {
+    await withConnectAddress(REBINDING_HOST, '127.0.0.1', async () => {
+      await assert.rejects(request(`http://${REBINDING_HOST}:${server.port}/`, { dispatcher: agent }));
+    });
+    assert.equal(server.hits(), 0, 'the request must never reach the host the connection landed on');
+  } finally {
+    release();
+    await agent.close();
+    await server.close();
+  }
+});
+
+// The relaxation switches the judgement off, not the reading of the answer: a name
+// that resolves to nothing must fail the call, not throw inside the DNS callback,
+// where nothing catches it and the process goes down with it.
+test('an empty DNS answer fails the call with the local-development relaxation on', async () => {
+  const dns = createRequire(import.meta.url)('node:dns') as { lookup: (...args: any[]) => void };
+  const original = dns.lookup;
+  dns.lookup = (hostname: string, options: any, callback: any): void => {
+    if (hostname !== 'empty.test') {
+      original(hostname, options, callback);
+      return;
+    }
+    const cb = typeof options === 'function' ? options : callback;
+    process.nextTick(() => cb(null, []));
+  };
+  try {
+    await withEnv('1', () =>
+      withResolver(lookup('93.184.216.34'), async () => {
+        await assert.rejects(safeFetch('http://empty.test/', { timeoutMs: 2_000 }));
+      }),
+    );
+  } finally {
+    dns.lookup = original;
   }
 });
 

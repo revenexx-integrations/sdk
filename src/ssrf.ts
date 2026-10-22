@@ -352,11 +352,14 @@ function judgingLookup(port: number): LookupFunction {
         callback(err, '');
         return;
       }
+      // Before the relaxation, not under it: an empty answer has no address to hand
+      // the socket, and reading one off it throws inside this callback, which is
+      // outside any promise and would take the process down.
+      if (addresses.length === 0) {
+        callback(new NodeError('BLOCKED_ADDRESS', `Could not resolve host: ${hostname}`, { status: 0 }) as never, '');
+        return;
+      }
       if (!guardRelaxedForLocalDev()) {
-        if (addresses.length === 0) {
-          callback(new NodeError('BLOCKED_ADDRESS', `Could not resolve host: ${hostname}`, { status: 0 }) as never, '');
-          return;
-        }
         for (const a of addresses) {
           if (isBlockedAddress(a.address) && !isAllowedTarget(a.address, port)) {
             callback(blockedError(normalizeHost(hostname), a.address) as never, '');
