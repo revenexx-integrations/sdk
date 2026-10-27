@@ -328,7 +328,7 @@ const response = await safeFetch('https://api.example.com/data', {
 
 **Error thrown on timeout:** `NodeError` with `code: 'TIMEOUT'` and a message that includes the actual effective timeout in milliseconds.
 
-> **`timeoutMs` is per network operation, not a total budget.** It bounds a *single* request — and, when the guard has to resolve DNS, the pre-flight resolve — for *one* hop. A redirect chain (up to `MAX_REDIRECTS` = 5) applies the budget to each hop independently, and each retry attempt starts a fresh budget, so a worst-case `safeFetch` call can run for several multiples of `timeoutMs`. This is the standard per-hop model; there is no single wall-clock cap over the whole call.
+> **`timeoutMs` is one budget per attempt, answer included (IN-36).** One timer starts with the attempt and covers every DNS pre-flight, every redirect hop (up to `MAX_REDIRECTS` = 5), the headers and the body. It is not cleared when the headers arrive: the runtime ties a response body to the signal its request was sent with, so a body that stops arriving halfway errors with `NodeError('TIMEOUT')` in whatever reads it — `readArrayBuffer`, `readText`, `readJsonOrText`, or the response's own `text()`/`json()` — and its connection is closed. A node needs to pass nothing beyond `timeoutMs` and `signal` for that. Each retry attempt starts a fresh budget, so with retries a call can run for the budget times the attempts plus the delays; there is no single wall-clock cap over the whole call. The timer of an attempt that returned is unref'd and runs out on its own after the answer has been read.
 
 #### SSRF guard
 

@@ -6,7 +6,7 @@ where:
   - timeoutConfigField, retryConfigFields — the settings a node offers its author
 docs:
   - docs/overview.md
-updated: 2026-09-01
+updated: 2026-10-27
 ---
 
 # What one request may cost
@@ -139,17 +139,60 @@ signal the engine passes in, which ends the call wherever it has got to.
 - **Pair** AC-6, a failure that is worth asking again
 - verify: unit
 
+### AC-12 — An answer that stalls once it has started fails as a timeout
+
+- **Given** a node calls `safeFetch` with a budget, and the host sends its headers and
+  the start of its answer
+- **When** the rest of the answer stops arriving and the budget runs out
+- **Then** reading it fails as `TIMEOUT` — through the read helpers of this package or
+  through the response's own `text()` and `json()`, with nothing more passed than the
+  budget — and not before the budget is spent
+- **Because** a host that has started to answer is not a host that will finish, and a
+  step left waiting on it holds a worker until somebody cancels the run
+- **Pair** AC-13's answer that arrives slowly and still finishes in time
+- verify: unit
+
+### AC-13 — One budget covers every hop of an attempt and its answer
+
+- **Given** a node calls `safeFetch` with a budget
+- **When** the attempt spends it across the lookup, any redirects, the headers and the
+  body
+- **Then** it fails once the budget is spent in total, not when a single one of those
+  parts has spent it; an answer that arrives in full inside the budget is returned whole
+- **Because** the figure a workflow author types is the longest one attempt may take,
+  and a budget that starts again at every hop or at the body is a multiple of it
+- verify: unit
+
+### AC-14 — Cancelling a stalled answer ends it as a cancellation
+
+- **Given** the engine's signal is passed to `safeFetch`, and an answer has started and
+  stalled
+- **When** the signal aborts before the budget runs out
+- **Then** reading the answer ends at once with the abort, not with a timeout
+- **Because** AC-4 and AC-5 hold for the answer too: a cancellation says the answer is
+  no longer wanted, and it should not wait for the budget to say something else
+- verify: unit
+
+### AC-15 — An answer that ran out of time lets go of its connection
+
+- **Given** an answer that stalled until its budget ran out
+- **When** reading it fails as `TIMEOUT`
+- **Then** the connection it arrived on is closed
+- **Because** a timed-out answer whose socket stays open is the same held worker
+  resource the budget exists to free, only quieter
+- verify: unit
+
 ## Elsewhere
 
 - **Where a request is allowed to go at all** — the address rules, the redirect hops
   and what a refusal may disclose — is [`ssrf-guard.md`](ssrf-guard.md). A budget says
   how much a request may cost; that spec says whether it may be made.
 - **How much of an answer is read, and as what**, is
-  [`response-reading.md`](response-reading.md). The budget here bounds the request, not
-  the body that comes back.
+  [`response-reading.md`](response-reading.md). The budget here bounds how long the
+  answer may take (AC-12); the cap there bounds how much of it there may be.
 - **What following a redirect does to the request** is
-  [`redirect-following.md`](redirect-following.md). Each hop gets its own budget, which
-  is the `## Gaps` entry below.
+  [`redirect-following.md`](redirect-following.md). Every hop spends the same budget
+  (AC-13).
 - **What the settings in AC-9 and AC-10 read like to the workflow author who meets
   them** is [`offered-settings.md`](offered-settings.md). The bounds are promised here;
   that the declaration is legible without a node author completing it is promised there,
@@ -167,11 +210,12 @@ signal the engine passes in, which ends the call wherever it has got to.
   and no criterion here says so: the only tests that observe it watch the timer being
   scheduled rather than anything a caller can see, and a promise whose sole proof is a
   scheduling detail goes red on a refactor that keeps the promise intact.
-- **The budget is per attempt and per redirect hop, not a cap on the whole call.** A
-  redirect chain applies it again at each hop and every retry starts a fresh one, so a
-  worst case runs to several multiples of the figure a workflow author typed. This is
-  stated in the `docs/` companion and proven by nothing here, which is why it is not a
-  criterion.
+- **The budget is per attempt, not a cap on the whole call.** Every retry starts a fresh
+  one, so with retries allowed a worst case runs to the budget times the attempts, plus
+  the delays between them. Within one attempt it is a single budget (AC-13).
+- **The timer of an attempt that returned an answer runs on after the answer is read**,
+  until it would have expired, and then ends nothing. It does not keep a process alive,
+  and nothing here holds that either way.
 
 **Undecided**
 
@@ -185,3 +229,5 @@ signal the engine passes in, which ends the call wherever it has got to.
   retry budget for every node, replacing per-node handling: AC-1 through AC-10
 - [PO-368](https://linear.app/revenexx/issue/PO-368) — backfilled this spec against the
   tests that already proved it
+- [IN-36](https://linear.app/revenexx/issue/IN-36) — one budget over the whole attempt,
+  the answer included: AC-12 through AC-15

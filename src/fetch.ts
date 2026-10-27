@@ -233,8 +233,51 @@ function credentialOriginRefusal(target: string, bound: string, hop?: number): N
 }
 
 /**
- * A single network request bounded by the per-attempt timeout and wired to the
- * workflow's cancellation signal. Surfaces its own timeout as
+ * The budget of one attempt: a single timer from the first lookup to the last
+ * byte of the answer, across every redirect hop (IN-36). It is not cleared when
+ * the headers arrive. The runtime ties a response body to the signal its request
+ * was sent with and errors the body with that signal's reason, so an answer that
+ * stalls halfway ends as this `TIMEOUT` in whatever reads it — the `read*`
+ * helpers here, or a node's own `res.text()` — and the connection is let go.
+ *
+ * Once the attempt has an answer the timer is unref'd: a body still arriving
+ * keeps the process alive through its connection, and one read in full leaves
+ * the timer nothing to end, so it must not hold a process open until it fires.
+ * Before the answer it stays ref'd, as the only thing a stalled request may have.
+ */
+interface AttemptDeadline {
+  /** The signal every lookup and hop of the attempt runs under, the caller's cancellation included. */
+  signal: AbortSignal;
+  /** Whether the budget, rather than the caller, ended the attempt. */
+  expired(): boolean;
+  /** The `TIMEOUT` the budget ended the attempt with. */
+  reason(): unknown;
+  /** Stop the timer, for an attempt that failed before it had an answer. */
+  clear(): void;
+  /** Let the timer run on over the answer without holding the process open. */
+  answered(): void;
+}
+
+function attemptDeadline(ctxSignal: AbortSignal | undefined, effectiveMs: number): AttemptDeadline {
+  const ac = new AbortController();
+  const timer = setTimeout(
+    () => ac.abort(new NodeError('TIMEOUT', `Request timed out after ${effectiveMs}ms`)),
+    effectiveMs,
+  );
+  return {
+    signal: ctxSignal ? AbortSignal.any([ctxSignal, ac.signal]) : ac.signal,
+    expired: () => ac.signal.aborted,
+    reason: () => ac.signal.reason,
+    clear: () => clearTimeout(timer),
+    answered: () => {
+      timer.unref();
+    },
+  };
+}
+
+/**
+ * A single network request, run under its attempt's budget and wired to the
+ * workflow's cancellation signal. Surfaces the budget running out as
  * `NodeError('TIMEOUT')` and re-throws the caller's abort reason on external
  * cancellation.
  */
@@ -242,15 +285,12 @@ async function timedFetch(
   url: string | URL,
   fetchOptions: RequestInit,
   ctxSignal: AbortSignal | undefined,
-  effectiveMs: number,
+  deadline: AttemptDeadline,
 ): Promise<Response> {
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), effectiveMs);
-  const signal = ctxSignal ? AbortSignal.any([ctxSignal, ac.signal]) : ac.signal;
   try {
     // The guarded dispatcher goes last, so a `dispatcher` a caller slipped into the
     // options cannot route the request around the check it makes (IN-28).
-    return await fetch(url, { ...fetchOptions, signal, dispatcher: guardedDispatcher() } as RequestInit);
+    return await fetch(url, { ...fetchOptions, signal: deadline.signal, dispatcher: guardedDispatcher() } as RequestInit);
   } catch (err) {
     // A socket the connect-time guard dropped comes back as a generic
     // `TypeError('fetch failed')` — unwrap it first, before the abort/timeout
@@ -258,38 +298,30 @@ async function timedFetch(
     const blocked = connectionRefusal(err);
     if (blocked) throw blocked;
     if (ctxSignal?.aborted) throw ctxSignal.reason;
-    if (ac.signal.aborted) throw new NodeError('TIMEOUT', `Request timed out after ${effectiveMs}ms`);
+    if (deadline.expired()) throw deadline.reason();
     throw err;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
 /**
- * Run the SSRF pre-flight resolve for one hop under the same per-hop budget as
- * the request itself. `assertPublicUrl` may resolve DNS, and `dns.lookup` honours
- * neither a timeout nor a signal; without this a hung/hostile resolver would block
- * `safeFetch` past `timeoutMs` and ignore `ctxSignal`. We give the resolve its own
- * timeout+cancellation signal so it is bounded exactly like the fetch that follows
- * (note this means the resolve and the fetch each get up to `effectiveMs`, per hop).
- * A resolve timeout surfaces as `TIMEOUT` (transient — safeFetch may retry it).
+ * Run the SSRF pre-flight resolve for one hop under its attempt's budget.
+ * `assertPublicUrl` may resolve DNS, and `dns.lookup` honours neither a timeout
+ * nor a signal; without this a hung/hostile resolver would block `safeFetch` past
+ * `timeoutMs` and ignore `ctxSignal`. A resolve timeout surfaces as `TIMEOUT`
+ * (transient — safeFetch may retry it).
  */
 async function guardUrl(
   url: string | URL,
   ctxSignal: AbortSignal | undefined,
+  deadline: AttemptDeadline,
   effectiveMs: number,
 ): Promise<void> {
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), effectiveMs);
-  const signal = ctxSignal ? AbortSignal.any([ctxSignal, ac.signal]) : ac.signal;
   try {
-    await assertPublicUrl(url, { signal });
+    await assertPublicUrl(url, { signal: deadline.signal });
   } catch (err) {
     if (ctxSignal?.aborted) throw ctxSignal.reason;
-    if (ac.signal.aborted) throw new NodeError('TIMEOUT', `DNS resolution timed out after ${effectiveMs}ms`);
+    if (deadline.expired()) throw new NodeError('TIMEOUT', `DNS resolution timed out after ${effectiveMs}ms`);
     throw err;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -337,11 +369,33 @@ function refuseUserinfo(url: URL, status = 0): void {
  * redirect that would resend a body to another origin (307/308, and 301/302
  * on anything but POST) is refused before its target is looked up, and the
  * request is downgraded to `GET` per the usual 301/302/303 rules.
+ *
+ * The whole attempt runs under one {@link attemptDeadline}, which goes on running
+ * over the body of the answer it returns; a failed attempt stops it.
  */
 async function guardedFetch(
   url: string | URL,
   fetchOptions: RequestInit,
   ctxSignal: AbortSignal | undefined,
+  effectiveMs: number,
+  binding?: { origin: string; crossOriginRedirect: 'refuse' | 'strip' },
+): Promise<Response> {
+  const deadline = attemptDeadline(ctxSignal, effectiveMs);
+  try {
+    const res = await followHops(url, fetchOptions, ctxSignal, deadline, effectiveMs, binding);
+    deadline.answered();
+    return res;
+  } catch (err) {
+    deadline.clear();
+    throw err;
+  }
+}
+
+async function followHops(
+  url: string | URL,
+  fetchOptions: RequestInit,
+  ctxSignal: AbortSignal | undefined,
+  deadline: AttemptDeadline,
   effectiveMs: number,
   binding?: { origin: string; crossOriginRedirect: 'refuse' | 'strip' },
 ): Promise<Response> {
@@ -353,7 +407,7 @@ async function guardedFetch(
   let currentUrl: string | URL = url;
   let currentInit: RequestInit = { ...fetchOptions, redirect: 'manual' };
 
-  await guardUrl(currentUrl, ctxSignal, effectiveMs);
+  await guardUrl(currentUrl, ctxSignal, deadline, effectiveMs);
 
   for (let hop = 0; ; hop++) {
     // The check above approved an address; this puts the address the socket
@@ -364,7 +418,7 @@ async function guardedFetch(
     );
     let res: Response;
     try {
-      res = await timedFetch(currentUrl, currentInit, ctxSignal, effectiveMs);
+      res = await timedFetch(currentUrl, currentInit, ctxSignal, deadline);
     } finally {
       release();
     }
@@ -437,7 +491,7 @@ async function guardedFetch(
         { status: 0 },
       );
     }
-    await guardUrl(nextUrl, ctxSignal, effectiveMs);
+    await guardUrl(nextUrl, ctxSignal, deadline, effectiveMs);
     // Never leak credentials across an origin boundary on redirect. Browsers and
     // undici strip only `Authorization`, `Cookie` and `Proxy-Authorization`, which
     // is enough where the caller cannot choose a header for its key; a node can,
@@ -699,8 +753,8 @@ export function timeoutConfigField(opts?: { default?: number; max?: number }): I
     key: 'timeoutMs',
     label: { en: 'Timeout (ms)', de: 'Zeitlimit (ms)' },
     description: {
-      en: 'How long one attempt may take before it fails as a timeout. Counted per attempt and per redirect hop, not across the whole call.',
-      de: 'Wie lange ein einzelner Versuch dauern darf, bevor er als Zeitüberschreitung fehlschlägt. Gilt je Versuch und je Weiterleitung, nicht für den gesamten Aufruf.',
+      en: 'How long one attempt may take before it fails as a timeout, from sending the request to the last byte of the answer, redirects included. Each retry gets the time again.',
+      de: 'Wie lange ein einzelner Versuch dauern darf, bevor er als Zeitüberschreitung fehlschlägt: vom Senden der Anfrage bis zum letzten Byte der Antwort, Weiterleitungen eingeschlossen. Jede Wiederholung bekommt die Zeit erneut.',
     },
     type: 'number',
     default: opts?.default ?? DEFAULT_TIMEOUT_MS,
