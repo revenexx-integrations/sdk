@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { type AddressInfo, createServer as createNetServer, type LookupFunction } from 'node:net';
 import { test } from 'node:test';
@@ -623,7 +624,7 @@ test('guardedLookup refuses a name when any address is private, naming the host 
     try {
       const { err } = await askLookup(guardedLookup(21), 'files.internal.example', true);
       assert.ok(err instanceof NodeError && err.code === 'BLOCKED_ADDRESS', String(err));
-      assert.equal(err.message, 'Blocked request to files.internal.example: resolves to a private or reserved address');
+      assert.equal(err.message, 'Blocked connection to files.internal.example: resolves to a private or reserved address');
       assert.ok(logged.includes('[ssrf] blocked connection to files.internal.example: resolves to private/reserved address 10.0.0.5'), logged.join('\n'));
     } finally {
       console.warn = warn;
@@ -683,3 +684,24 @@ test('guardRelaxedForLocalDev relaxes guardedLookup and assertPublicUrl alike, a
       else process.env.RVNXX_SSRF_ALLOW_PRIVATE = prev;
     }
   }));
+
+// AC-34 — The local-development switch is one switch for every connection
+test('the relaxation is announced once per process, whichever part of the guard asks first [@spec:ssrf-guard:AC-34]', () => {
+  // The once-flag is process state that earlier tests here have already set, so
+  // each order runs in a fresh process.
+  const ssrf = new URL('./ssrf.ts', import.meta.url).href;
+  const steps = {
+    lookup: `await new Promise((r) => guardedLookup(21)('localhost', { all: true }, r));`,
+    preflight: `await assertPublicUrl('http://10.0.0.5/');`,
+    switch: 'guardRelaxedForLocalDev();',
+  };
+  for (const order of [['lookup', 'preflight', 'switch'], ['switch', 'preflight', 'lookup']] as const) {
+    const script = `import { assertPublicUrl, guardedLookup, guardRelaxedForLocalDev } from ${JSON.stringify(ssrf)};\n${order.map((s) => steps[s]).join('\n')}`;
+    const run = spawnSync(process.execPath, ['--import', import.meta.resolve('tsx'), '--input-type=module', '-e', script], {
+      env: { ...process.env, RVNXX_SSRF_ALLOW_PRIVATE: '1' },
+      encoding: 'utf-8',
+    });
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stderr.split('RVNXX_SSRF_ALLOW_PRIVATE is set').length - 1, 1, `${order.join(' → ')}: ${run.stderr}`);
+  }
+});

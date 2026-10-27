@@ -170,9 +170,9 @@ function blockedError(host: string, address: string): NodeError {
   return refusedName(host);
 }
 
-/** `safeFetch`'s refusal of a name, without the log line {@link blockedError} adds. */
-function refusedName(host: string): NodeError {
-  return new NodeError('BLOCKED_ADDRESS', `Blocked request to ${host}: resolves to a private or reserved address`, {
+/** The guard's refusal of a name, without the log line {@link blockedError} adds; `safeFetch` says "request". */
+function refusedName(host: string, noun: 'request' | 'connection' = 'request'): NodeError {
+  return new NodeError('BLOCKED_ADDRESS', `Blocked ${noun} to ${host}: resolves to a private or reserved address`, {
     status: 0,
   });
 }
@@ -371,8 +371,8 @@ export interface GuardedLookupOptions {
   /**
    * The error a refused name fails with. It is handed to the caller and may reach
    * a workflow author, so it names the host and never an address it resolved to.
-   * Default: `safeFetch`'s, `Blocked request to <host>: resolves to a private or
-   * reserved address`, code `BLOCKED_ADDRESS`.
+   * Default: `Blocked <noun> to <host>: resolves to a private or reserved
+   * address`, code `BLOCKED_ADDRESS` — `safeFetch`'s words with this lookup's noun.
    */
   refusal?: (host: string) => Error;
   /**
@@ -381,7 +381,7 @@ export interface GuardedLookupOptions {
    * allow-list applies as it does to `safeFetch`.
    */
   unroutable?: (host: string) => Error;
-  /** The noun of the operator's log line, `[ssrf] blocked <noun> to …`. Default `'connection'`. */
+  /** The noun of the operator's log line, `[ssrf] blocked <noun> to …`, and of the default refusal. Default `'connection'`. */
   noun?: 'request' | 'connection';
 }
 
@@ -430,13 +430,15 @@ function lookupJudgedFor(
         return;
       }
       if (!guardRelaxedForLocalDev()) {
-        const host = normalizeHost(hostname);
+        // The name as the socket was given it, which is what the caller wrote: a
+        // lookup is never handed brackets, and a URL's host is already lowercase.
+        const host = hostname;
         for (const a of addresses) {
           if (!isBlockedAddress(a.address)) continue;
           const allowed = isAllowedTarget(a.address, port);
           if (allowed && !unroutable) continue;
           logBlocked(noun, host, a.address);
-          callback((allowed && unroutable ? unroutable(host) : (refusal ?? refusedName)(host)) as never, '');
+          callback((allowed && unroutable ? unroutable(host) : refusal ? refusal(host) : refusedName(host, noun)) as never, '');
           return;
         }
       }
