@@ -1,5 +1,0 @@
----
-"@revenexx/integrations-node-sdk": minor
----
-
-`rvnxx-nodes manifest` now stops when a node carries a name the registry would refuse on upload, before it writes `dist/manifest.json` (PO-744). That covers the slug, the version, a port's name, `sourceFromConfig` and fallback name, and a setting's key, `dependsOn`, `showIf` key and `credentialType`, nested settings included. Each refused value is printed with its node, the field's path and the pattern; until now such a package built, tested and previewed green and failed only on upload with a `422`. A port called `notFound` is the usual case: a setting may be camelCase, a port name must be kebab-case (`not-found`). This is an error rather than a warning, because the registry already refuses these names: none of the 364 nodes in the 25 node packages, checked against their local builds, trips it. The check is exported as `nodeManifestProblems`, and the four patterns as `SLUG_PATTERN`, `NAMESPACED_SLUG_PATTERN`, `SEMVER_PATTERN` and `CONFIG_KEY_PATTERN`, in the registry schema's own text.
