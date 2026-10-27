@@ -308,6 +308,7 @@ test('an answer that keeps arriving is read whole, however long it takes in tota
       const started = Date.now();
       const res = await safeFetch(base, { timeoutMs: 300 });
       assert.equal(res.url, `${base}/`);
+      assert.equal(res.clone().url, `${base}/`);
       assert.equal(await readText(res), 'xxxxxxxx');
       assert.ok(Date.now() - started > 300, 'the answer finished inside one budget and proves nothing');
     },
@@ -345,26 +346,32 @@ test('an answer that finishes inside the budget is read whole [@spec:request-bud
     },
   ));
 
-// AC-13 — One budget up to the answer, then a limit on how long it may go silent
-test('an answer with a status the runtime passes on but cannot rebuild is still returned [@spec:request-budget:AC-13]', async () => {
-  const server = createNetServer((socket) => {
-    socket.on('data', () => socket.end('HTTP/1.1 600 Odd\r\nContent-Length: 2\r\n\r\nok'));
+// Not a promise: an answer the inactivity limit cannot be put around is still
+// returned as the runtime gave it (request-budget.md, Gaps).
+for (const [what, statusLine, status] of [
+  ['a status outside 200–599', 'HTTP/1.1 600 Odd', 600],
+  ['a reason phrase beyond Latin-1', 'HTTP/1.1 200 OK \u2713', 200],
+] as const) {
+  test(`an answer with ${what} is still returned`, async () => {
+    const server = createNetServer((socket) => {
+      socket.on('data', () => socket.end(`${statusLine}\r\nContent-Length: 2\r\n\r\nok`));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    const key = 'RVNXX_SSRF_ALLOW_PRIVATE';
+    const prev = process.env[key];
+    process.env[key] = '1';
+    try {
+      const res = await safeFetch(`http://127.0.0.1:${port}/`, { timeoutMs: 1_000 });
+      assert.equal(res.status, status);
+      assert.equal(await res.text(), 'ok');
+    } finally {
+      if (prev === undefined) delete process.env[key];
+      else process.env[key] = prev;
+      server.close();
+    }
   });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const { port } = server.address() as AddressInfo;
-  const key = 'RVNXX_SSRF_ALLOW_PRIVATE';
-  const prev = process.env[key];
-  process.env[key] = '1';
-  try {
-    const res = await safeFetch(`http://127.0.0.1:${port}/`, { timeoutMs: 1_000 });
-    assert.equal(res.status, 600);
-    assert.equal(await res.text(), 'ok');
-  } finally {
-    if (prev === undefined) delete process.env[key];
-    else process.env[key] = prev;
-    server.close();
-  }
-});
+}
 
 // AC-14 — Cancelling a stalled answer ends it as a cancellation
 test('cancelling while an answer stalls ends the read with the cancellation, not a timeout [@spec:request-budget:AC-14]', () =>

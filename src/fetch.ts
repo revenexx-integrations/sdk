@@ -285,32 +285,31 @@ function attemptFailure(err: unknown, ctxSignal: AbortSignal | undefined, deadli
 }
 
 /**
- * Whether an answer can be rebuilt around a wrapped body. The runtime hands on
- * any status a host sends, but `new Response` refuses one outside 200–599 and a
- * body on the null-body statuses, so such an answer goes back as it came,
- * without the inactivity limit, rather than failing where it used to succeed.
- */
-function canWrapBody(status: number): boolean {
-  return status >= 200 && status <= 599 && status !== 204 && status !== 205 && status !== 304;
-}
-
-/**
  * The answer with its body read under the inactivity limit: every read gets the
  * whole budget, and the timer is stopped the moment the read returns, the body
  * ends or a reader cancels it, so no timer outlives its answer. A read that fails
  * reports what {@link attemptFailure} says, so a cancellation still outranks the
  * budget while the body is read.
+ *
+ * The runtime's body is locked only on the first read: an answer nobody reads is
+ * left to the runtime, which lets its connection go once the answer is collected
+ * and would not if the body were locked. An answer `new Response` cannot rebuild —
+ * a status outside 200–599, a body on a null-body status, a reason phrase beyond
+ * Latin-1 — goes back as it came, without the limit, rather than failing where it
+ * used to succeed.
  */
 function answerUnderDeadline(
   res: Response,
   ctxSignal: AbortSignal | undefined,
   deadline: AttemptDeadline,
 ): Response {
-  if (!res.body || !canWrapBody(res.status)) return res;
-  const reader = res.body.getReader();
+  const source = res.body;
+  if (!source) return res;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   const body = new ReadableStream<Uint8Array>(
     {
       async pull(controller) {
+        reader ??= source.getReader();
         deadline.awaitChunk();
         try {
           const { done, value } = await reader.read();
@@ -324,17 +323,30 @@ function answerUnderDeadline(
       },
       cancel(reason) {
         deadline.clear();
-        return reader.cancel(reason);
+        return reader ? reader.cancel(reason) : source.cancel(reason);
       },
     },
     // Read nothing ahead of the caller: the limit times the caller's waits, not
     // a buffer filling while nobody reads.
     { highWaterMark: 0 },
   );
-  const answer = new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
-  // A constructed response has no address; the caller still reads the one the
-  // answer came from.
-  Object.defineProperty(answer, 'url', { value: res.url });
+  let answer: Response;
+  try {
+    answer = new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+  } catch {
+    return res;
+  }
+  return withUrl(answer, res.url);
+}
+
+/**
+ * A constructed response has no address, and neither has its clone; both still
+ * read the one the answer came from.
+ */
+function withUrl(answer: Response, url: string): Response {
+  const clone = answer.clone.bind(answer);
+  Object.defineProperty(answer, 'url', { value: url });
+  Object.defineProperty(answer, 'clone', { value: () => withUrl(clone(), url) });
   return answer;
 }
 

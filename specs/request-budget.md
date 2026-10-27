@@ -222,6 +222,10 @@ signal the engine passes in, which ends the call wherever it has got to.
   node when its body stalls, so the retry budget of AC-6 covers an attempt up to its
   headers only. Stated in the `docs/` companion; no criterion says whether that is
   intended.
+- **An answer the runtime gives but `new Response` refuses has no limit on its body.**
+  A status outside 200–599 or a reason phrase beyond Latin-1 is returned as the
+  runtime gave it, so a body that stalls after such a status line is not ended by
+  AC-12. Returned rather than refused, because such an answer succeeded before.
 - **An answer that keeps arriving has no limit on how long it takes.** The body is held
   to how long it may go silent, not to a total; how much it may weigh is the cap in
   [`response-reading.md`](response-reading.md), which is what bounds a slow download.
