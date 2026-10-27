@@ -5,9 +5,11 @@ where:
   - buildManifest — the envelope a package's build writes
   - parsePackageMeta — what is taken from a package's own metadata
   - packageIconProblem — whether a declared folder icon would be refused
+  - nodeManifestProblems — whether a node's names would be refused
+  - SLUG_PATTERN, NAMESPACED_SLUG_PATTERN, SEMVER_PATTERN, CONFIG_KEY_PATTERN — the rules it judges them by
 docs:
   - docs/overview.md
-updated: 2026-10-21
+updated: 2026-10-27
 ---
 
 # What a package tells the registry
@@ -176,6 +178,22 @@ nothing to compare against, because there is no second source.
 - **Pair** AC-2, the same build for a credential kind without the declaration
 - verify: unit
 
+### AC-15 — A name the registry would refuse stops the build, naming the node, the field and the rule
+
+- **Given** a node whose slug, version, port name, `sourceFromConfig`, fallback name,
+  setting key, `dependsOn` key, `showIf` key or named credential type does not match the
+  pattern the registry's schema holds it to — a port called `notFound`, say, where a
+  setting may be called `postalCode`
+- **When** the manifest is built by `rvnxx-nodes manifest`
+- **Then** the build stops before anything is written, and names every such value with
+  its node, the path of the field and the pattern; a node whose names all match builds
+  as before
+- **Because** the registry refuses such a package on upload with a `422`, after the
+  build, the tests and the preview have all passed, and renaming a port once workflows
+  are wired to it breaks every one of them
+- **Pair** AC-13, the same stop for the package's folder icon
+- verify: unit
+
 ## Elsewhere
 
 - **The image files themselves** — which are collected and how they reach the build —
@@ -186,9 +204,13 @@ nothing to compare against, because there is no second source.
 
 **Known**
 
-- **Nothing here validates what a node declares.** A description with a malformed slug,
-  a port with no name or a config field of an unknown type is carried into the manifest
-  as written; whether anything downstream refuses it is not promised in this package.
+- **Only a node's names are validated (AC-15).** A config field of an unknown type,
+  settings nested deeper than the schema allows, and a missing slug or version are
+  carried into the manifest as written, and so is everything in the credential and
+  template manifests; whether anything downstream refuses them is not promised in this
+  package. A port with no name is `branch-selection.md`'s warning, not a refusal here.
+- **The name patterns are a copy of the registry's schema, not a shared source.** Kept
+  equal by hand; nothing in this repository can see the other side.
 
 **Undecided**
 
@@ -215,3 +237,5 @@ nothing to compare against, because there is no second source.
     either is refused on upload until the registry learns both
     ([integrations#406](https://github.com/revenexx/integrations/pull/406)).
     This spec promises only that they travel.
+- [PO-744](https://linear.app/revenexx/issue/PO-744) — a name the registry would refuse
+  stops the build: AC-15

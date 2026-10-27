@@ -1,5 +1,6 @@
 import { extractCredentialManifests, extractManifests } from './extract.js';
 import type {
+  IConfigField,
   ICredential,
   ICredentialDescription,
   INode,
@@ -111,6 +112,77 @@ export function parsePackageMeta(raw: unknown): NodePackageMeta {
     displayName: displayName !== '' ? displayName : undefined,
     icon: icon !== '' ? icon : undefined,
   };
+}
+
+/**
+ * The name patterns the registry enforces on a node's manifest when a package is
+ * uploaded (PO-744), as written in the integrations service's node schema
+ * (`app/Support/Schema/Versions/Node/V0DraftSchema.php`, read at `973b28c2`, 27
+ * October 2026), under the same names. A copy, not a shared source: a change on
+ * either side has to be made on both. They are exported as the schema's text, so
+ * a test on the other side can compare them byte for byte.
+ */
+/** A port name, `sourceFromConfig` and `fallback.name`: lowercase kebab-case. */
+export const SLUG_PATTERN = '^[a-z][a-z0-9-]{0,62}$';
+/** A node's `slug`, and a credential type a setting names: `<namespace>:<slug>`. */
+export const NAMESPACED_SLUG_PATTERN = '^[a-z][a-z0-9-]{0,62}:[a-z][a-z0-9-]{0,62}$';
+/** A node's `version`. */
+export const SEMVER_PATTERN = '^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9.-]+)?$';
+/** A setting's `key`, `dependsOn[]` and `showIf.key`: camelCase is allowed here, unlike in a port name. */
+export const CONFIG_KEY_PATTERN = '^[a-zA-Z][a-zA-Z0-9-]*$';
+
+const PATTERN_HINT: Record<string, string> = {
+  [SLUG_PATTERN]: 'lowercase kebab-case, such as "not-found"',
+  [NAMESPACED_SLUG_PATTERN]: '"<namespace>:<name>" in lowercase kebab-case, such as "core:http-request"',
+  [SEMVER_PATTERN]: 'a semantic version, such as "1.0.0"',
+  [CONFIG_KEY_PATTERN]: 'a letter, then letters, digits or "-", such as "postalCode"',
+};
+
+/**
+ * Why the registry would refuse these nodes' names on upload, one line per value,
+ * or `[]` when it would accept them (PO-744). Each line names the node, the path
+ * of the field, the value and the pattern. Only values that are present are
+ * judged: a missing slug or version is the schema's other rule, and a port may
+ * leave its name out. Settings are walked into `properties` and `items` at any
+ * depth; the schema allows less, so none is missed.
+ */
+export function nodeManifestProblems(nodes: readonly INodeDescription[]): string[] {
+  const problems: string[] = [];
+  for (const [index, node] of nodes.entries()) {
+    // The slug names the node in every line, and may itself be the bad value.
+    const who = `node ${index + 1} (${typeof node.slug === 'string' ? node.slug : 'no slug'})`;
+    const check = (path: string, value: unknown, pattern: string) => {
+      if (value === undefined || (typeof value === 'string' && new RegExp(pattern).test(value))) return;
+      problems.push(
+        `${who}: ${path} ${JSON.stringify(value)} is refused by the registry — it must match ${pattern} (${PATTERN_HINT[pattern]}).`,
+      );
+    };
+    check('slug', node.slug, NAMESPACED_SLUG_PATTERN);
+    check('version', node.version, SEMVER_PATTERN);
+    for (const [i, port] of (node.outputs ?? []).entries()) {
+      check(`outputs[${i}].name`, port.name, SLUG_PATTERN);
+      check(`outputs[${i}].sourceFromConfig`, port.sourceFromConfig, SLUG_PATTERN);
+      check(`outputs[${i}].fallback.name`, port.fallback?.name, SLUG_PATTERN);
+    }
+    const checkField = (field: IConfigField, at: string) => {
+      check(`${at}.key`, field.key, CONFIG_KEY_PATTERN);
+      for (const [j, key] of (field.dependsOn ?? []).entries()) check(`${at}.dependsOn[${j}]`, key, CONFIG_KEY_PATTERN);
+      check(`${at}.showIf.key`, field.showIf?.key, CONFIG_KEY_PATTERN);
+      const types = field.credentialType;
+      if (Array.isArray(types)) {
+        for (const [j, type] of types.entries()) check(`${at}.credentialType[${j}]`, type, NAMESPACED_SLUG_PATTERN);
+      } else {
+        check(`${at}.credentialType`, types, NAMESPACED_SLUG_PATTERN);
+      }
+      walk(field.properties, `${at}.properties`);
+      if (field.items) checkField(field.items, `${at}.items`);
+    };
+    const walk = (fields: readonly IConfigField[] | undefined, path: string) => {
+      for (const [i, field] of (fields ?? []).entries()) checkField(field, `${path}[${i}]`);
+    };
+    walk(node.config, 'config');
+  }
+  return problems;
 }
 
 /**

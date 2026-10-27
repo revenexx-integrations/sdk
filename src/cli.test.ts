@@ -63,3 +63,28 @@ test('rvnxx-nodes manifest stops on a malformed revenexx.icon even when the bund
   assert.equal(run.status, 1);
   assert.ok(run.stderr.includes('got "mdi:bell"'), run.stderr);
 });
+
+// AC-15 — A name the registry would refuse stops the build, naming the node, the field and the rule
+test('rvnxx-nodes manifest stops on a port name the registry would refuse, before writing anything [@spec:package-manifest:AC-15]', () => {
+  fs.writeFileSync(
+    join(pkg, 'dist', 'index.js'),
+    `export const NODES = [{ description: ${JSON.stringify({
+      slug: 'openplz:lookup',
+      version: '1.0.0',
+      category: 'action',
+      name: 'Lookup',
+      inputs: {},
+      outputs: [
+        { name: 'found', kind: 'branch', dataType: 'any' },
+        { name: 'notFound', kind: 'branch', dataType: 'any' },
+      ],
+    })}, async execute() { return { outputs: {}, branch: 'found' }; } }];\n`,
+  );
+  const run = manifest({ displayName: 'X' });
+
+  assert.equal(run.status, 1);
+  assert.ok(run.stderr.includes('openplz:lookup'), run.stderr);
+  assert.ok(run.stderr.includes('outputs[1].name "notFound"'), run.stderr);
+  assert.ok(run.stderr.includes('^[a-z][a-z0-9-]{0,62}$'), run.stderr);
+  assert.equal(fs.existsSync(join(pkg, 'dist', 'manifest.json')), false);
+});

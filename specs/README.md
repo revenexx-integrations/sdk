@@ -300,6 +300,7 @@ name they are holding.
 | `BasicAuthCredential` | [credentials.md](credentials.md) |
 | `buildManifest` | [package-manifest.md](package-manifest.md) |
 | `collectImageSources` | [node-images.md](node-images.md) |
+| `CONFIG_KEY_PATTERN` | [package-manifest.md](package-manifest.md) |
 | `copyImages` | [node-images.md](node-images.md) |
 | `DEFAULT_RETRY_POLICY` | [retrying-an-operation.md](retrying-an-operation.md) |
 | `errorPort` | [error-handling.md](error-handling.md) |
@@ -318,8 +319,10 @@ name they are holding.
 | `isBlockedAddress` | [ssrf-guard.md](ssrf-guard.md) |
 | `isMultiPort` | [branch-selection.md](branch-selection.md) |
 | `maxBytesConfigField` | [response-reading.md](response-reading.md), [offered-settings.md](offered-settings.md) |
+| `NAMESPACED_SLUG_PATTERN` | [package-manifest.md](package-manifest.md) |
 | `NodeError` | [error-handling.md](error-handling.md) |
 | `NodeErrorOutput` | [error-handling.md](error-handling.md) |
+| `nodeManifestProblems` | [package-manifest.md](package-manifest.md) |
 | `normalizeCredentialType` | [credential-type.md](credential-type.md) |
 | `normalizeLocalized` | [localized-text.md](localized-text.md) |
 | `OAuth2AuthCodeCredential` | [credentials.md](credentials.md) |
@@ -335,8 +338,10 @@ name they are holding.
 | `RetryableError` | [retrying-an-operation.md](retrying-an-operation.md) |
 | `retryConfigFields` | [request-budget.md](request-budget.md), [offered-settings.md](offered-settings.md) |
 | `safeFetch` | [ssrf-guard.md](ssrf-guard.md), [redirect-following.md](redirect-following.md), [request-budget.md](request-budget.md) |
+| `SEMVER_PATTERN` | [package-manifest.md](package-manifest.md) |
 | `settingApplies` | [setting-conditions.md](setting-conditions.md) |
 | `SimpleValueCredential` | [credentials.md](credentials.md) |
+| `SLUG_PATTERN` | [package-manifest.md](package-manifest.md) |
 | `sleepWithSignal` | [retrying-an-operation.md](retrying-an-operation.md) |
 | `timeoutConfigField` | [request-budget.md](request-budget.md), [offered-settings.md](offered-settings.md) |
 | `toErrorOutput` | [error-handling.md](error-handling.md) |
