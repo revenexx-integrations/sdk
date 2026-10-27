@@ -9,9 +9,11 @@ where:
   - installAllowedTargets — the host installs the run's allow-list, once
   - allowedTargets — the allow-list as installed
   - isAllowedTarget — whether one address and port are on it, for a caller that opens its own socket
+  - guardedLookup — the guard as a socket lookup, for a connection safeFetch does not make
+  - guardRelaxedForLocalDev — the local-development switch, as every connection reads it
 docs:
   - docs/overview.md
-updated: 2026-10-22
+updated: 2026-10-27
 ---
 
 # The SSRF guard
@@ -522,6 +524,39 @@ although it is private; nothing else changes, and nothing a node does can add to
   arrive before the network notices
 - verify: unit
 
+### AC-33 — A connection safeFetch does not make is judged by the same rule
+
+- **Given** a node that opens its own socket — FTP, SFTP, a plain `node:http` stream —
+  and passes `guardedLookup(port)` as that socket's lookup
+- **When** the socket resolves a name
+- **Then** the name is refused when any address it resolves to is private or reserved
+  and not on the run's allow-list for that port, with `BLOCKED_ADDRESS` in the words the
+  caller chose (or `safeFetch`'s), never naming the address, and with an operator log
+  line that does; a client a VPN route cannot carry refuses a listed address too; an
+  approved name answers every address when asked for all, so the socket can fall back
+  from one to the next; a name that does not resolve fails as the resolver said
+- **Because** a rule kept in two places is two rules: the copy in a node package had
+  already stopped announcing its relaxation and logging its refusals before anybody
+  noticed, and a change to the rule here would never have reached it
+- **Note** a host written as an address never reaches a lookup — Node does not resolve
+  it — so the caller judges a literal itself, with `isBlockedAddress` and
+  `isAllowedTarget`
+- **Pair** AC-32, the same judgement inside `safeFetch`'s own dispatcher
+- verify: unit
+
+### AC-34 — The local-development switch is one switch for every connection
+
+- **Given** the local development stack sets `RVNXX_SSRF_ALLOW_PRIVATE`
+- **When** `safeFetch` judges a target, or a socket judges a name through
+  `guardedLookup`, or a caller asks `guardRelaxedForLocalDev`
+- **Then** all three relax together, apply in full again together once it is off, and
+  the process announces the relaxation once, whichever asks first
+- **Because** a switch that a raw socket reads by its own copy can be on for one and
+  off for the other, and the warning is the only sign it was left on somewhere it
+  should not be
+- **Pair** AC-15, the switch for `safeFetch` alone
+- verify: unit
+
 ## Elsewhere
 
 - **What following a redirect does to the request** — how many hops are allowed, what a
@@ -601,6 +636,13 @@ although it is private; nothing else changes, and nothing a node does can add to
   class depends on where the value came from.
 
 ## Tickets
+
+- [PO-698](https://linear.app/revenexx/issue/PO-698) — added AC-33 and AC-34: the guard
+  as a socket lookup and the switch it honours, for a node that opens its own socket and
+  had kept a copy of both
+  - The caller supplies the refusal's words rather than a noun, because a node package's
+    wording differs in more than the noun and is quoted in its own specs; the judgement,
+    the log line and the switch are what may not differ, and they live here.
 
 - [PO-828](https://linear.app/revenexx/issue/PO-828) — added AC-26 through AC-31: the
   run's allow-list of VPN targets, which the guard honours before sending, at connect

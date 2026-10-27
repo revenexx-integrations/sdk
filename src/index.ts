@@ -17,8 +17,11 @@ export * from './fetch.js';
 // the neighbouring reason: `safeFetch` engages them, and an exported handle whose
 // judgement lasts exactly as long as somebody remembers to hold it would be a
 // second way out to the network with a foot-gun attached.
-export { assertPublicUrl, isBlockedAddress } from './ssrf.js';
-export type { LookupAddress, LookupFn } from './ssrf.js';
+// `guardedLookup` and `guardRelaxedForLocalDev` are the guard for a connection
+// `safeFetch` does not make (PO-698): a judging socket lookup and the switch it
+// honours, so a client with its own socket applies the same rule, not a copy.
+export { assertPublicUrl, guardedLookup, guardRelaxedForLocalDev, isBlockedAddress } from './ssrf.js';
+export type { GuardedLookupOptions, LookupAddress, LookupFn } from './ssrf.js';
 // The per-run allow-list (PO-828). The global symbol is the contract; these read
 // and install it, and none of them can widen a list once it is installed.
 export { allowedTargets, installAllowedTargets, isAllowedTarget } from './allowedTargets.js';

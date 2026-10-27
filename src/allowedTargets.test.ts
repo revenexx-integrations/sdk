@@ -16,7 +16,7 @@ import {
 } from './allowedTargets.js';
 import { NodeError } from './errors.js';
 import { safeFetch } from './fetch.js';
-import { assertPublicUrl, guardConnectionsTo, type LookupAddress, type LookupFn, ssrfResolver } from './ssrf.js';
+import { assertPublicUrl, guardConnectionsTo, guardedLookup, type LookupAddress, type LookupFn, ssrfResolver } from './ssrf.js';
 
 // The allow-list is a one-shot, non-configurable property of `globalThis`, so this
 // file installs it once, at the top, for every test in it — node:test runs each
@@ -358,4 +358,30 @@ test('installAllowedTargets refuses a malformed entry rather than installing it 
   assert.equal(Object.getOwnPropertyDescriptor(holder, ALLOWED_TARGETS_SYMBOL), undefined);
   installAllowedTargetsOn(holder, ['10.31.0.7:8080']);
   assert.equal(isAllowedTargetOn(holder, '10.31.0.7', 8080), true);
+});
+
+/** What `guardedLookup(port, options)` answers for a name that resolves to `addresses`. */
+function lookupAnswer(addresses: string[], port: number, options = {}): Promise<NodeJS.ErrnoException | null> {
+  const dns = createRequire(import.meta.url)('node:dns') as { lookup: (...args: any[]) => void };
+  const original = dns.lookup;
+  dns.lookup = (_hostname: string, _options: any, callback: any): void => {
+    process.nextTick(() => callback(null, addresses.map((address) => ({ address, family: address.includes(':') ? 6 : 4 }))));
+  };
+  return new Promise<NodeJS.ErrnoException | null>((resolve) => guardedLookup(port, options)('relay.example', { all: true }, (err) => resolve(err))).finally(() => {
+    dns.lookup = original;
+  });
+}
+
+// AC-33 — A connection safeFetch does not make is judged by the same rule
+test('guardedLookup passes a listed address only on its port, and never carries another private one [@spec:ssrf-guard:AC-33]', async () => {
+  assert.equal(await lookupAnswer(['10.31.0.7'], 20001), null);
+  assert.equal((await lookupAnswer(['10.31.0.7'], 22))?.code, 'BLOCKED_ADDRESS');
+  assert.equal((await lookupAnswer(['10.31.0.7', '10.0.0.5'], 20001))?.code, 'BLOCKED_ADDRESS');
+});
+
+// AC-33 — A connection safeFetch does not make is judged by the same rule
+test('guardedLookup refuses a listed address in the caller\'s words for a client a route cannot carry [@spec:ssrf-guard:AC-33]', async () => {
+  const unroutable = (host: string) => new NodeError('BLOCKED_ADDRESS', `Blocked connection to ${host}: FTP cannot go through a VPN route`);
+  const err = await lookupAnswer(['10.31.0.7'], 20001, { unroutable });
+  assert.equal(err?.message, 'Blocked connection to relay.example: FTP cannot go through a VPN route');
 });
