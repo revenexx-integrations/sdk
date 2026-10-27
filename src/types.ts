@@ -102,6 +102,12 @@ export interface IOutputField {
 export interface IOutputPort {
   kind: OutputKind;
   dataType: DataType;
+  /**
+   * The port's name, as a branch and an edge refer to it. Lowercase kebab-case —
+   * `not-found`, never `notFound` — because the registry refuses anything else
+   * on upload and `rvnxx-nodes manifest` stops on it (`SLUG_PATTERN`). A setting's
+   * `key` may be camelCase; a port name may not.
+   */
   name?: string;
   label?: LocalizedString;
   description?: LocalizedString;
@@ -125,6 +131,7 @@ export interface IOutputPort {
    */
   resolveOutputs?: boolean;
   fallback?: {
+    /** Lowercase kebab-case, as {@link IOutputPort.name}. */
     name: string;
     label?: LocalizedString;
     description?: LocalizedString;

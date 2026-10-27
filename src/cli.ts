@@ -20,7 +20,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { outputWarnings } from './branches.js';
 import { collectImageSources, copyImages } from './images.js';
-import { buildManifest, packageIconProblem, parsePackageMeta } from './manifest.js';
+import { buildManifest, nodeManifestProblems, packageIconProblem, parsePackageMeta } from './manifest.js';
 import type { ICredential, INode, ITemplateDescription } from './types.js';
 
 const projectRoot = process.cwd();
@@ -102,6 +102,12 @@ async function runManifest(): Promise<void> {
     console.warn(`⚠ ${w} This will be an error in the next major version.`);
   }
   const manifest = buildManifest(mod.NODES as INode[], credentials, templates);
+  // A name the registry's schema refuses stops the build before anything is
+  // written, every one of them at once, so the author learns the rule here rather
+  // than from a 422 on upload (PO-744). Judged on the manifest itself, which is
+  // what the registry reads.
+  const nameProblems = nodeManifestProblems(manifest.nodes);
+  if (nameProblems.length > 0) fail(nameProblems.join('\n'));
 
   const outDir = resolve(projectRoot, 'dist');
   const outFile = resolve(outDir, 'manifest.json');

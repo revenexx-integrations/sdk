@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildManifest, MANIFEST_VERSION, packageIconProblem, parsePackageMeta } from './manifest.js';
-import type { ICredential, INode, ITemplateDescription } from './types.js';
+import {
+  buildManifest,
+  CONFIG_KEY_PATTERN,
+  MANIFEST_VERSION,
+  NAMESPACED_SLUG_PATTERN,
+  nodeManifestProblems,
+  packageIconProblem,
+  parsePackageMeta,
+  SEMVER_PATTERN,
+  SLUG_PATTERN,
+} from './manifest.js';
+import type { ICredential, INode, INodeDescription, ITemplateDescription } from './types.js';
 
 const fakeNode: INode = {
   description: {
@@ -268,4 +278,99 @@ test('packageIconProblem accepts a Lucide name and none, and names a malformed o
     const problem = packageIconProblem(bad) ?? '';
     assert.ok(problem.includes('"revenexx.icon"') && problem.includes(`got "${bad}"`), problem);
   }
+});
+
+// AC-15 — A name the registry would refuse stops the build, naming the node, the field and the rule
+test('nodeManifestProblems accepts names the registry accepts, a camelCase setting key among them [@spec:package-manifest:AC-15]', () => {
+  const node: INodeDescription = {
+    ...fakeNode.description,
+    version: '2.1.0-beta.1',
+    outputs: [
+      { name: 'not-found', kind: 'branch', dataType: 'any' },
+      { sourceFromConfig: 'cases', fallback: { name: 'otherwise' }, kind: 'branch', dataType: 'any' },
+    ],
+    config: [
+      { key: 'postalCode', label: 'Postal code', type: 'string' },
+      { key: 'cases', label: 'Cases', type: 'array', dependsOn: ['postalCode'], showIf: { key: 'postalCode', op: 'exists' } },
+      { key: 'account', label: 'Account', type: 'credentials-ref', credentialType: ['revenexx:smtp', 'revenexx:api-key'] },
+    ],
+  };
+  assert.deepEqual(nodeManifestProblems([node]), []);
+});
+
+// AC-15 — A name the registry would refuse stops the build, naming the node, the field and the rule
+test('nodeManifestProblems names a camelCase port name with the node, the path and the pattern [@spec:package-manifest:AC-15]', () => {
+  const node: INodeDescription = {
+    ...fakeNode.description,
+    slug: 'openplz:lookup',
+    outputs: [
+      { name: 'found', kind: 'branch', dataType: 'any' },
+      { name: 'notFound', kind: 'branch', dataType: 'any' },
+    ],
+  };
+  const [problem, ...rest] = nodeManifestProblems([node]);
+  assert.deepEqual(rest, []);
+  assert.ok(problem?.includes('node 1 (openplz:lookup)'), problem);
+  assert.ok(problem?.includes('outputs[1].name "notFound"'), problem);
+  assert.ok(problem?.includes(SLUG_PATTERN), problem);
+});
+
+// AC-15 — A name the registry would refuse stops the build, naming the node, the field and the rule
+test('nodeManifestProblems judges every pattern in every place the schema does, nested settings included [@spec:package-manifest:AC-15]', () => {
+  const node = {
+    ...fakeNode.description,
+    slug: 'NoNamespace',
+    version: 'v1',
+    outputs: [
+      { name: 'Out', kind: 'default', dataType: 'any' },
+      { sourceFromConfig: 'my_cases', fallback: { name: 'Else' }, kind: 'branch', dataType: 'any' },
+    ],
+    config: [
+      {
+        key: '1st',
+        label: 'x',
+        type: 'object',
+        dependsOn: ['ok', 'bad key'],
+        showIf: { key: '-x', op: 'exists' },
+        credentialType: 'smtp',
+        properties: [{ key: 'inner_key', label: 'x', type: 'string' }],
+      },
+      {
+        key: 'rows',
+        label: 'x',
+        type: 'array',
+        credentialType: ['revenexx:ok', 'Bad:Type'],
+        items: { key: 'row', label: 'x', type: 'object', properties: [{ key: '_deep', label: 'x', type: 'string' }] },
+      },
+    ],
+  } as INodeDescription;
+  const problems = nodeManifestProblems([node]);
+  const expected: Array<[string, string]> = [
+    ['slug "NoNamespace"', NAMESPACED_SLUG_PATTERN],
+    ['version "v1"', SEMVER_PATTERN],
+    ['outputs[0].name "Out"', SLUG_PATTERN],
+    ['outputs[1].sourceFromConfig "my_cases"', SLUG_PATTERN],
+    ['outputs[1].fallback.name "Else"', SLUG_PATTERN],
+    ['config[0].key "1st"', CONFIG_KEY_PATTERN],
+    ['config[0].dependsOn[1] "bad key"', CONFIG_KEY_PATTERN],
+    ['config[0].showIf.key "-x"', CONFIG_KEY_PATTERN],
+    ['config[0].credentialType "smtp"', NAMESPACED_SLUG_PATTERN],
+    ['config[0].properties[0].key "inner_key"', CONFIG_KEY_PATTERN],
+    ['config[1].credentialType[1] "Bad:Type"', NAMESPACED_SLUG_PATTERN],
+    ['config[1].items.properties[0].key "_deep"', CONFIG_KEY_PATTERN],
+  ];
+  assert.equal(problems.length, expected.length, problems.join('\n'));
+  for (const [i, [where, pattern]] of expected.entries()) {
+    assert.ok(problems[i]?.includes(where) && problems[i]?.includes(pattern), `${where}: ${problems[i]}`);
+  }
+});
+
+// AC-15 — A name the registry would refuse stops the build, naming the node, the field and the rule
+test('the name patterns are the registry schema\'s text, character for character [@spec:package-manifest:AC-15]', () => {
+  // Copied from V0DraftSchema.php, and nothing on that side compares them; written
+  // out here so a change to a constant is a visible change to this test too.
+  assert.equal(SLUG_PATTERN, '^[a-z][a-z0-9-]{0,62}$');
+  assert.equal(NAMESPACED_SLUG_PATTERN, '^[a-z][a-z0-9-]{0,62}:[a-z][a-z0-9-]{0,62}$');
+  assert.equal(SEMVER_PATTERN, String.raw`^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$`);
+  assert.equal(CONFIG_KEY_PATTERN, '^[a-zA-Z][a-zA-Z0-9-]*$');
 });

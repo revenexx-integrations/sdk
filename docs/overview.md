@@ -748,6 +748,17 @@ designated dispatch point for future child-workflow execution.
 
 `extractManifest` / `extractManifests` pull the `INodeDescription` off node instances without executing them. Used by `integrations-nodes-core`'s build script to generate `dist/manifest.json`.
 
+`rvnxx-nodes manifest` stops before writing anything when a node carries a name the registry would refuse on upload (PO-744), and names each one with its node, the field's path and the pattern. `nodeManifestProblems(descriptions)` is the same check as a function, returning those lines. The patterns are the registry schema's, exported as its text:
+
+| Pattern | Applies to | Example |
+| --- | --- | --- |
+| `SLUG_PATTERN` | `outputs[].name`, `sourceFromConfig`, `fallback.name` | `not-found` — never `notFound` |
+| `NAMESPACED_SLUG_PATTERN` | `slug`, a setting's `credentialType` | `core:http-request` |
+| `SEMVER_PATTERN` | `version` | `1.2.0`, `1.2.0-beta.1` |
+| `CONFIG_KEY_PATTERN` | `config[].key`, `dependsOn[]`, `showIf.key`, nested settings too | `postalCode` |
+
+A setting's key may be camelCase; a port's name may not.
+
 ```ts
 import { extractManifests } from '@revenexx/integrations-node-sdk';
 import { NODES } from './index.js';
