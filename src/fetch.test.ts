@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import {
   clampResponseBytes,
   DEFAULT_MAX_RESPONSE_BYTES,
@@ -325,6 +325,8 @@ test('a redirect chain spends one budget, not one per hop [@spec:request-budget:
       }, 300);
     },
     async (base) => {
+      // One hop alone fits, so the two-hop failure below is the shared budget.
+      assert.equal(await (await safeFetch(`${base}/end`, { timeoutMs: 500 })).text(), 'done');
       await assert.rejects(() => safeFetch(`${base}/start`, { timeoutMs: 500 }), isTimeout);
     },
   ));
@@ -342,6 +344,27 @@ test('an answer that finishes inside the budget is read whole [@spec:request-bud
       assert.deepEqual(await readJsonOrText(res), { a: 1 });
     },
   ));
+
+// AC-13 — One budget up to the answer, then a limit on how long it may go silent
+test('an answer with a status the runtime passes on but cannot rebuild is still returned [@spec:request-budget:AC-13]', async () => {
+  const server = createNetServer((socket) => {
+    socket.on('data', () => socket.end('HTTP/1.1 600 Odd\r\nContent-Length: 2\r\n\r\nok'));
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  const key = 'RVNXX_SSRF_ALLOW_PRIVATE';
+  const prev = process.env[key];
+  process.env[key] = '1';
+  try {
+    const res = await safeFetch(`http://127.0.0.1:${port}/`, { timeoutMs: 1_000 });
+    assert.equal(res.status, 600);
+    assert.equal(await res.text(), 'ok');
+  } finally {
+    if (prev === undefined) delete process.env[key];
+    else process.env[key] = prev;
+    server.close();
+  }
+});
 
 // AC-14 — Cancelling a stalled answer ends it as a cancellation
 test('cancelling while an answer stalls ends the read with the cancellation, not a timeout [@spec:request-budget:AC-14]', () =>

@@ -218,6 +218,10 @@ signal the engine passes in, which ends the call wherever it has got to.
   one, so with retries allowed a worst case runs to the budget times the attempts, plus
   the delays between them. Within one attempt it is a single budget up to the headers
   (AC-13).
+- **A stall in the body is not retried.** The answer has already been handed to the
+  node when its body stalls, so the retry budget of AC-6 covers an attempt up to its
+  headers only. Stated in the `docs/` companion; no criterion says whether that is
+  intended.
 - **An answer that keeps arriving has no limit on how long it takes.** The body is held
   to how long it may go silent, not to a total; how much it may weigh is the cap in
   [`response-reading.md`](response-reading.md), which is what bounds a slow download.

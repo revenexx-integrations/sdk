@@ -284,8 +284,15 @@ function attemptFailure(err: unknown, ctxSignal: AbortSignal | undefined, deadli
   return err;
 }
 
-/** Statuses whose response may not be constructed with a body. */
-const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
+/**
+ * Whether an answer can be rebuilt around a wrapped body. The runtime hands on
+ * any status a host sends, but `new Response` refuses one outside 200–599 and a
+ * body on the null-body statuses, so such an answer goes back as it came,
+ * without the inactivity limit, rather than failing where it used to succeed.
+ */
+function canWrapBody(status: number): boolean {
+  return status >= 200 && status <= 599 && status !== 204 && status !== 205 && status !== 304;
+}
 
 /**
  * The answer with its body read under the inactivity limit: every read gets the
@@ -299,7 +306,7 @@ function answerUnderDeadline(
   ctxSignal: AbortSignal | undefined,
   deadline: AttemptDeadline,
 ): Response {
-  if (!res.body || NULL_BODY_STATUSES.has(res.status)) return res;
+  if (!res.body || !canWrapBody(res.status)) return res;
   const reader = res.body.getReader();
   const body = new ReadableStream<Uint8Array>(
     {
