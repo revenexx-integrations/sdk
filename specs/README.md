@@ -306,6 +306,8 @@ name they are holding.
 | `errorPort` | [error-handling.md](error-handling.md) |
 | `errorResult` | [error-handling.md](error-handling.md) |
 | `evaluate` | [setting-conditions.md](setting-conditions.md) |
+| `guardedLookup` | [ssrf-guard.md](ssrf-guard.md) |
+| `guardRelaxedForLocalDev` | [ssrf-guard.md](ssrf-guard.md) |
 | `headerCrossesOrigin` | [ssrf-guard.md](ssrf-guard.md) |
 | `httpErrorResult` | [error-handling.md](error-handling.md) |
 | `IBranchedNodeResult` | [branch-selection.md](branch-selection.md) |

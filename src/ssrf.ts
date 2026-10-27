@@ -131,18 +131,27 @@ export function isBlockedAddress(ip: string): boolean {
  * node at `localhost` or an internal service while testing. Production never
  * sets it, so the guard stays fully active there. Read fresh on every call so
  * tests can toggle it; the notice is logged at most once per process.
+ *
+ * Exported for a connection `safeFetch` does not make (PO-698): a client that
+ * opens its own socket asks this, so it honours the switch and announces it
+ * exactly as a web request does — one notice per process, whichever asks first.
  */
 let bypassNoticeLogged = false;
-function guardRelaxedForLocalDev(): boolean {
+export function guardRelaxedForLocalDev(): boolean {
   const raw = process.env['RVNXX_SSRF_ALLOW_PRIVATE'];
   const relaxed = raw != null && ['1', 'true', 'yes'].includes(raw.trim().toLowerCase());
   if (relaxed && !bypassNoticeLogged) {
     bypassNoticeLogged = true;
     console.warn(
-      '[ssrf] RVNXX_SSRF_ALLOW_PRIVATE is set: allowing private/loopback fetch targets. Intended for local development only.',
+      '[ssrf] RVNXX_SSRF_ALLOW_PRIVATE is set: allowing private/loopback targets for web requests and connections. Intended for local development only.',
     );
   }
   return relaxed;
+}
+
+/** The operator's trace of a refusal: it may name the address a name resolved to, which the caller's error never does. */
+function logBlocked(noun: 'request' | 'connection', host: string, address: string): void {
+  console.warn(`[ssrf] blocked ${noun} to ${host}: resolves to private/reserved address ${address}`);
 }
 
 function blockedError(host: string, address: string): NodeError {
@@ -157,8 +166,13 @@ function blockedError(host: string, address: string): NodeError {
   // to the (untrusted) caller would hand them an internal DNS→IP mapping — a
   // recon primitive — so keep the address in the server log only and surface just
   // the host (which the caller already knows) in the error.
-  console.warn(`[ssrf] blocked request to ${host}: resolves to private/reserved address ${address}`);
-  return new NodeError('BLOCKED_ADDRESS', `Blocked request to ${host}: resolves to a private or reserved address`, {
+  logBlocked('request', host, address);
+  return refusedName(host);
+}
+
+/** The guard's refusal of a name, without the log line {@link blockedError} adds; `safeFetch` says "request". */
+function refusedName(host: string, noun: 'request' | 'connection' = 'request'): NodeError {
+  return new NodeError('BLOCKED_ADDRESS', `Blocked ${noun} to ${host}: resolves to a private or reserved address`, {
     status: 0,
   });
 }
@@ -346,25 +360,86 @@ function unreadablePortError(host: string): NodeError {
  * because that is the seam the tests script a second DNS answer through.
  */
 function judgingLookup(port: number): LookupFunction {
+  // An empty answer has no address to hand the socket, and reading one off it
+  // throws inside the lookup's callback, outside any promise. `safeFetch` refuses
+  // it, as `assertPublicUrl` does (AC-13).
+  return lookupJudgedFor(port, { noun: 'request' }, (hostname) => new NodeError('BLOCKED_ADDRESS', `Could not resolve host: ${hostname}`, { status: 0 }));
+}
+
+/** How a connection that `safeFetch` does not make reports what {@link guardedLookup} decides. */
+export interface GuardedLookupOptions {
+  /**
+   * The error a refused name fails with. It is handed to the caller and may reach
+   * a workflow author, so it names the host and never an address it resolved to.
+   * Default: `Blocked <noun> to <host>: resolves to a private or reserved
+   * address`, code `BLOCKED_ADDRESS` — `safeFetch`'s words with this lookup's noun.
+   */
+  refusal?: (host: string) => Error;
+  /**
+   * For a client a VPN route cannot carry: a private address on the run's
+   * allow-list is refused with this error instead of passing. Absent, the
+   * allow-list applies as it does to `safeFetch`.
+   */
+  unroutable?: (host: string) => Error;
+  /** The noun of the operator's log line, `[ssrf] blocked <noun> to …`, and of the default refusal. Default `'connection'`. */
+  noun?: 'request' | 'connection';
+}
+
+/**
+ * A socket lookup, shaped like `net.LookupFunction`, that judges every address a
+ * name resolves to by the rule `safeFetch` connects under (PO-698) — for a client
+ * that opens its own socket (FTP, SFTP, a plain `node:http` stream) and so never
+ * meets `safeFetch`. Pass it as the socket's `lookup` with the port it connects to.
+ *
+ * The check runs inside the socket's own name resolution, so the socket can only
+ * reach addresses that were judged, with no second lookup a changed DNS answer
+ * could slip through, and Node still tries every approved address in turn. A
+ * name is refused when any address is private or reserved and not on the run's
+ * allow-list for `port` (PO-828); the refusal is logged for the operator; the
+ * local-development switch ({@link guardRelaxedForLocalDev}) relaxes it. A name
+ * that does not resolve fails as the resolver said, not as a refusal.
+ *
+ * **Node calls no lookup for a host written as an address**, so a literal never
+ * reaches this. A caller judges a literal itself, with `isBlockedAddress` and
+ * `isAllowedTarget`, before it opens the socket.
+ */
+export function guardedLookup(port: number, options: GuardedLookupOptions = {}): LookupFunction {
+  return lookupJudgedFor(port, options, (hostname) =>
+    Object.assign(new Error(`getaddrinfo ENOTFOUND ${hostname}`), { code: 'ENOTFOUND', hostname }),
+  );
+}
+
+/**
+ * The one judgement behind {@link guardedLookup} and `safeFetch`'s dispatcher;
+ * they differ only in the words and in what an answer with no address means.
+ */
+function lookupJudgedFor(
+  port: number,
+  { refusal, unroutable, noun = 'connection' }: GuardedLookupOptions,
+  emptyAnswer: (hostname: string) => Error,
+): LookupFunction {
   return (hostname, options, callback) => {
     dns.lookup(hostname, { ...options, all: true }, (err, addresses) => {
       if (err) {
         callback(err, '');
         return;
       }
-      // Before the relaxation, not under it: an empty answer has no address to hand
-      // the socket, and reading one off it throws inside this callback, which is
-      // outside any promise and would take the process down.
+      // Before the relaxation, not under it: see emptyAnswer's callers.
       if (addresses.length === 0) {
-        callback(new NodeError('BLOCKED_ADDRESS', `Could not resolve host: ${hostname}`, { status: 0 }) as never, '');
+        callback(emptyAnswer(hostname) as never, '');
         return;
       }
       if (!guardRelaxedForLocalDev()) {
+        // The name as the socket was given it, which is what the caller wrote: a
+        // lookup is never handed brackets, and a URL's host is already lowercase.
+        const host = hostname;
         for (const a of addresses) {
-          if (isBlockedAddress(a.address) && !isAllowedTarget(a.address, port)) {
-            callback(blockedError(normalizeHost(hostname), a.address) as never, '');
-            return;
-          }
+          if (!isBlockedAddress(a.address)) continue;
+          const allowed = isAllowedTarget(a.address, port);
+          if (allowed && !unroutable) continue;
+          logBlocked(noun, host, a.address);
+          callback((allowed && unroutable ? unroutable(host) : refusal ? refusal(host) : refusedName(host, noun)) as never, '');
+          return;
         }
       }
       if (options.all) callback(null, addresses);

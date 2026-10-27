@@ -1,0 +1,5 @@
+---
+"@revenexx/integrations-node-sdk": minor
+---
+
+New exports for a connection `safeFetch` does not make (PO-698). `guardedLookup(port, options)` is a socket lookup, shaped like `net.LookupFunction`, that judges every address a name resolves to by the rule `safeFetch` connects under: one private or reserved answer refuses the name with `BLOCKED_ADDRESS`, an address on the run's allow-list passes for its port, the refusal is logged for the operator, and an approved name answers every address so a socket can fall back from one to the next. The caller may choose the refusal's words (`refusal`), refuse listed addresses for a client a VPN route cannot carry (`unroutable`) and name the log line's noun (`noun`). `guardRelaxedForLocalDev()` is the `RVNXX_SSRF_ALLOW_PRIVATE` switch as every part of the guard reads it, announced once per process. `safeFetch`'s own dispatcher now runs on the same judgement; what it refuses and how it says so are unchanged. The switch's one-time warning now reads "allowing private/loopback targets for web requests and connections" instead of "fetch targets".

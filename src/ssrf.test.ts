@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { type AddressInfo, createServer as createNetServer } from 'node:net';
+import { type AddressInfo, createServer as createNetServer, type LookupFunction } from 'node:net';
 import { test } from 'node:test';
 import ipaddr from 'ipaddr.js';
 import { Agent, request } from 'undici';
@@ -10,6 +11,8 @@ import { safeFetch } from './fetch.js';
 import {
   assertPublicUrl,
   guardConnectionsTo,
+  guardedLookup,
+  guardRelaxedForLocalDev,
   isBlockedAddress,
   type LookupAddress,
   type LookupFn,
@@ -581,5 +584,124 @@ test('RVNXX_SSRF_ALLOW_PRIVATE relaxes the connect-time guard too [@spec:ssrf-gu
     assert.equal(server.hits(), 1, 'the dev stack must still reach its own services');
   } finally {
     await server.close();
+  }
+});
+
+/** Answer `dns.lookup` from a fixed table for the length of `fn`; a name not in it does not resolve. */
+async function withDnsAnswers<T>(answers: Record<string, string[]>, fn: () => Promise<T>): Promise<T> {
+  const dns = createRequire(import.meta.url)('node:dns') as { lookup: (...args: any[]) => void };
+  const original = dns.lookup;
+  dns.lookup = (hostname: string, _options: any, callback: any): void => {
+    const answer = answers[hostname];
+    process.nextTick(() =>
+      answer
+        ? callback(null, answer.map((address) => ({ address, family: address.includes(':') ? 6 : 4 })))
+        : callback(Object.assign(new Error(`getaddrinfo ENOTFOUND ${hostname}`), { code: 'ENOTFOUND' }), []),
+    );
+  };
+  try {
+    return await fn();
+  } finally {
+    dns.lookup = original;
+  }
+}
+
+/** Ask a lookup the way a socket does, and hand back what it answered. */
+function askLookup(
+  fn: LookupFunction,
+  host: string,
+  all: boolean,
+): Promise<{ err: NodeJS.ErrnoException | null; address: unknown; family?: number }> {
+  return new Promise((resolve) => fn(host, { all }, (err, address, family) => resolve({ err, address, family })));
+}
+
+// AC-33 — A connection safeFetch does not make is judged by the same rule
+test('guardedLookup refuses a name when any address is private, naming the host and never the address [@spec:ssrf-guard:AC-33]', () =>
+  withDnsAnswers({ 'files.internal.example': ['93.184.216.34', '10.0.0.5'] }, async () => {
+    const warn = console.warn;
+    const logged: string[] = [];
+    console.warn = (line: string) => logged.push(line);
+    try {
+      const { err } = await askLookup(guardedLookup(21), 'files.internal.example', true);
+      assert.ok(err instanceof NodeError && err.code === 'BLOCKED_ADDRESS', String(err));
+      assert.equal(err.message, 'Blocked connection to files.internal.example: resolves to a private or reserved address');
+      assert.ok(logged.includes('[ssrf] blocked connection to files.internal.example: resolves to private/reserved address 10.0.0.5'), logged.join('\n'));
+    } finally {
+      console.warn = warn;
+    }
+  }));
+
+// AC-33 — A connection safeFetch does not make is judged by the same rule
+test('guardedLookup reports a refusal in the caller\'s words and logs it with the caller\'s noun [@spec:ssrf-guard:AC-33]', () =>
+  withDnsAnswers({ 'meta.example': ['169.254.169.254'] }, async () => {
+    const warn = console.warn;
+    const logged: string[] = [];
+    console.warn = (line: string) => logged.push(line);
+    try {
+      const refusal = (host: string) => new NodeError('BLOCKED_ADDRESS', `Blocked connection to ${host}: it is a private or reserved address`);
+      const { err } = await askLookup(guardedLookup(22, { refusal, noun: 'request' }), 'meta.example', false);
+      assert.equal(err?.message, 'Blocked connection to meta.example: it is a private or reserved address');
+      assert.ok(logged.includes('[ssrf] blocked request to meta.example: resolves to private/reserved address 169.254.169.254'), logged.join('\n'));
+    } finally {
+      console.warn = warn;
+    }
+  }));
+
+// AC-33 — A connection safeFetch does not make is judged by the same rule
+test('guardedLookup answers every public address when asked for all, and the first when not [@spec:ssrf-guard:AC-33]', () =>
+  withDnsAnswers({ 'files.partner.example': ['2606:4700::6810:84e5', '93.184.216.34'] }, async () => {
+    const all = await askLookup(guardedLookup(21), 'files.partner.example', true);
+    assert.equal(all.err, null);
+    assert.deepEqual(all.address, [
+      { address: '2606:4700::6810:84e5', family: 6 },
+      { address: '93.184.216.34', family: 4 },
+    ]);
+    const one = await askLookup(guardedLookup(21), 'files.partner.example', false);
+    assert.deepEqual([one.err, one.address, one.family], [null, '2606:4700::6810:84e5', 6]);
+  }));
+
+// AC-33 — A connection safeFetch does not make is judged by the same rule
+test('guardedLookup passes a name that does not resolve on as the resolver said, not as a refusal [@spec:ssrf-guard:AC-33]', () =>
+  withDnsAnswers({ 'empty.example': [] }, async () => {
+    assert.equal((await askLookup(guardedLookup(21), 'nowhere.example', true)).err?.code, 'ENOTFOUND');
+    assert.equal((await askLookup(guardedLookup(21), 'empty.example', true)).err?.code, 'ENOTFOUND');
+  }));
+
+// AC-34 — The local-development switch is one switch for every connection
+test('guardRelaxedForLocalDev relaxes guardedLookup and assertPublicUrl alike, and only while it is on [@spec:ssrf-guard:AC-34]', () =>
+  withDnsAnswers({ 'dev.internal.example': ['10.0.0.5'] }, async () => {
+    const prev = process.env.RVNXX_SSRF_ALLOW_PRIVATE;
+    try {
+      process.env.RVNXX_SSRF_ALLOW_PRIVATE = 'yes';
+      assert.equal(guardRelaxedForLocalDev(), true);
+      assert.equal((await askLookup(guardedLookup(21), 'dev.internal.example', false)).address, '10.0.0.5');
+      await assertPublicUrl('http://10.0.0.5/');
+      process.env.RVNXX_SSRF_ALLOW_PRIVATE = 'no';
+      assert.equal(guardRelaxedForLocalDev(), false);
+      assert.equal((await askLookup(guardedLookup(21), 'dev.internal.example', false)).err?.code, 'BLOCKED_ADDRESS');
+    } finally {
+      if (prev === undefined) delete process.env.RVNXX_SSRF_ALLOW_PRIVATE;
+      else process.env.RVNXX_SSRF_ALLOW_PRIVATE = prev;
+    }
+  }));
+
+// AC-34 — The local-development switch is one switch for every connection
+test('the relaxation is announced once per process, whichever part of the guard asks first [@spec:ssrf-guard:AC-34]', () => {
+  // The once-flag is process state that earlier tests here have already set, so
+  // each order runs in a fresh process.
+  const ssrf = new URL('./ssrf.ts', import.meta.url).href;
+  const steps = {
+    lookup: `await new Promise((r) => guardedLookup(21)('localhost', { all: true }, r));`,
+    preflight: `await assertPublicUrl('http://10.0.0.5/');`,
+    switch: 'guardRelaxedForLocalDev();',
+  };
+  for (const order of [['lookup', 'preflight', 'switch'], ['switch', 'preflight', 'lookup']] as const) {
+    const script = `import { assertPublicUrl, guardedLookup, guardRelaxedForLocalDev } from ${JSON.stringify(ssrf)};\n${order.map((s) => steps[s]).join('\n')}`;
+    const run = spawnSync(process.execPath, ['--import', import.meta.resolve('tsx'), '--input-type=module', '-e', script], {
+      env: { ...process.env, RVNXX_SSRF_ALLOW_PRIVATE: '1' },
+      encoding: 'utf-8',
+    });
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stderr.split('RVNXX_SSRF_ALLOW_PRIVATE is set').length - 1, 1, `${order.join(' → ')}: ${run.stderr}`);
   }
 });
