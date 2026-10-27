@@ -233,17 +233,15 @@ function credentialOriginRefusal(target: string, bound: string, hop?: number): N
 }
 
 /**
- * The budget of one attempt: a single timer from the first lookup to the last
- * byte of the answer, across every redirect hop (IN-36). It is not cleared when
- * the headers arrive. The runtime ties a response body to the signal its request
- * was sent with and errors the body with that signal's reason, so an answer that
- * stalls halfway ends as this `TIMEOUT` in whatever reads it — the `read*`
- * helpers here, or a node's own `res.text()` — and the connection is let go.
+ * The budget of one attempt, in two parts (IN-36). Up to the headers it is one
+ * timer from the first lookup across every redirect hop, so a chain spends one
+ * budget rather than one per hop. Over the body it is an inactivity limit: the
+ * answer fails only once it has gone silent for the whole budget, so a long
+ * download that keeps arriving is not cut off at {@link MAX_TIMEOUT_MS}.
  *
- * Once the attempt has an answer the timer is unref'd: a body still arriving
- * keeps the process alive through its connection, and one read in full leaves
- * the timer nothing to end, so it must not hold a process open until it fires.
- * Before the answer it stays ref'd, as the only thing a stalled request may have.
+ * Either way the timer ends the attempt by aborting the signal its requests were
+ * sent with. The runtime errors a response body with that signal's reason, so a
+ * stalled answer ends as this `TIMEOUT` and its connection is let go.
  */
 interface AttemptDeadline {
   /** The signal every lookup and hop of the attempt runs under, the caller's cancellation included. */
@@ -252,27 +250,85 @@ interface AttemptDeadline {
   expired(): boolean;
   /** The `TIMEOUT` the budget ended the attempt with. */
   reason(): unknown;
-  /** Stop the timer, for an attempt that failed before it had an answer. */
+  /** Stop the timer. */
   clear(): void;
-  /** Let the timer run on over the answer without holding the process open. */
-  answered(): void;
+  /** Give one wait on the answer the whole budget again. */
+  awaitChunk(): void;
 }
 
 function attemptDeadline(ctxSignal: AbortSignal | undefined, effectiveMs: number): AttemptDeadline {
   const ac = new AbortController();
-  const timer = setTimeout(
-    () => ac.abort(new NodeError('TIMEOUT', `Request timed out after ${effectiveMs}ms`)),
-    effectiveMs,
-  );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const arm = (message: string) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => ac.abort(new NodeError('TIMEOUT', message)), effectiveMs);
+  };
+  arm(`Request timed out after ${effectiveMs}ms`);
   return {
     signal: ctxSignal ? AbortSignal.any([ctxSignal, ac.signal]) : ac.signal,
     expired: () => ac.signal.aborted,
     reason: () => ac.signal.reason,
     clear: () => clearTimeout(timer),
-    answered: () => {
-      timer.unref();
-    },
+    awaitChunk: () => arm(`The answer sent nothing for ${effectiveMs}ms`),
   };
+}
+
+/**
+ * What an attempt that failed under `deadline` reports: the caller's
+ * cancellation first, so it outranks a budget that ran out on the same tick,
+ * then the budget's `TIMEOUT`, else the failure itself.
+ */
+function attemptFailure(err: unknown, ctxSignal: AbortSignal | undefined, deadline: AttemptDeadline): unknown {
+  if (ctxSignal?.aborted) return ctxSignal.reason;
+  if (deadline.expired()) return deadline.reason();
+  return err;
+}
+
+/** Statuses whose response may not be constructed with a body. */
+const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
+
+/**
+ * The answer with its body read under the inactivity limit: every read gets the
+ * whole budget, and the timer is stopped the moment the read returns, the body
+ * ends or a reader cancels it, so no timer outlives its answer. A read that fails
+ * reports what {@link attemptFailure} says, so a cancellation still outranks the
+ * budget while the body is read.
+ */
+function answerUnderDeadline(
+  res: Response,
+  ctxSignal: AbortSignal | undefined,
+  deadline: AttemptDeadline,
+): Response {
+  if (!res.body || NULL_BODY_STATUSES.has(res.status)) return res;
+  const reader = res.body.getReader();
+  const body = new ReadableStream<Uint8Array>(
+    {
+      async pull(controller) {
+        deadline.awaitChunk();
+        try {
+          const { done, value } = await reader.read();
+          if (done) controller.close();
+          else controller.enqueue(value);
+        } catch (err) {
+          controller.error(attemptFailure(err, ctxSignal, deadline));
+        } finally {
+          deadline.clear();
+        }
+      },
+      cancel(reason) {
+        deadline.clear();
+        return reader.cancel(reason);
+      },
+    },
+    // Read nothing ahead of the caller: the limit times the caller's waits, not
+    // a buffer filling while nobody reads.
+    { highWaterMark: 0 },
+  );
+  const answer = new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+  // A constructed response has no address; the caller still reads the one the
+  // answer came from.
+  Object.defineProperty(answer, 'url', { value: res.url });
+  return answer;
 }
 
 /**
@@ -297,9 +353,7 @@ async function timedFetch(
     // mapping, so a blocked target can never surface as a retryable TIMEOUT.
     const blocked = connectionRefusal(err);
     if (blocked) throw blocked;
-    if (ctxSignal?.aborted) throw ctxSignal.reason;
-    if (deadline.expired()) throw deadline.reason();
-    throw err;
+    throw attemptFailure(err, ctxSignal, deadline);
   }
 }
 
@@ -370,8 +424,8 @@ function refuseUserinfo(url: URL, status = 0): void {
  * on anything but POST) is refused before its target is looked up, and the
  * request is downgraded to `GET` per the usual 301/302/303 rules.
  *
- * The whole attempt runs under one {@link attemptDeadline}, which goes on running
- * over the body of the answer it returns; a failed attempt stops it.
+ * The whole attempt runs under one {@link attemptDeadline}: one budget up to the
+ * headers, then an inactivity limit over the body of the answer it returns.
  */
 async function guardedFetch(
   url: string | URL,
@@ -383,8 +437,8 @@ async function guardedFetch(
   const deadline = attemptDeadline(ctxSignal, effectiveMs);
   try {
     const res = await followHops(url, fetchOptions, ctxSignal, deadline, effectiveMs, binding);
-    deadline.answered();
-    return res;
+    deadline.clear();
+    return answerUnderDeadline(res, ctxSignal, deadline);
   } catch (err) {
     deadline.clear();
     throw err;
@@ -753,8 +807,8 @@ export function timeoutConfigField(opts?: { default?: number; max?: number }): I
     key: 'timeoutMs',
     label: { en: 'Timeout (ms)', de: 'Zeitlimit (ms)' },
     description: {
-      en: 'How long one attempt may take before it fails as a timeout, from sending the request to the last byte of the answer, redirects included. Each retry gets the time again.',
-      de: 'Wie lange ein einzelner Versuch dauern darf, bevor er als Zeitüberschreitung fehlschlägt: vom Senden der Anfrage bis zum letzten Byte der Antwort, Weiterleitungen eingeschlossen. Jede Wiederholung bekommt die Zeit erneut.',
+      en: 'How long one attempt may wait for an answer to start, redirects included, and how long the answer may then go silent before it fails as a timeout. An answer that keeps arriving is not cut off. Each retry gets the time again.',
+      de: 'Wie lange ein einzelner Versuch auf den Beginn einer Antwort warten darf, Weiterleitungen eingeschlossen, und wie lange die Antwort danach stocken darf, bevor sie als Zeitüberschreitung fehlschlägt. Eine Antwort, die weiter eintrifft, wird nicht abgebrochen. Jede Wiederholung bekommt die Zeit erneut.',
     },
     type: 'number',
     default: opts?.default ?? DEFAULT_TIMEOUT_MS,

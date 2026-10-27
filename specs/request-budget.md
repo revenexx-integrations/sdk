@@ -143,24 +143,28 @@ signal the engine passes in, which ends the call wherever it has got to.
 
 - **Given** a node calls `safeFetch` with a budget, and the host sends its headers and
   the start of its answer
-- **When** the rest of the answer stops arriving and the budget runs out
+- **When** the rest of the answer stops arriving for as long as the budget
 - **Then** reading it fails as `TIMEOUT` — through the read helpers of this package or
   through the response's own `text()` and `json()`, with nothing more passed than the
-  budget — and not before the budget is spent
+  budget — and not before that silence has lasted the budget
 - **Because** a host that has started to answer is not a host that will finish, and a
   step left waiting on it holds a worker until somebody cancels the run
-- **Pair** AC-13's answer that arrives slowly and still finishes in time
+- **Pair** AC-13's answer that arrives slowly and keeps arriving
 - verify: unit
 
-### AC-13 — One budget covers every hop of an attempt and its answer
+### AC-13 — One budget up to the answer, then a limit on how long it may go silent
 
 - **Given** a node calls `safeFetch` with a budget
-- **When** the attempt spends it across the lookup, any redirects, the headers and the
-  body
-- **Then** it fails once the budget is spent in total, not when a single one of those
-  parts has spent it; an answer that arrives in full inside the budget is returned whole
-- **Because** the figure a workflow author types is the longest one attempt may take,
-  and a budget that starts again at every hop or at the body is a multiple of it
+- **When** the attempt spends time on the lookup, any redirects and the headers, and
+  then on the body
+- **Then** up to the headers it fails once the budget is spent in total, not when a
+  single hop has spent it; over the body it fails only once the answer has sent nothing
+  for the whole budget, so an answer that keeps arriving is returned whole however long
+  it takes
+- **Because** a host that has not answered yet is measured by how long it takes, and a
+  host that is answering by whether it is still answering: a budget that starts again
+  at every hop is a multiple of the figure the author typed, and one that also covers
+  the body would cut off every download longer than the ceiling
 - verify: unit
 
 ### AC-14 — Cancelling a stalled answer ends it as a cancellation
@@ -189,7 +193,7 @@ signal the engine passes in, which ends the call wherever it has got to.
   how much a request may cost; that spec says whether it may be made.
 - **How much of an answer is read, and as what**, is
   [`response-reading.md`](response-reading.md). The budget here bounds how long the
-  answer may take (AC-12); the cap there bounds how much of it there may be.
+  answer may go silent (AC-12); the cap there bounds how much of it there may be.
 - **What following a redirect does to the request** is
   [`redirect-following.md`](redirect-following.md). Every hop spends the same budget
   (AC-13).
@@ -212,10 +216,11 @@ signal the engine passes in, which ends the call wherever it has got to.
   scheduling detail goes red on a refactor that keeps the promise intact.
 - **The budget is per attempt, not a cap on the whole call.** Every retry starts a fresh
   one, so with retries allowed a worst case runs to the budget times the attempts, plus
-  the delays between them. Within one attempt it is a single budget (AC-13).
-- **The timer of an attempt that returned an answer runs on after the answer is read**,
-  until it would have expired, and then ends nothing. It does not keep a process alive,
-  and nothing here holds that either way.
+  the delays between them. Within one attempt it is a single budget up to the headers
+  (AC-13).
+- **An answer that keeps arriving has no limit on how long it takes.** The body is held
+  to how long it may go silent, not to a total; how much it may weigh is the cap in
+  [`response-reading.md`](response-reading.md), which is what bounds a slow download.
 
 **Undecided**
 
@@ -229,5 +234,5 @@ signal the engine passes in, which ends the call wherever it has got to.
   retry budget for every node, replacing per-node handling: AC-1 through AC-10
 - [PO-368](https://linear.app/revenexx/issue/PO-368) — backfilled this spec against the
   tests that already proved it
-- [IN-36](https://linear.app/revenexx/issue/IN-36) — one budget over the whole attempt,
-  the answer included: AC-12 through AC-15
+- [IN-36](https://linear.app/revenexx/issue/IN-36) — one budget over every hop of an
+  attempt, and a limit on how long its answer may go silent: AC-12 through AC-15

@@ -289,39 +289,47 @@ test('a node that reads the body itself gets the same TIMEOUT, with nothing extr
     await assert.rejects(() => res.text(), isTimeout);
   }));
 
-// AC-13 — One budget covers every hop and the answer
-test('headers that arrive late and a body that stalls share one budget [@spec:request-budget:AC-13]', () =>
+// AC-13 — One budget up to the answer, then a limit on how long it may go silent
+test('an answer that keeps arriving is read whole, however long it takes in total [@spec:request-budget:AC-13]', () =>
   withServer(
-    (req, res) => {
-      setTimeout(() => stallAfterFirstChunk(req, res), 250);
+    (_req, res) => {
+      // Eight chunks 100ms apart: about 800ms in total against a 300ms budget,
+      // never silent for more than a third of it.
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      let sent = 0;
+      const tick = setInterval(() => {
+        sent++;
+        if (sent < 8) res.write('x');
+        else { clearInterval(tick); res.end('x'); }
+      }, 100);
+      res.on('close', () => clearInterval(tick));
     },
     async (base) => {
       const started = Date.now();
-      const res = await safeFetch(base, { timeoutMs: 400 });
-      await assert.rejects(() => readArrayBuffer(res), isTimeout);
-      const elapsed = Date.now() - started;
-      // Two budgets would end at about 650ms: 250 for the headers, 400 for the body.
-      assert.ok(elapsed < 600, `ended after ${elapsed}ms: the body got a budget of its own`);
+      const res = await safeFetch(base, { timeoutMs: 300 });
+      assert.equal(res.url, `${base}/`);
+      assert.equal(await readText(res), 'xxxxxxxx');
+      assert.ok(Date.now() - started > 300, 'the answer finished inside one budget and proves nothing');
     },
   ));
 
-// AC-13 — One budget covers every hop and the answer
+// AC-13 — One budget up to the answer, then a limit on how long it may go silent
 test('a redirect chain spends one budget, not one per hop [@spec:request-budget:AC-13]', () =>
   withServer(
     (req, res) => {
-      // Each hop answers after 150ms: two hops fit one 200ms budget only if each
-      // gets its own.
+      // Each hop answers after 300ms: one hop fits the 500ms budget with 200ms to
+      // spare, two overrun it by 100ms, so neither outcome rests on a tight race.
       setTimeout(() => {
         if (req.url === '/start') res.writeHead(302, { location: '/end' }).end();
         else res.end('done');
-      }, 150);
+      }, 300);
     },
     async (base) => {
-      await assert.rejects(() => safeFetch(`${base}/start`, { timeoutMs: 200 }), isTimeout);
+      await assert.rejects(() => safeFetch(`${base}/start`, { timeoutMs: 500 }), isTimeout);
     },
   ));
 
-// AC-13 — One budget covers every hop and the answer
+// AC-13 — One budget up to the answer, then a limit on how long it may go silent
 test('an answer that finishes inside the budget is read whole [@spec:request-budget:AC-13]', () =>
   withServer(
     (_req, res) => {
