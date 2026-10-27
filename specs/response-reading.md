@@ -155,8 +155,9 @@ quietly handed on as text.
 ## Elsewhere
 
 - **How long a request may take and how often it is tried** is
-  [`request-budget.md`](request-budget.md). That budget bounds the request; the cap
-  here bounds the answer.
+  [`request-budget.md`](request-budget.md). That budget limits how long the answer may
+  go silent, so a body that stalls halfway ends as `TIMEOUT` in the readers here (its
+  AC-12); the cap here bounds how much the answer may weigh.
 - **Whether the request could be made at all** is
   [`ssrf-guard.md`](ssrf-guard.md).
 - **What the setting in AC-11 reads like to the workflow author who meets it** is

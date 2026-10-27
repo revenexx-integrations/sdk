@@ -209,9 +209,10 @@ are called.
 - **A call contains attempts; an attempt contains hops.** A *call* is one invocation of
   an export. An *attempt* is one try inside it — what the retry budget counts. A *hop*
   is one request inside an attempt — what the redirect limit counts. The hierarchy is
-  already load-bearing: `request-budget.md` promises a budget "per attempt and per
-  redirect hop, not a cap on the whole call", and a criterion that writes *request*
-  where one of the three is meant reads as a promise about the whole call and is not.
+  already load-bearing: `request-budget.md` promises one budget per attempt, spent
+  across its hops, and not a cap on the whole call; a criterion that
+  writes *request* where one of the three is meant reads as a promise about the whole
+  call and is not.
 - **A budget is what a caller may spend; a cap is what an answer may weigh; a ceiling
   is what neither may raise.** The three are distinct on purpose — `request-budget.md`
   AC-3 and `response-reading.md` AC-5 both exist because a caller asked past a ceiling.

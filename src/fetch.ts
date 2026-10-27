@@ -233,8 +233,129 @@ function credentialOriginRefusal(target: string, bound: string, hop?: number): N
 }
 
 /**
- * A single network request bounded by the per-attempt timeout and wired to the
- * workflow's cancellation signal. Surfaces its own timeout as
+ * The budget of one attempt, in two parts (IN-36). Up to the headers it is one
+ * timer from the first lookup across every redirect hop, so a chain spends one
+ * budget rather than one per hop. Over the body it is an inactivity limit: the
+ * answer fails only once it has gone silent for the whole budget, so a long
+ * download that keeps arriving is not cut off at {@link MAX_TIMEOUT_MS}.
+ *
+ * Either way the timer ends the attempt by aborting the signal its requests were
+ * sent with. The runtime errors a response body with that signal's reason, so a
+ * stalled answer ends as this `TIMEOUT` and its connection is let go.
+ */
+interface AttemptDeadline {
+  /** The signal every lookup and hop of the attempt runs under, the caller's cancellation included. */
+  signal: AbortSignal;
+  /** Whether the budget, rather than the caller, ended the attempt. */
+  expired(): boolean;
+  /** The `TIMEOUT` the budget ended the attempt with. */
+  reason(): unknown;
+  /** Stop the timer. */
+  clear(): void;
+  /** Give one wait on the answer the whole budget again. */
+  awaitChunk(): void;
+}
+
+function attemptDeadline(ctxSignal: AbortSignal | undefined, effectiveMs: number): AttemptDeadline {
+  const ac = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const arm = (message: string) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => ac.abort(new NodeError('TIMEOUT', message)), effectiveMs);
+  };
+  arm(`Request timed out after ${effectiveMs}ms`);
+  return {
+    signal: ctxSignal ? AbortSignal.any([ctxSignal, ac.signal]) : ac.signal,
+    expired: () => ac.signal.aborted,
+    reason: () => ac.signal.reason,
+    clear: () => clearTimeout(timer),
+    awaitChunk: () => arm(`The answer sent nothing for ${effectiveMs}ms`),
+  };
+}
+
+/**
+ * What an attempt that failed under `deadline` reports: the caller's
+ * cancellation first, so it outranks a budget that ran out on the same tick,
+ * then the budget's `TIMEOUT`, else the failure itself.
+ */
+function attemptFailure(err: unknown, ctxSignal: AbortSignal | undefined, deadline: AttemptDeadline): unknown {
+  if (ctxSignal?.aborted) return ctxSignal.reason;
+  if (deadline.expired()) return deadline.reason();
+  return err;
+}
+
+/**
+ * The answer with its body read under the inactivity limit: every read gets the
+ * whole budget, and the timer is stopped the moment the read returns, the body
+ * ends or a reader cancels it, so no timer outlives its answer. A read that fails
+ * reports what {@link attemptFailure} says, so a cancellation still outranks the
+ * budget while the body is read.
+ *
+ * The runtime's body is locked only on the first read: an answer nobody reads is
+ * left to the runtime, which lets its connection go once the answer is collected
+ * and would not if the body were locked. That happens only once the wrapper is
+ * collected too, because the wrapper holds the runtime's response. An answer `new Response` cannot rebuild —
+ * a status outside 200–599, a body on a null-body status, a reason phrase beyond
+ * Latin-1 — goes back as it came, without the limit, rather than failing where it
+ * used to succeed.
+ */
+function answerUnderDeadline(
+  res: Response,
+  ctxSignal: AbortSignal | undefined,
+  deadline: AttemptDeadline,
+): Response {
+  if (!res.body) return res;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  // `res` itself, not only its body, is held for as long as the wrapper is: the
+  // runtime cancels the body of a response once that response is collected, and
+  // the wrapper would read the cancelled body as an empty, complete answer.
+  const body = new ReadableStream<Uint8Array>(
+    {
+      async pull(controller) {
+        reader ??= (res.body as ReadableStream<Uint8Array>).getReader();
+        deadline.awaitChunk();
+        try {
+          const { done, value } = await reader.read();
+          if (done) controller.close();
+          else controller.enqueue(value);
+        } catch (err) {
+          controller.error(attemptFailure(err, ctxSignal, deadline));
+        } finally {
+          deadline.clear();
+        }
+      },
+      cancel(reason) {
+        deadline.clear();
+        return reader ? reader.cancel(reason) : res.body?.cancel(reason);
+      },
+    },
+    // Read nothing ahead of the caller: the limit times the caller's waits, not
+    // a buffer filling while nobody reads.
+    { highWaterMark: 0 },
+  );
+  let answer: Response;
+  try {
+    answer = new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+  } catch {
+    return res;
+  }
+  return withUrl(answer, res.url);
+}
+
+/**
+ * A constructed response has no address, and neither has its clone; both still
+ * read the one the answer came from.
+ */
+function withUrl(answer: Response, url: string): Response {
+  const clone = answer.clone.bind(answer);
+  Object.defineProperty(answer, 'url', { value: url });
+  Object.defineProperty(answer, 'clone', { value: () => withUrl(clone(), url) });
+  return answer;
+}
+
+/**
+ * A single network request, run under its attempt's budget and wired to the
+ * workflow's cancellation signal. Surfaces the budget running out as
  * `NodeError('TIMEOUT')` and re-throws the caller's abort reason on external
  * cancellation.
  */
@@ -242,54 +363,41 @@ async function timedFetch(
   url: string | URL,
   fetchOptions: RequestInit,
   ctxSignal: AbortSignal | undefined,
-  effectiveMs: number,
+  deadline: AttemptDeadline,
 ): Promise<Response> {
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), effectiveMs);
-  const signal = ctxSignal ? AbortSignal.any([ctxSignal, ac.signal]) : ac.signal;
   try {
     // The guarded dispatcher goes last, so a `dispatcher` a caller slipped into the
     // options cannot route the request around the check it makes (IN-28).
-    return await fetch(url, { ...fetchOptions, signal, dispatcher: guardedDispatcher() } as RequestInit);
+    return await fetch(url, { ...fetchOptions, signal: deadline.signal, dispatcher: guardedDispatcher() } as RequestInit);
   } catch (err) {
     // A socket the connect-time guard dropped comes back as a generic
     // `TypeError('fetch failed')` — unwrap it first, before the abort/timeout
     // mapping, so a blocked target can never surface as a retryable TIMEOUT.
     const blocked = connectionRefusal(err);
     if (blocked) throw blocked;
-    if (ctxSignal?.aborted) throw ctxSignal.reason;
-    if (ac.signal.aborted) throw new NodeError('TIMEOUT', `Request timed out after ${effectiveMs}ms`);
-    throw err;
-  } finally {
-    clearTimeout(timer);
+    throw attemptFailure(err, ctxSignal, deadline);
   }
 }
 
 /**
- * Run the SSRF pre-flight resolve for one hop under the same per-hop budget as
- * the request itself. `assertPublicUrl` may resolve DNS, and `dns.lookup` honours
- * neither a timeout nor a signal; without this a hung/hostile resolver would block
- * `safeFetch` past `timeoutMs` and ignore `ctxSignal`. We give the resolve its own
- * timeout+cancellation signal so it is bounded exactly like the fetch that follows
- * (note this means the resolve and the fetch each get up to `effectiveMs`, per hop).
- * A resolve timeout surfaces as `TIMEOUT` (transient — safeFetch may retry it).
+ * Run the SSRF pre-flight resolve for one hop under its attempt's budget.
+ * `assertPublicUrl` may resolve DNS, and `dns.lookup` honours neither a timeout
+ * nor a signal; without this a hung/hostile resolver would block `safeFetch` past
+ * `timeoutMs` and ignore `ctxSignal`. A resolve timeout surfaces as `TIMEOUT`
+ * (transient — safeFetch may retry it).
  */
 async function guardUrl(
   url: string | URL,
   ctxSignal: AbortSignal | undefined,
+  deadline: AttemptDeadline,
   effectiveMs: number,
 ): Promise<void> {
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), effectiveMs);
-  const signal = ctxSignal ? AbortSignal.any([ctxSignal, ac.signal]) : ac.signal;
   try {
-    await assertPublicUrl(url, { signal });
+    await assertPublicUrl(url, { signal: deadline.signal });
   } catch (err) {
     if (ctxSignal?.aborted) throw ctxSignal.reason;
-    if (ac.signal.aborted) throw new NodeError('TIMEOUT', `DNS resolution timed out after ${effectiveMs}ms`);
+    if (deadline.expired()) throw new NodeError('TIMEOUT', `DNS resolution timed out after ${effectiveMs}ms`);
     throw err;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -337,11 +445,33 @@ function refuseUserinfo(url: URL, status = 0): void {
  * redirect that would resend a body to another origin (307/308, and 301/302
  * on anything but POST) is refused before its target is looked up, and the
  * request is downgraded to `GET` per the usual 301/302/303 rules.
+ *
+ * The whole attempt runs under one {@link attemptDeadline}: one budget up to the
+ * headers, then an inactivity limit over the body of the answer it returns.
  */
 async function guardedFetch(
   url: string | URL,
   fetchOptions: RequestInit,
   ctxSignal: AbortSignal | undefined,
+  effectiveMs: number,
+  binding?: { origin: string; crossOriginRedirect: 'refuse' | 'strip' },
+): Promise<Response> {
+  const deadline = attemptDeadline(ctxSignal, effectiveMs);
+  try {
+    const res = await followHops(url, fetchOptions, ctxSignal, deadline, effectiveMs, binding);
+    deadline.clear();
+    return answerUnderDeadline(res, ctxSignal, deadline);
+  } catch (err) {
+    deadline.clear();
+    throw err;
+  }
+}
+
+async function followHops(
+  url: string | URL,
+  fetchOptions: RequestInit,
+  ctxSignal: AbortSignal | undefined,
+  deadline: AttemptDeadline,
   effectiveMs: number,
   binding?: { origin: string; crossOriginRedirect: 'refuse' | 'strip' },
 ): Promise<Response> {
@@ -353,7 +483,7 @@ async function guardedFetch(
   let currentUrl: string | URL = url;
   let currentInit: RequestInit = { ...fetchOptions, redirect: 'manual' };
 
-  await guardUrl(currentUrl, ctxSignal, effectiveMs);
+  await guardUrl(currentUrl, ctxSignal, deadline, effectiveMs);
 
   for (let hop = 0; ; hop++) {
     // The check above approved an address; this puts the address the socket
@@ -364,7 +494,7 @@ async function guardedFetch(
     );
     let res: Response;
     try {
-      res = await timedFetch(currentUrl, currentInit, ctxSignal, effectiveMs);
+      res = await timedFetch(currentUrl, currentInit, ctxSignal, deadline);
     } finally {
       release();
     }
@@ -437,7 +567,7 @@ async function guardedFetch(
         { status: 0 },
       );
     }
-    await guardUrl(nextUrl, ctxSignal, effectiveMs);
+    await guardUrl(nextUrl, ctxSignal, deadline, effectiveMs);
     // Never leak credentials across an origin boundary on redirect. Browsers and
     // undici strip only `Authorization`, `Cookie` and `Proxy-Authorization`, which
     // is enough where the caller cannot choose a header for its key; a node can,
@@ -699,8 +829,8 @@ export function timeoutConfigField(opts?: { default?: number; max?: number }): I
     key: 'timeoutMs',
     label: { en: 'Timeout (ms)', de: 'Zeitlimit (ms)' },
     description: {
-      en: 'How long one attempt may take before it fails as a timeout. Counted per attempt and per redirect hop, not across the whole call.',
-      de: 'Wie lange ein einzelner Versuch dauern darf, bevor er als Zeitüberschreitung fehlschlägt. Gilt je Versuch und je Weiterleitung, nicht für den gesamten Aufruf.',
+      en: 'How long one attempt may wait for an answer to start, redirects included, and how long the answer may then go silent before it fails as a timeout. An answer that keeps arriving is not cut off. Each retry gets the time again.',
+      de: 'Wie lange ein einzelner Versuch auf den Beginn einer Antwort warten darf, Weiterleitungen eingeschlossen, und wie lange die Antwort danach stocken darf, bevor sie als Zeitüberschreitung fehlschlägt. Eine Antwort, die weiter eintrifft, wird nicht abgebrochen. Jede Wiederholung bekommt die Zeit erneut.',
     },
     type: 'number',
     default: opts?.default ?? DEFAULT_TIMEOUT_MS,

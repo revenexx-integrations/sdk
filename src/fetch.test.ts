@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import v8 from 'node:v8';
+import { runInNewContext } from 'node:vm';
 import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import {
   clampResponseBytes,
   DEFAULT_MAX_RESPONSE_BYTES,
@@ -224,6 +226,215 @@ test('propagates AbortError when ctx.signal is aborted mid-flight [@spec:request
       },
     );
   }));
+
+// ------------------------------------------- the budget over the whole exchange
+//
+// These run against a real server on loopback, not a fetch mock: a mocked
+// Response's body is not tied to the request's signal, so a mock would pass on
+// code that leaves a stalled body unbounded. The local-development relaxation is
+// switched on for the duration of each test so the guard lets loopback through.
+
+type Handler = Parameters<typeof createServer>[1];
+
+/** A loopback server for one test; `closed` resolves once the server saw its client go. */
+async function withServer(
+  handler: NonNullable<Handler>,
+  fn: (base: string, closed: Promise<void>) => Promise<void>,
+): Promise<void> {
+  let sawClose!: () => void;
+  const closed = new Promise<void>((resolve) => { sawClose = resolve; });
+  const server = createServer((req, res) => {
+    res.on('close', sawClose);
+    handler(req, res);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  const key = 'RVNXX_SSRF_ALLOW_PRIVATE';
+  const prev = process.env[key];
+  process.env[key] = '1';
+  try {
+    await fn(`http://127.0.0.1:${port}`, closed);
+  } finally {
+    if (prev === undefined) delete process.env[key];
+    else process.env[key] = prev;
+    server.closeAllConnections();
+    server.close();
+  }
+}
+
+/** Answers with headers and one chunk, then sends nothing more. */
+const stallAfterFirstChunk: NonNullable<Handler> = (_req, res) => {
+  res.writeHead(200, { 'content-type': 'application/json' });
+  res.write('{"partial":');
+};
+
+function isTimeout(err: unknown): boolean {
+  return err instanceof NodeError && err.code === 'TIMEOUT';
+}
+
+// AC-12 — An answer that stalls once it has started fails as a timeout
+test('an answer that stalls after its first chunk ends as TIMEOUT at the budget, not before [@spec:request-budget:AC-12]', () =>
+  withServer(stallAfterFirstChunk, async (base) => {
+    const started = Date.now();
+    const res = await safeFetch(base, { timeoutMs: 300 });
+    assert.equal(res.status, 200);
+    await assert.rejects(() => readJsonOrText(res), isTimeout);
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed >= 280, `ended after ${elapsed}ms, before the 300ms budget`);
+    assert.ok(elapsed < 1_500, `ended after ${elapsed}ms, long past the 300ms budget`);
+  }));
+
+// AC-12 — An answer that stalls once it has started fails as a timeout
+test('a node that reads the body itself gets the same TIMEOUT, with nothing extra to pass [@spec:request-budget:AC-12]', () =>
+  withServer(stallAfterFirstChunk, async (base) => {
+    const res = await safeFetch(base, { timeoutMs: 200 });
+    await assert.rejects(() => res.text(), isTimeout);
+  }));
+
+// AC-13 — One budget up to the answer, then a limit on how long it may go silent
+test('an answer that keeps arriving is read whole, however long it takes in total [@spec:request-budget:AC-13]', () =>
+  withServer(
+    (_req, res) => {
+      // Eight chunks 100ms apart: about 800ms in total against a 300ms budget,
+      // never silent for more than a third of it.
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      let sent = 0;
+      const tick = setInterval(() => {
+        sent++;
+        if (sent < 8) res.write('x');
+        else { clearInterval(tick); res.end('x'); }
+      }, 100);
+      res.on('close', () => clearInterval(tick));
+    },
+    async (base) => {
+      const started = Date.now();
+      const res = await safeFetch(base, { timeoutMs: 300 });
+      assert.equal(res.url, `${base}/`);
+      assert.equal(res.clone().url, `${base}/`);
+      assert.equal(await readText(res), 'xxxxxxxx');
+      assert.ok(Date.now() - started > 300, 'the answer finished inside one budget and proves nothing');
+    },
+  ));
+
+// AC-13 — One budget up to the answer, then a limit on how long it may go silent
+test('a redirect chain spends one budget, not one per hop [@spec:request-budget:AC-13]', () =>
+  withServer(
+    (req, res) => {
+      // Each hop answers after 300ms: one hop fits the 500ms budget with 200ms to
+      // spare, two overrun it by 100ms, so neither outcome rests on a tight race.
+      setTimeout(() => {
+        if (req.url === '/start') res.writeHead(302, { location: '/end' }).end();
+        else res.end('done');
+      }, 300);
+    },
+    async (base) => {
+      // One hop alone fits, so the two-hop failure below is the shared budget.
+      assert.equal(await (await safeFetch(`${base}/end`, { timeoutMs: 500 })).text(), 'done');
+      await assert.rejects(() => safeFetch(`${base}/start`, { timeoutMs: 500 }), isTimeout);
+    },
+  ));
+
+// AC-13 — One budget up to the answer, then a limit on how long it may go silent
+test('an answer that finishes inside the budget is read whole [@spec:request-budget:AC-13]', () =>
+  withServer(
+    (_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.write('{"a":');
+      setTimeout(() => res.end('1}'), 100);
+    },
+    async (base) => {
+      const res = await safeFetch(base, { timeoutMs: 1_000 });
+      assert.deepEqual(await readJsonOrText(res), { a: 1 });
+    },
+  ));
+
+// Not a promise: an answer the inactivity limit cannot be put around is still
+// returned as the runtime gave it (request-budget.md, Gaps).
+for (const [what, statusLine, status] of [
+  ['a status outside 200–599', 'HTTP/1.1 600 Odd', 600],
+  ['a reason phrase beyond Latin-1', 'HTTP/1.1 200 OK \u2713', 200],
+] as const) {
+  test(`an answer with ${what} is still returned`, async () => {
+    const server = createNetServer((socket) => {
+      socket.on('data', () => socket.end(`${statusLine}\r\nContent-Length: 2\r\n\r\nok`));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    const key = 'RVNXX_SSRF_ALLOW_PRIVATE';
+    const prev = process.env[key];
+    process.env[key] = '1';
+    try {
+      const res = await safeFetch(`http://127.0.0.1:${port}/`, { timeoutMs: 1_000 });
+      assert.equal(res.status, status);
+      assert.equal(await res.text(), 'ok');
+    } finally {
+      if (prev === undefined) delete process.env[key];
+      else process.env[key] = prev;
+      server.close();
+    }
+  });
+}
+
+// Not a promise of its own: the answer is the runtime's answer. The runtime
+// cancels the body of a response it has collected, so a wrapper that let go of
+// the runtime's response read a cancelled body as an empty, complete one.
+test('an answer collected by the garbage collector before it is read still reads whole', () =>
+  withServer(
+    (_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end('x'.repeat(100_000));
+    },
+    async (base) => {
+      v8.setFlagsFromString('--expose-gc');
+      const gc = runInNewContext('gc') as () => void;
+      const res = await safeFetch(base, { timeoutMs: 5_000 });
+      for (let i = 0; i < 5; i++) {
+        gc();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert.equal((await res.text()).length, 100_000);
+    },
+  ));
+
+// AC-14 — Cancelling a stalled answer ends it as a cancellation
+test('cancelling while an answer stalls ends the read with the cancellation, not a timeout [@spec:request-budget:AC-14]', () =>
+  withServer(stallAfterFirstChunk, async (base) => {
+    const ac = new AbortController();
+    const reason = new Error('run cancelled');
+    const res = await safeFetch(base, { timeoutMs: 5_000, signal: ac.signal });
+    setTimeout(() => ac.abort(reason), 100);
+    const started = Date.now();
+    await assert.rejects(() => readArrayBuffer(res), (err: unknown) => err === reason);
+    assert.ok(Date.now() - started < 1_000, 'the read waited for the budget instead of the cancellation');
+  }));
+
+// AC-15 — An answer that ran out of time lets go of its connection
+test('an answer that times out closes its connection [@spec:request-budget:AC-15]', () =>
+  withServer(stallAfterFirstChunk, async (base, closed) => {
+    const res = await safeFetch(base, { timeoutMs: 200 });
+    await assert.rejects(() => readArrayBuffer(res), isTimeout);
+    await Promise.race([
+      closed,
+      new Promise((_resolve, reject) => setTimeout(() => reject(new Error('the server never saw the connection close')), 1_000)),
+    ]);
+  }));
+
+// AC-2 (response-reading) — the cap still holds while the budget runs over the body
+test('the size cap still refuses a body without a length while the budget is running [@spec:response-reading:AC-2]', () =>
+  withServer(
+    (_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/octet-stream' });
+      res.write(Buffer.alloc(64));
+      res.write(Buffer.alloc(64));
+    },
+    async (base) => {
+      const res = await safeFetch(base, { timeoutMs: 2_000 });
+      await assert.rejects(
+        () => readArrayBuffer(res, 100),
+        (err: unknown) => err instanceof NodeError && err.code === 'RESPONSE_TOO_LARGE',
+      );
+    },
+  ));
 
 // ------------------------------------------------------------------ retry
 
