@@ -293,7 +293,8 @@ function attemptFailure(err: unknown, ctxSignal: AbortSignal | undefined, deadli
  *
  * The runtime's body is locked only on the first read: an answer nobody reads is
  * left to the runtime, which lets its connection go once the answer is collected
- * and would not if the body were locked. An answer `new Response` cannot rebuild —
+ * and would not if the body were locked. That happens only once the wrapper is
+ * collected too, because the wrapper holds the runtime's response. An answer `new Response` cannot rebuild —
  * a status outside 200–599, a body on a null-body status, a reason phrase beyond
  * Latin-1 — goes back as it came, without the limit, rather than failing where it
  * used to succeed.
@@ -303,13 +304,15 @@ function answerUnderDeadline(
   ctxSignal: AbortSignal | undefined,
   deadline: AttemptDeadline,
 ): Response {
-  const source = res.body;
-  if (!source) return res;
+  if (!res.body) return res;
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  // `res` itself, not only its body, is held for as long as the wrapper is: the
+  // runtime cancels the body of a response once that response is collected, and
+  // the wrapper would read the cancelled body as an empty, complete answer.
   const body = new ReadableStream<Uint8Array>(
     {
       async pull(controller) {
-        reader ??= source.getReader();
+        reader ??= (res.body as ReadableStream<Uint8Array>).getReader();
         deadline.awaitChunk();
         try {
           const { done, value } = await reader.read();
@@ -323,7 +326,7 @@ function answerUnderDeadline(
       },
       cancel(reason) {
         deadline.clear();
-        return reader ? reader.cancel(reason) : source.cancel(reason);
+        return reader ? reader.cancel(reason) : res.body?.cancel(reason);
       },
     },
     // Read nothing ahead of the caller: the limit times the caller's waits, not

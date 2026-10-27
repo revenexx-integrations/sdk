@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import v8 from 'node:v8';
+import { runInNewContext } from 'node:vm';
 import { createServer } from 'node:http';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import {
@@ -372,6 +374,27 @@ for (const [what, statusLine, status] of [
     }
   });
 }
+
+// Not a promise of its own: the answer is the runtime's answer. The runtime
+// cancels the body of a response it has collected, so a wrapper that let go of
+// the runtime's response read a cancelled body as an empty, complete one.
+test('an answer collected by the garbage collector before it is read still reads whole', () =>
+  withServer(
+    (_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end('x'.repeat(100_000));
+    },
+    async (base) => {
+      v8.setFlagsFromString('--expose-gc');
+      const gc = runInNewContext('gc') as () => void;
+      const res = await safeFetch(base, { timeoutMs: 5_000 });
+      for (let i = 0; i < 5; i++) {
+        gc();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert.equal((await res.text()).length, 100_000);
+    },
+  ));
 
 // AC-14 — Cancelling a stalled answer ends it as a cancellation
 test('cancelling while an answer stalls ends the read with the cancellation, not a timeout [@spec:request-budget:AC-14]', () =>
