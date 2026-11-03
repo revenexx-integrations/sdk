@@ -54,6 +54,47 @@ Notable specifics:
   new type is a subtype of the old one, because consumers that
   produced the wider type stop type-checking.
 
+## A node's own version
+
+A node package carries two version numbers, and they count different things:
+
+| Number | Where | Counts | Moves on |
+| --- | --- | --- | --- |
+| Package version | `package.json`, through a changeset | releases of the code | **every** change to the code |
+| Node version | `description.version` of each node class | the contract an author builds a workflow against: its settings, inputs, outputs and what its result means | a change to that contract only |
+
+The node version follows semver applied to the contract, **without a patch
+digit**:
+
+| Change to the node | Node version | Package changeset |
+| --- | --- | --- |
+| A bug fix, a clearer message, a refactor: nothing an author has to notice | unchanged | patch |
+| Something an author can now use and need not: an optional setting, a new output, a new field in a result | minor (`1.0.0` → `1.1.0`) | minor |
+| Something an author has to act on: a setting removed or made required, an output that changes shape, a default that changes what the node does | major (`1.1.0` → `2.0.0`) | major |
+
+A bug fix already has its patch number, on the package. Counting it a second
+time on the node buys nothing, because of how the platform stores and runs a
+node:
+
+- **The node version does not keep old behaviour running.** A workflow step
+  pins `(slug, version)`, but that pin selects the manifest the author sees, not
+  an implementation: every version of a re-registered package runs the bytes
+  just uploaded, and every workflow gets them on its next bundle build
+  (`docs/publishing.md` in `integrations-nodes-core` has the measurement). A
+  bump protects no workflow from a change; it only announces one to authors.
+- **A bumped number is a new catalogue entry.** Registration upserts nodes by
+  `(slug, version)`, so the same number updates the existing row, and a new one
+  adds a second row with the same contract. Existing steps stay pinned to the
+  old number, and the editor offers authors a move to a version that gives them
+  nothing.
+
+Since every workflow gets the change whatever the number says, a major is a
+warning, not a shield: build the change so that steps pinned to the old version
+still work, or plan how they are moved.
+
+The packages already follow this rule: in November 2026, 354 node classes
+across all packages had versions with a patch digit of `0` and nothing else.
+
 ## Release flow
 
 Versioning and publishing are driven by [Changesets](https://github.com/changesets/changesets)
