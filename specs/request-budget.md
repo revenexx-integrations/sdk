@@ -201,6 +201,42 @@ signal the engine passes in, which ends the call wherever it has got to.
   those suites keep intercepting the request
 - verify: unit
 
+### AC-17 — A failure that sent nothing says so
+
+- **Given** a node calls `safeFetch`, with retries allowed or not
+- **When** the call fails without any hop of any attempt having put a byte of the
+  request on the wire — the target refused before its lookup or while its connection
+  was opened, the lookup out of time, a header or URL that cannot be sent, a credential
+  bound to another origin, or a connection that was refused, could not be resolved or
+  reached, or timed out while connecting
+- **Then** the error carries `meta.sent = false`, and `mayHaveBeenSent` answers `false`
+  for it
+- **And** an error the runtime raised is still the runtime's error, its `cause`
+  unchanged, with the marker added
+- **Because** a node that writes has to know whether a create may be repeated: one that
+  never went out can be, one that may have gone through must not be. Every package that
+  writes used to decide that from socket codes of its own, and a connection the guard
+  dropped carries no such code, so it was reported as possibly created although nothing
+  was sent
+- **Pair** AC-18, the failures that may have sent something
+- verify: unit
+
+### AC-18 — A failure after something may have gone out does not claim otherwise
+
+- **Given** a call in which some hop of some attempt may have reached the host — a
+  connection that broke once it was made, a budget that ran out while the request was
+  under way, a redirect refused after the first hop was answered, an earlier attempt that
+  may have sent before a later one never connected
+- **When** the call fails
+- **Then** the error carries no `sent: false`, and `mayHaveBeenSent` answers `true`, as
+  it does for any error it does not recognise
+- **And** a cancellation is thrown as the caller's own reason, untouched
+- **Because** the marker is only worth anything if it is never wrong in the dangerous
+  direction: a write reported as unsent is repeated, and a write that had landed is then
+  made twice
+- **Pair** AC-17
+- verify: unit
+
 ## Elsewhere
 
 - **Where a request is allowed to go at all** — the address rules, the redirect hops
@@ -259,5 +295,7 @@ signal the engine passes in, which ends the call wherever it has got to.
   tests that already proved it
 - [IN-36](https://linear.app/revenexx/issue/IN-36) — one budget over every hop of an
   attempt, and a limit on how long its answer may go silent: AC-12 through AC-15
+- [PO-808](https://linear.app/revenexx/issue/PO-808) — a failed request says whether it
+  was sent, so a node that writes knows whether it may ask again: AC-17, AC-18
 - [IN-40](https://linear.app/revenexx/issue/IN-40) — every request failed on Node 26,
   because the guarded dispatcher was paired with the runtime's `fetch`: AC-16

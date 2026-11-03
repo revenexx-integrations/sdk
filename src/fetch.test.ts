@@ -17,6 +17,7 @@ import {
   MAX_RETRY_ATTEMPTS,
   MAX_TIMEOUT_MS,
   maxBytesConfigField,
+  mayHaveBeenSent,
   readArrayBuffer,
   readJsonOrText,
   readText,
@@ -1906,4 +1907,185 @@ test('safeFetch refuses a bound request with a password in its address as INVALI
     );
     assert.equal(calls.length, 0);
   });
+});
+
+// ------------------------------------------------ whether a failed request was sent
+
+/** The runtime's error for a connection that was never made, as undici raises it. */
+function notConnected(code: string): TypeError {
+  return new TypeError('fetch failed', { cause: Object.assign(new Error(code), { code }) });
+}
+
+/** Assert `err` says nothing was sent, through the marker and through the helper. */
+function assertUnsent(err: unknown): true {
+  assert.equal((err as { meta?: { sent?: unknown } }).meta?.sent, false, `marked unsent: ${String(err)}`);
+  assert.equal(mayHaveBeenSent(err), false);
+  return true;
+}
+
+/** Assert `err` carries no claim that nothing was sent. */
+function assertMaybeSent(err: unknown): true {
+  assert.notEqual((err as { meta?: { sent?: unknown } } | null)?.meta?.sent, false, `not marked unsent: ${String(err)}`);
+  assert.equal(mayHaveBeenSent(err), true);
+  return true;
+}
+
+// AC-17 — A failure that sent nothing says so
+test('a refusal before the lookup, an unsendable header or URL and a foreign origin all say nothing was sent [@spec:request-budget:AC-17]', async () => {
+  const { fetch: mock, calls } = scriptedFetch([new Response(null, { status: 200 })]);
+  await withLookup(['10.0.0.5'], () =>
+    withFetch(mock, async () => {
+      await assert.rejects(() => safeFetch('https://intranet.example', { method: 'POST', body: 'x' }), assertUnsent);
+    }),
+  );
+  await withLookup(['93.184.216.34'], () =>
+    withFetch(mock, async () => {
+      await assert.rejects(() => safeFetch('https://api.example', { headers: { authorization: 'a\nb' } }), assertUnsent);
+      await assert.rejects(() => safeFetch('https://user:pw@api.example'), assertUnsent);
+      await assert.rejects(() => safeFetch('https://other.example', { credential: { origin: 'https://api.example' } }), assertUnsent);
+    }),
+  );
+  assert.equal(calls.length, 0);
+});
+
+// AC-17 — A failure that sent nothing says so
+test('a lookup that runs out of time says nothing was sent [@spec:request-budget:AC-17]', async () => {
+  const orig = ssrfResolver.lookup;
+  ssrfResolver.lookup = () => new Promise(() => {});
+  try {
+    await assert.rejects(() => safeFetch('https://slow-dns.example', { timeoutMs: 50 }), (err: unknown) => {
+      assert.ok(err instanceof NodeError && err.code === 'TIMEOUT');
+      return assertUnsent(err);
+    });
+  } finally {
+    ssrfResolver.lookup = orig;
+  }
+});
+
+// AC-17 — A failure that sent nothing says so
+for (const code of ['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH', 'UND_ERR_CONNECT_TIMEOUT']) {
+  test(`a connection that failed with ${code} says nothing was sent, across every attempt [@spec:request-budget:AC-17]`, () => {
+    let n = 0;
+    const failing: typeof globalThis.fetch = async () => {
+      n++;
+      throw notConnected(code);
+    };
+    return withLookup(['93.184.216.34'], () =>
+      withFetch(failing, async () => {
+        await assert.rejects(() => safeFetch('https://api.example', { method: 'POST', body: 'x', retry: { attempts: 2, delayMs: 1 } }), (err: unknown) => {
+          assert.ok(err instanceof TypeError, 'the runtime\'s error reaches the caller as before');
+          assert.equal((err.cause as { code?: string }).code, code);
+          return assertUnsent(err);
+        });
+        assert.equal(n, 3);
+      }),
+    );
+  });
+}
+
+// AC-17 — A failure that sent nothing says so
+test('a connection every address of which was refused says nothing was sent [@spec:request-budget:AC-17]', () => {
+  const failing: typeof globalThis.fetch = async () => {
+    throw new TypeError('fetch failed', {
+      cause: new AggregateError([Object.assign(new Error('a'), { code: 'ECONNREFUSED' }), Object.assign(new Error('b'), { code: 'ENETUNREACH' })]),
+    });
+  };
+  return withLookup(['93.184.216.34'], () =>
+    withFetch(failing, async () => {
+      await assert.rejects(() => safeFetch('https://api.example'), assertUnsent);
+    }),
+  );
+});
+
+// AC-17 — A failure that sent nothing says so
+test('a real connection to a closed port says nothing was sent [@spec:request-budget:AC-17]', async () => {
+  const server = createNetServer();
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  const key = 'RVNXX_SSRF_ALLOW_PRIVATE';
+  const prev = process.env[key];
+  process.env[key] = '1';
+  try {
+    await assert.rejects(() => safeFetch(`http://127.0.0.1:${port}/`, { method: 'POST', body: 'x', timeoutMs: 2_000 }), assertUnsent);
+  } finally {
+    if (prev === undefined) delete process.env[key];
+    else process.env[key] = prev;
+  }
+});
+
+// AC-18 — A failure after something may have gone out does not claim otherwise
+test('a connection that broke after it was made may have sent the request [@spec:request-budget:AC-18]', () => {
+  const failing: typeof globalThis.fetch = async () => {
+    throw notConnected('ECONNRESET');
+  };
+  return withLookup(['93.184.216.34'], () =>
+    withFetch(failing, async () => {
+      await assert.rejects(() => safeFetch('https://api.example', { method: 'POST', body: 'x' }), assertMaybeSent);
+    }),
+  );
+});
+
+// AC-18 — A failure after something may have gone out does not claim otherwise
+test('an attempt that may have sent outweighs a later attempt that never connected [@spec:request-budget:AC-18]', () => {
+  let n = 0;
+  const failing: typeof globalThis.fetch = async () => {
+    n++;
+    throw notConnected(n === 1 ? 'ECONNRESET' : 'ECONNREFUSED');
+  };
+  return withLookup(['93.184.216.34'], () =>
+    withFetch(failing, async () => {
+      await assert.rejects(
+        () => safeFetch('https://api.example', { method: 'POST', body: 'x', retry: { attempts: 1, delayMs: 1 } }),
+        (err: unknown) => {
+          assert.equal(((err as TypeError).cause as { code?: string }).code, 'ECONNREFUSED', 'the last failure is the one raised');
+          return assertMaybeSent(err);
+        },
+      );
+      assert.equal(n, 2);
+    }),
+  );
+});
+
+// AC-18 — A failure after something may have gone out does not claim otherwise
+test('a redirect refused after the first hop was answered may have sent the request [@spec:request-budget:AC-18]', () => {
+  const { fetch: mock, calls } = scriptedFetch([redirect(307, 'https://elsewhere.example/'), new Response(null, { status: 200 })]);
+  return withLookup(['93.184.216.34'], () =>
+    withFetch(mock, async () => {
+      await assert.rejects(() => safeFetch('https://api.example', { method: 'POST', body: 'x' }), (err: unknown) => {
+        assert.ok(err instanceof NodeError && err.code === 'BLOCKED_ADDRESS');
+        return assertMaybeSent(err);
+      });
+      assert.equal(calls.length, 1);
+    }),
+  );
+});
+
+// AC-18 — A failure after something may have gone out does not claim otherwise
+test('a request that ran out of time once it was under way may have been sent [@spec:request-budget:AC-18]', () =>
+  withLookup(['93.184.216.34'], () =>
+    withFetch(delayedFetch(1_000), async () => {
+      await assert.rejects(() => safeFetch('https://api.example', { timeoutMs: 30 }), (err: unknown) => {
+        assert.ok(err instanceof NodeError && err.code === 'TIMEOUT');
+        return assertMaybeSent(err);
+      });
+    }),
+  ));
+
+// AC-18 — A failure after something may have gone out does not claim otherwise
+test('a cancellation is the caller\'s own reason and is left as it is [@spec:request-budget:AC-18]', async () => {
+  const ac = new AbortController();
+  const reason = Object.freeze(new Error('cancelled'));
+  ac.abort(reason);
+  await assert.rejects(() => safeFetch('https://api.example', { signal: ac.signal }), (err: unknown) => {
+    assert.equal(err, reason);
+    return assertMaybeSent(err);
+  });
+});
+
+test('mayHaveBeenSent reads any other error as possibly sent', () => {
+  for (const err of [new Error('x'), new NodeError('TIMEOUT', 'x'), new NodeError('X', 'x', { sent: true }), null, undefined, 'x']) {
+    assert.equal(mayHaveBeenSent(err), true, String(err));
+  }
+  assert.equal(mayHaveBeenSent(new NodeError('X', 'x', { sent: false })), false);
 });

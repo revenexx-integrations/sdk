@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import ipaddr from 'ipaddr.js';
 import { Agent, request } from 'undici';
 import { NodeError } from './errors.js';
-import { safeFetch } from './fetch.js';
+import { mayHaveBeenSent, safeFetch } from './fetch.js';
 import {
   assertPublicUrl,
   guardConnectionsTo,
@@ -426,6 +426,30 @@ test('safeFetch refuses a target that resolved publicly at check time and connec
       }),
     );
     assert.equal(server.hits(), 0, 'the request must never reach the host the connection landed on');
+  } finally {
+    await server.close();
+  }
+});
+
+// request-budget AC-17 — A failure that sent nothing says so: the connect-time
+// refusal acts before a byte is written, so it is marked unsent like the pre-flight one.
+test('a target refused while its connection is opened says nothing was sent [@spec:request-budget:AC-17]', async () => {
+  const server = await loopbackServer();
+  try {
+    await withResolver(lookup('93.184.216.34'), () =>
+      withConnectAddress(REBINDING_HOST, '127.0.0.1', async () => {
+        await assert.rejects(
+          () => safeFetch(`http://${REBINDING_HOST}:${server.port}/`, { method: 'POST', body: 'x', timeoutMs: 2_000 }),
+          (err: unknown) => {
+            assert.ok(err instanceof NodeError && err.code === 'BLOCKED_ADDRESS');
+            assert.equal(err.meta?.['sent'], false);
+            assert.equal(mayHaveBeenSent(err), false);
+            return true;
+          },
+        );
+      }),
+    );
+    assert.equal(server.hits(), 0);
   } finally {
     await server.close();
   }
