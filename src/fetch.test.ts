@@ -412,6 +412,11 @@ test('safeFetch sends a real request and returns the runtime\'s own Response, wi
           res.end();
           return;
         }
+        if (req.url === '/moved') {
+          res.writeHead(302, { location: '/' });
+          res.end('see /');
+          return;
+        }
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ method: req.method, type: req.headers['content-type'] ?? '', body: Buffer.concat(chunks).toString() }));
       });
@@ -422,6 +427,11 @@ test('safeFetch sends a real request and returns the runtime\'s own Response, wi
       assert.equal(got.status, 200);
       assert.equal(got.url, `${base}/`);
       assert.deepEqual(await got.json(), { method: 'GET', type: '', body: '' });
+
+      const moved = await safeFetch(`${base}/moved`, { timeoutMs: 5_000 });
+      assert.ok(moved instanceof Response, 'a redirect is followed by hand through the same fetch');
+      assert.equal(moved.url, `${base}/`);
+      assert.deepEqual(await moved.json(), { method: 'GET', type: '', body: '' });
 
       const empty = await safeFetch(`${base}/empty`, { timeoutMs: 5_000 });
       assert.ok(empty instanceof Response, 'a response without a body is the runtime\'s Response too');
