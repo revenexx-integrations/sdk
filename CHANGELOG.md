@@ -1,5 +1,15 @@
 # @revenexx/integrations-node-sdk
 
+## 1.15.0
+
+### Minor Changes
+
+- ebcc7bc: A failed `safeFetch` says whether the request was sent (PO-808). When no hop of any attempt put a byte on the wire — a refused address before the lookup or at connect time, a lookup timeout, an unsendable header or URL, a credential bound to another origin, or a connection that was refused, unresolved, unreachable or timed out while connecting — the error carries `meta.sent = false`. The new `mayHaveBeenSent(err)` reads it, and answers `true` for everything else. Errors from the runtime stay `TypeError`s with their `cause` unchanged.
+
+### Patch Changes
+
+- ebcc7bc: `safeFetch` works on Node 26 again (IN-40). It sends through undici's own `fetch`, the one its guarded dispatcher belongs to, instead of the runtime's built-in `fetch` — Node 26 refused the SDK's undici 6 dispatcher and every request failed with `fetch failed`. A `fetch` a test puts in the global's place is still called instead, so package suites that stub `globalThis.fetch` keep working, and every answer is still the runtime's own `Response`.
+
 ## 1.14.0
 
 ### Minor Changes
