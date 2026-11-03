@@ -189,7 +189,8 @@ signal the engine passes in, which ends the call wherever it has got to.
 ### AC-16 — A request reaches its host on every Node the package admits
 
 - **Given** a host that answers, on any Node version the package's `engines` admits
-- **When** a node calls `safeFetch` — with a body or without, a form among them
+- **When** a node calls `safeFetch` — with a body or without, a form among them, and
+  through a redirect
 - **Then** the request arrives as sent, and the answer comes back as the runtime's own
   `Response`, whether or not it carries a body
 - **Because** `safeFetch` sends through a `fetch` of its own and not the runtime's: the
