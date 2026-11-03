@@ -424,22 +424,36 @@ interface Wire {
 }
 
 /**
- * The socket errors that mean a connection was never made, so no request byte
- * was written: refused, unresolved, unreachable, or timed out while connecting.
- * Read off the error's `cause`, and off each error of an `AggregateError` when
- * the runtime tried several addresses and every one failed.
+ * The errors that mean a connection was never made, so no request byte was
+ * written: unresolved, or timed out while connecting. None of them can arise on
+ * a socket that is already open.
  */
-const NEVER_CONNECTED = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH', 'UND_ERR_CONNECT_TIMEOUT']);
+const NEVER_CONNECTED = new Set(['ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT']);
 
+/**
+ * The socket errors that mean a connection was never made only when `connect`
+ * raised them: refused or unreachable. The kernel reports the same codes on a
+ * socket that is already open and may have written the request — an ICMP
+ * unreachable recorded while it retransmitted — and those carry `read` or
+ * `write` as their `syscall`.
+ */
+const REFUSED_WHILE_CONNECTING = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']);
+
+function connectFailed(e: { code?: unknown; syscall?: unknown } | null | undefined): boolean {
+  if (typeof e?.code !== 'string') return false;
+  return NEVER_CONNECTED.has(e.code) || (REFUSED_WHILE_CONNECTING.has(e.code) && e.syscall === 'connect');
+}
+
+/**
+ * Whether the runtime's error says the connection was never made. Read off the
+ * error's `cause`, or, when the runtime tried several addresses, off every error
+ * of its `AggregateError`: each one must have failed while connecting.
+ */
 function neverConnected(err: unknown): boolean {
-  const cause = (err as { cause?: { code?: unknown; errors?: unknown } } | null | undefined)?.cause;
+  const cause = (err as { cause?: { code?: unknown; syscall?: unknown; errors?: unknown } } | null | undefined)?.cause;
   if (!cause) return false;
-  if (typeof cause.code === 'string' && NEVER_CONNECTED.has(cause.code)) return true;
-  return (
-    Array.isArray(cause.errors) &&
-    cause.errors.length > 0 &&
-    cause.errors.every((e: { code?: unknown } | null) => typeof e?.code === 'string' && NEVER_CONNECTED.has(e.code))
-  );
+  if (Array.isArray(cause.errors) && cause.errors.length > 0) return cause.errors.every(connectFailed);
+  return connectFailed(cause);
 }
 
 /** Mark an error `safeFetch` raised as one that left nothing on the wire: `meta.sent = false`. */

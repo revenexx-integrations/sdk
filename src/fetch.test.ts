@@ -1928,8 +1928,9 @@ test('safeFetch refuses a bound request with a password in its address as INVALI
 // ------------------------------------------------ whether a failed request was sent
 
 /** The runtime's error for a connection that was never made, as undici raises it. */
-function notConnected(code: string): TypeError {
-  return new TypeError('fetch failed', { cause: Object.assign(new Error(code), { code }) });
+/** The runtime's error for a socket that failed in `syscall` — `connect` unless said otherwise. */
+function notConnected(code: string, syscall = 'connect'): TypeError {
+  return new TypeError('fetch failed', { cause: Object.assign(new Error(code), { code, syscall }) });
 }
 
 /** Assert `err` says nothing was sent, through the marker and through the helper. */
@@ -2003,7 +2004,10 @@ for (const code of ['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'E
 test('a connection every address of which was refused says nothing was sent [@spec:request-budget:AC-17]', () => {
   const failing: typeof globalThis.fetch = async () => {
     throw new TypeError('fetch failed', {
-      cause: new AggregateError([Object.assign(new Error('a'), { code: 'ECONNREFUSED' }), Object.assign(new Error('b'), { code: 'ENETUNREACH' })]),
+      cause: new AggregateError([
+        Object.assign(new Error('a'), { code: 'ECONNREFUSED', syscall: 'connect' }),
+        Object.assign(new Error('b'), { code: 'ENETUNREACH', syscall: 'connect' }),
+      ]),
     });
   };
   return withLookup(['93.184.216.34'], () =>
@@ -2041,6 +2045,20 @@ test('a connection that broke after it was made may have sent the request [@spec
     }),
   );
 });
+
+// AC-18 — A failure after something may have gone out does not claim otherwise
+for (const code of ['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']) {
+  test(`${code} on a socket that was already open may have sent the request [@spec:request-budget:AC-18]`, () => {
+    const failing: typeof globalThis.fetch = async () => {
+      throw notConnected(code, 'read');
+    };
+    return withLookup(['93.184.216.34'], () =>
+      withFetch(failing, async () => {
+        await assert.rejects(() => safeFetch('https://api.example', { method: 'POST', body: 'x' }), assertMaybeSent);
+      }),
+    );
+  });
+}
 
 // AC-18 — A failure after something may have gone out does not claim otherwise
 test('an attempt that may have sent outweighs a later attempt that never connected [@spec:request-budget:AC-18]', () => {

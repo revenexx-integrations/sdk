@@ -225,8 +225,9 @@ signal the engine passes in, which ends the call wherever it has got to.
 ### AC-18 — A failure after something may have gone out does not claim otherwise
 
 - **Given** a call in which some hop of some attempt may have reached the host — a
-  connection that broke once it was made, a budget that ran out while the request was
-  under way, a redirect refused after the first hop was answered, an earlier attempt that
+  connection that broke once it was made (refused or unreachable included, when the
+  socket was already open rather than connecting), a budget that ran out while the
+  request was under way, a redirect refused after the first hop was answered, an earlier attempt that
   may have sent before a later one never connected
 - **When** the call fails
 - **Then** the error carries no `sent: false`, and `mayHaveBeenSent` answers `true`, as
