@@ -449,14 +449,26 @@ test('safeFetch sends a real request and returns the runtime\'s own Response, wi
       assert.ok(head instanceof Response, 'a HEAD answer is the runtime\'s Response');
       assert.equal(head.status, 200);
 
+      // The runtime's FormData belongs to the undici Node bundles; undici 8's own
+      // fetch sent it as the text "[object FormData]" until it was copied (IN-62).
       const form = new FormData();
-      form.set('name', 'Ada');
+      form.append('name', 'Ada');
+      form.append('name', 'Grace');
+      form.append('file', new File(['x,y'], 'zähler.csv', { type: 'text/csv' }));
       const posted = (await (await safeFetch(`${base}/`, { method: 'POST', body: form, timeoutMs: 5_000 })).json()) as {
         type: string;
         body: string;
       };
       assert.match(posted.type, /^multipart\/form-data; boundary=/, 'the runtime\'s FormData goes out as a form');
-      assert.match(posted.body, /name="name"\r\n\r\nAda\r\n/);
+      assert.match(posted.body, /name="name"\r\n\r\nAda\r\n[\s\S]*name="name"\r\n\r\nGrace\r\n/, 'every entry, in order');
+      assert.match(posted.body, /name="file"; filename="zähler.csv"\r\nContent-Type: text\/csv\r\n\r\nx,y\r\n/, 'a file keeps its name and type');
+
+      // Guards rather than fixes: the runtime's Blob goes through undici 8 as it is.
+      const blob = (await (await safeFetch(`${base}/`, { method: 'POST', body: new Blob(['raw'], { type: 'text/plain' }), timeoutMs: 5_000 })).json()) as {
+        type: string;
+        body: string;
+      };
+      assert.deepEqual([blob.type, blob.body], ['text/plain', 'raw']);
 
       const json = (await (
         await safeFetch(`${base}/`, { method: 'POST', body: '{"a":1}', headers: { 'content-type': 'application/json' }, timeoutMs: 5_000 })
@@ -464,6 +476,23 @@ test('safeFetch sends a real request and returns the runtime\'s own Response, wi
       assert.deepEqual([json.type, json.body], ['application/json', '{"a":1}']);
     },
   ));
+
+// AC-16 — A request reaches its host on every Node the package admits
+test('a test\'s stub receives the caller\'s own FormData, not a copy [@spec:request-budget:AC-16]', () => {
+  const form = new FormData();
+  form.set('name', 'Ada');
+  let seen: unknown;
+  const stub: typeof globalThis.fetch = async (_url, init) => {
+    seen = init?.body;
+    return new Response('ok');
+  };
+  return withLookup(['93.184.216.34'], () =>
+    withFetch(stub, async () => {
+      await safeFetch('https://api.example', { method: 'POST', body: form });
+      assert.equal(seen, form);
+    }),
+  );
+});
 
 // AC-14 — Cancelling a stalled answer ends it as a cancellation
 test('cancelling while an answer stalls ends the read with the cancellation, not a timeout [@spec:request-budget:AC-14]', () =>

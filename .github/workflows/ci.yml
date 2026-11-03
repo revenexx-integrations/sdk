@@ -47,7 +47,7 @@ jobs:
       - name: Build
         run: npm run build
 
-  # The suite on the other Node majors `engines.node` claims (`>=20.3.0`), because
+  # The suite on the other Node majors `engines.node` claims (`>=22.19.0`), because
   # `test` above pins one. Its own job, and not a matrix on `test`, purely so the
   # check context stays `test` — a matrix renames it to `test (24)` and the live
   # ruleset (see docs/branch-protection.md) requires the old name, which would then
@@ -71,7 +71,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: ['20', '22', '26']
+        node-version: ['22', '26']
 
     steps:
       - name: Checkout

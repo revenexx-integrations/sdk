@@ -49,9 +49,10 @@ enables the **linter only**. Three things about it are load-bearing:
   global only to recognise a test's stub of it (IN-40) — are per-line on purpose, so
   the exception is visible where it is taken instead of widening a file.
 - **`safeFetch` sends through undici's own `fetch`, not the runtime's** (IN-40). The
-  guarded dispatcher is an undici 6 `Agent`, and the runtime's `fetch` is built on
-  whichever undici that Node bundles — Node 26 refused the pairing and every request
-  failed. A `fetch` placed in the global *after* the SDK loaded is a test's stub and is
+  guarded dispatcher is an `Agent` from the SDK's own undici, and the runtime's `fetch` is
+  built on whichever undici that Node bundles — Node 26 refused the pairing and every
+  request failed. The same split runs the other way for a body: the runtime's
+  `FormData` is not undici 8's, so `safeFetch` copies it before sending (IN-62). A `fetch` placed in the global *after* the SDK loaded is a test's stub and is
   called instead, which is the seam every node package's suite intercepts through.
 - **The formatter is deliberately disabled.** Biome disagrees with this repo's
   hand-wrapped source in 13 to 17 of 22 files depending on `lineWidth` (13 at its
