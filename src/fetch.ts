@@ -298,8 +298,8 @@ function attemptFailure(err: unknown, ctxSignal: AbortSignal | undefined, deadli
  * and would not if the body were locked. That happens only once the wrapper is
  * collected too, because the wrapper holds the runtime's response. An answer `new Response` cannot rebuild —
  * a status outside 200–599, a body on a null-body status, a reason phrase beyond
- * Latin-1 — goes back as it came, without the limit, rather than failing where it
- * used to succeed.
+ * Latin-1 — goes back with its status line and body as received, without the
+ * limit, rather than failing where it used to succeed (see {@link asRuntimeResponse}).
  */
 function answerUnderDeadline(
   res: Response,
@@ -309,7 +309,7 @@ function answerUnderDeadline(
   // An answer without a body is rebuilt too: it came from undici's own `fetch`
   // (see `transport`), and its `Response` is undici's class rather than the
   // runtime's, which a caller's `instanceof Response` would not recognise.
-  if (!res.body) return rebuilt(res, null) ?? res;
+  if (!res.body) return rebuilt(res, null) ?? asRuntimeResponse(res);
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   // `res` itself, not only its body, is held for as long as the wrapper is: the
   // runtime cancels the body of a response once that response is collected, and
@@ -338,7 +338,7 @@ function answerUnderDeadline(
     // a buffer filling while nobody reads.
     { highWaterMark: 0 },
   );
-  return rebuilt(res, body) ?? res;
+  return rebuilt(res, body) ?? asRuntimeResponse(res);
 }
 
 /**
@@ -351,6 +351,28 @@ function rebuilt(res: Response, body: ReadableStream<Uint8Array> | null): Respon
   } catch {
     return undefined;
   }
+}
+
+/**
+ * `res` as the runtime's own `Response` when `new Response` refuses its status
+ * line: built with a status the constructor accepts, then given the real one, so
+ * a caller's `instanceof Response` holds for it too. Its body is `res`'s own and
+ * stays outside the inactivity limit (request-budget.md, Gaps).
+ */
+function asRuntimeResponse(res: Response): Response {
+  return withUrl(withStatusLine(new Response(res.body, { headers: res.headers }), res), res.url);
+}
+
+/** `answer` reading `from`'s status line, and so does its clone. */
+function withStatusLine(answer: Response, from: Pick<Response, 'status' | 'statusText' | 'ok'>): Response {
+  const clone = answer.clone.bind(answer);
+  Object.defineProperties(answer, {
+    status: { value: from.status },
+    statusText: { value: from.statusText },
+    ok: { value: from.ok },
+    clone: { value: () => withStatusLine(clone(), from), configurable: true },
+  });
+  return answer;
 }
 
 /**

@@ -367,8 +367,14 @@ for (const [what, statusLine, status] of [
     process.env[key] = '1';
     try {
       const res = await safeFetch(`http://127.0.0.1:${port}/`, { timeoutMs: 1_000 });
+      assert.ok(res instanceof Response, "the runtime's own Response");
       assert.equal(res.status, status);
+      assert.equal(res.url, `http://127.0.0.1:${port}/`);
+      const copy = res.clone();
+      assert.equal(copy.status, status);
+      assert.equal(copy.url, res.url);
       assert.equal(await res.text(), 'ok');
+      assert.equal(await copy.text(), 'ok');
     } finally {
       if (prev === undefined) delete process.env[key];
       else process.env[key] = prev;
