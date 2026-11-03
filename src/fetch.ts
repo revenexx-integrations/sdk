@@ -391,6 +391,69 @@ function transport(): typeof undiciFetch {
 }
 
 /**
+ * Whether anything of a call may have reached a host (PO-808). Starts `false`
+ * and only ever turns `true`: once any hop of any attempt may have put a byte
+ * on the wire, no later failure can say the call was unsent — a POST that got a
+ * 307 may already have acted, and an attempt that timed out after sending may
+ * have landed before the retry that never connected.
+ */
+interface Wire {
+  maybeSent: boolean;
+}
+
+/**
+ * The socket errors that mean a connection was never made, so no request byte
+ * was written: refused, unresolved, unreachable, or timed out while connecting.
+ * Read off the error's `cause`, and off each error of an `AggregateError` when
+ * the runtime tried several addresses and every one failed.
+ */
+const NEVER_CONNECTED = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH', 'UND_ERR_CONNECT_TIMEOUT']);
+
+function neverConnected(err: unknown): boolean {
+  const cause = (err as { cause?: { code?: unknown; errors?: unknown } } | null | undefined)?.cause;
+  if (!cause) return false;
+  if (typeof cause.code === 'string' && NEVER_CONNECTED.has(cause.code)) return true;
+  return (
+    Array.isArray(cause.errors) &&
+    cause.errors.length > 0 &&
+    cause.errors.every((e: { code?: unknown } | null) => typeof e?.code === 'string' && NEVER_CONNECTED.has(e.code))
+  );
+}
+
+/** Mark an error `safeFetch` raised as one that left nothing on the wire: `meta.sent = false`. */
+function markUnsent(err: unknown): void {
+  if (typeof err !== 'object' || err === null) return;
+  const meta = (err as { meta?: unknown }).meta;
+  const sent = { ...(typeof meta === 'object' && meta !== null ? meta : {}), sent: false };
+  try {
+    Object.defineProperty(err, 'meta', { value: sent, writable: true, configurable: true, enumerable: true });
+  } catch {
+    // A frozen error keeps what it said; it is then read as possibly sent.
+  }
+}
+
+/**
+ * Whether the request behind a failed {@link safeFetch} call may have reached
+ * the host — `false` only when the call is known to have put nothing on the wire
+ * on any hop of any attempt, and `true` for every other error, an unknown one
+ * included. A node that writes reads it to decide whether a create may be
+ * repeated: when this is `false` nothing was sent, so nothing can have been
+ * created.
+ *
+ * It reads `meta.sent === false`, which `safeFetch` puts on what it throws in
+ * that case: a refused address — before the lookup or at connect time — a lookup
+ * that ran out of time, a header or URL that cannot be sent, a credential bound
+ * to another origin, and a connection that was refused, could not be resolved or
+ * reached, or timed out while connecting. The last group arrives as the runtime's
+ * own `TypeError('fetch failed')`, unwrapped as before, with the marker added. A
+ * cancellation is the caller's own reason and is never marked.
+ */
+export function mayHaveBeenSent(err: unknown): boolean {
+  const meta = (err as { meta?: { sent?: unknown } } | null | undefined)?.meta;
+  return meta?.sent !== false;
+}
+
+/**
  * A single network request, run under its attempt's budget and wired to the
  * workflow's cancellation signal. Surfaces the budget running out as
  * `NodeError('TIMEOUT')` and re-throws the caller's abort reason on external
@@ -401,18 +464,24 @@ async function timedFetch(
   fetchOptions: RequestInit,
   ctxSignal: AbortSignal | undefined,
   deadline: AttemptDeadline,
+  wire: Wire,
 ): Promise<Response> {
   try {
     // The guarded dispatcher goes last, so a `dispatcher` a caller slipped into the
     // options cannot route the request around the check it makes (IN-28).
     const send = transport();
-    return (await send(url, { ...fetchOptions, signal: deadline.signal, dispatcher: guardedDispatcher() } as Parameters<typeof send>[1])) as unknown as Response;
+    const res = (await send(url, { ...fetchOptions, signal: deadline.signal, dispatcher: guardedDispatcher() } as Parameters<typeof send>[1])) as unknown as Response;
+    wire.maybeSent = true;
+    return res;
   } catch (err) {
     // A socket the connect-time guard dropped comes back as a generic
     // `TypeError('fetch failed')` — unwrap it first, before the abort/timeout
     // mapping, so a blocked target can never surface as a retryable TIMEOUT.
+    // Both guards act before a byte of the request is written, and so does a
+    // connection that was never made; anything else may have sent something.
     const blocked = connectionRefusal(err);
     if (blocked) throw blocked;
+    if (!neverConnected(err)) wire.maybeSent = true;
     throw attemptFailure(err, ctxSignal, deadline);
   }
 }
@@ -492,11 +561,12 @@ async function guardedFetch(
   fetchOptions: RequestInit,
   ctxSignal: AbortSignal | undefined,
   effectiveMs: number,
+  wire: Wire,
   binding?: { origin: string; crossOriginRedirect: 'refuse' | 'strip' },
 ): Promise<Response> {
   const deadline = attemptDeadline(ctxSignal, effectiveMs);
   try {
-    const res = await followHops(url, fetchOptions, ctxSignal, deadline, effectiveMs, binding);
+    const res = await followHops(url, fetchOptions, ctxSignal, deadline, effectiveMs, wire, binding);
     deadline.clear();
     return answerUnderDeadline(res, ctxSignal, deadline);
   } catch (err) {
@@ -511,6 +581,7 @@ async function followHops(
   ctxSignal: AbortSignal | undefined,
   deadline: AttemptDeadline,
   effectiveMs: number,
+  wire: Wire,
   binding?: { origin: string; crossOriginRedirect: 'refuse' | 'strip' },
 ): Promise<Response> {
   // The initial request is issued with the caller's URL and init untouched
@@ -532,7 +603,7 @@ async function followHops(
     );
     let res: Response;
     try {
-      res = await timedFetch(currentUrl, currentInit, ctxSignal, deadline);
+      res = await timedFetch(currentUrl, currentInit, ctxSignal, deadline, wire);
     } finally {
       release();
     }
@@ -626,10 +697,26 @@ async function followHops(
   }
 }
 
+/**
+ * Make a request through the SSRF guard, under a time budget and an optional
+ * retry budget. A failure that left nothing on the wire says so with
+ * `meta.sent = false` — read it through {@link mayHaveBeenSent}.
+ */
 export async function safeFetch(
   url: string | URL,
   options: SafeFetchOptions = {},
 ): Promise<Response> {
+  const wire: Wire = { maybeSent: false };
+  try {
+    return await sendWithin(url, options, wire);
+  } catch (err) {
+    // A cancellation is the caller's own reason, not an error of ours to mark.
+    if (!wire.maybeSent && err !== options.signal?.reason) markUnsent(err);
+    throw err;
+  }
+}
+
+async function sendWithin(url: string | URL, options: SafeFetchOptions, wire: Wire): Promise<Response> {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, signal: ctxSignal, retry, credential, ...fetchOptions } = options;
   const effectiveMs =
     Number.isFinite(timeoutMs) && timeoutMs > 0
@@ -671,7 +758,7 @@ export async function safeFetch(
     if (ctxSignal?.aborted) throw ctxSignal.reason;
 
     try {
-      return await guardedFetch(url, fetchOptions, ctxSignal, effectiveMs, binding);
+      return await guardedFetch(url, fetchOptions, ctxSignal, effectiveMs, wire, binding);
     } catch (err) {
       if (ctxSignal?.aborted) throw ctxSignal.reason;
       // A blocked address or redirect loop is deterministic — retrying can only
