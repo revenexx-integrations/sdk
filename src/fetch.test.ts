@@ -1261,15 +1261,45 @@ for (const [label, body] of [
 }
 
 // AC-6 — A body goes nowhere but where the caller sent it
-test('safeFetch still resends the body on a same-origin 307 [@spec:redirect-following:AC-6]', () => {
+for (const status of [307, 308]) {
+  test(`safeFetch still resends the body on a same-origin ${status} [@spec:redirect-following:AC-6]`, () => {
+    const { fetch: mock, calls } = scriptedFetch([
+      redirect(status, 'https://93.184.216.34/v2/submit'),
+      new Response(null, { status: 200 }),
+    ]);
+    return withFetch(mock, async () => {
+      const res = await safeFetch('https://93.184.216.34/submit', { method: 'POST', body: 'a=1' });
+      assert.equal(res.status, 200);
+      assert.equal(calls[1]?.url, 'https://93.184.216.34/v2/submit');
+      assert.equal(calls[1]?.method, 'POST');
+      assert.equal(calls[1]?.hasBody, true);
+    });
+  });
+}
+
+// AC-6 — A body goes nowhere but where the caller sent it
+// Each hop is compared with the one before it, so a body that stayed on its origin
+// for one hop is still refused at the hop that would take it elsewhere.
+test('safeFetch follows a body through a same-origin hop and refuses it at the hop that leaves [@spec:redirect-following:AC-6]', () => {
   const { fetch: mock, calls } = scriptedFetch([
     redirect(307, 'https://93.184.216.34/v2/submit'),
+    redirect(308, 'https://93.184.216.35/collect'),
     new Response(null, { status: 200 }),
   ]);
   return withFetch(mock, async () => {
-    const res = await safeFetch('https://93.184.216.34/submit', { method: 'POST', body: 'a=1' });
-    assert.equal(res.status, 200);
-    assert.equal(calls[1]?.method, 'POST');
+    await assert.rejects(
+      () => safeFetch('https://93.184.216.34/submit', { method: 'POST', body: 'a=1', retry: { attempts: 2, delayMs: 1 } }),
+      (err: unknown) => {
+        assert.ok(err instanceof NodeError && err.code === 'BLOCKED_ADDRESS');
+        assert.match(err.message, /308 redirect to another origin.*https:\/\/93\.184\.216\.35/);
+        return true;
+      },
+    );
+    assert.deepEqual(
+      calls.map((c) => c.url),
+      ['https://93.184.216.34/submit', 'https://93.184.216.34/v2/submit'],
+      'the second hop is followed with its body, the third is never sent, and nothing is retried',
+    );
     assert.equal(calls[1]?.hasBody, true);
   });
 });

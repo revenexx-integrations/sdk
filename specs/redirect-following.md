@@ -5,7 +5,7 @@ where:
   - safeFetch — every hop it follows on the caller's behalf
 docs:
   - docs/overview.md
-updated: 2026-10-15
+updated: 2026-11-03
 ---
 
 # What a redirect does to the request
@@ -90,6 +90,8 @@ way whichever host answered would prefer.
   before that origin is looked up or sent anything, and it is not retried. The same
   redirect on the same origin is followed with the body; one whose body is empty, or
   that has none, is followed to any origin
+- **And** in a chain each hop is judged against the one before it, so a body that
+  stayed on its origin for one hop is refused at the hop that would take it elsewhere
 - **Because** the body can be customer data or an OAuth client secret, and the server
   that answers decides where a redirect points. Dropping the body and going on would
   turn a write into a read the caller believes was a write
