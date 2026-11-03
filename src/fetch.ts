@@ -1,3 +1,4 @@
+import { fetch as undiciFetch } from 'undici';
 import { NodeError } from './errors.js';
 import { assertPublicUrl, connectionRefusal, guardConnectionsTo, guardedDispatcher } from './ssrf.js';
 import type { IConfigField } from './types.js';
@@ -60,10 +61,11 @@ export function headerCrossesOrigin(name: string): boolean {
 /**
  * What the runtime refuses in a header value once surrounding whitespace is
  * trimmed: the C0 control characters except the tab, DEL, and anything above
- * Latin-1. The C1 range (U+0080–U+009F) is sent. Read off the runtime, not a
- * spec — `Headers` refuses only NUL, LF and CR, and the dispatcher underneath
- * the rest of C0 and DEL — and held against it on every Node version CI runs by
- * the AC-21 test that sends each character for real.
+ * Latin-1. The C1 range (U+0080–U+009F) is sent. Read off the `fetch` a request
+ * is sent through (undici's own, see `transport`), not a spec — `Headers`
+ * refuses only NUL, LF and CR, and the dispatcher underneath the rest of C0 and
+ * DEL — and held against it on every Node version CI runs by the AC-21 test that
+ * sends each character for real.
  */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is what this pattern is for
 const UNSENDABLE_IN_HEADER_VALUE = /[\0-\x08\x0a-\x1f\x7f\u0100-\uffff]/;
@@ -304,7 +306,10 @@ function answerUnderDeadline(
   ctxSignal: AbortSignal | undefined,
   deadline: AttemptDeadline,
 ): Response {
-  if (!res.body) return res;
+  // An answer without a body is rebuilt too: it came from undici's own `fetch`
+  // (see `transport`), and its `Response` is undici's class rather than the
+  // runtime's, which a caller's `instanceof Response` would not recognise.
+  if (!res.body) return rebuilt(res, null) ?? res;
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   // `res` itself, not only its body, is held for as long as the wrapper is: the
   // runtime cancels the body of a response once that response is collected, and
@@ -333,13 +338,19 @@ function answerUnderDeadline(
     // a buffer filling while nobody reads.
     { highWaterMark: 0 },
   );
-  let answer: Response;
+  return rebuilt(res, body) ?? res;
+}
+
+/**
+ * `res` as the runtime's own `Response`, carrying `body` and `res`'s address, or
+ * nothing when `new Response` cannot rebuild it.
+ */
+function rebuilt(res: Response, body: ReadableStream<Uint8Array> | null): Response | undefined {
   try {
-    answer = new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+    return withUrl(new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers }), res.url);
   } catch {
-    return res;
+    return undefined;
   }
-  return withUrl(answer, res.url);
 }
 
 /**
@@ -351,6 +362,32 @@ function withUrl(answer: Response, url: string): Response {
   Object.defineProperty(answer, 'url', { value: url });
   Object.defineProperty(answer, 'clone', { value: () => withUrl(clone(), url) });
   return answer;
+}
+
+/**
+ * The runtime's own `fetch`, as it stood when this module was loaded. Kept only
+ * to recognise a replacement, never to send: see {@link transport}.
+ */
+// biome-ignore lint/nursery/noJsRestrictedProperties: read once to recognise a test's replacement of it, never called
+const runtimeFetch = globalThis.fetch;
+
+/**
+ * The `fetch` a request goes out through: undici's own, the one its guarded
+ * {@link guardedDispatcher} belongs to (IN-40). The runtime's built-in `fetch` is
+ * built on whichever undici that Node bundles, and a dispatcher from another
+ * undici major is not an input it supports — Node 26 refuses the SDK's undici 6
+ * `Agent` outright, so every request failed. Pairing the dispatcher with the
+ * `fetch` of its own release keeps the two matched on every Node.
+ *
+ * The one exception is a `fetch` somebody put in the global's place after this
+ * module loaded: that is a test's stub, and every node package's suite reaches
+ * `safeFetch` through one. It is called instead, with the same options, so those
+ * suites keep intercepting the request.
+ */
+function transport(): typeof undiciFetch {
+  // biome-ignore lint/nursery/noJsRestrictedProperties: compared, to call a test's stub in place of the runtime's fetch
+  const current = globalThis.fetch;
+  return current === runtimeFetch ? undiciFetch : (current as unknown as typeof undiciFetch);
 }
 
 /**
@@ -368,7 +405,8 @@ async function timedFetch(
   try {
     // The guarded dispatcher goes last, so a `dispatcher` a caller slipped into the
     // options cannot route the request around the check it makes (IN-28).
-    return await fetch(url, { ...fetchOptions, signal: deadline.signal, dispatcher: guardedDispatcher() } as RequestInit);
+    const send = transport();
+    return (await send(url, { ...fetchOptions, signal: deadline.signal, dispatcher: guardedDispatcher() } as Parameters<typeof send>[1])) as unknown as Response;
   } catch (err) {
     // A socket the connect-time guard dropped comes back as a generic
     // `TypeError('fetch failed')` — unwrap it first, before the abort/timeout

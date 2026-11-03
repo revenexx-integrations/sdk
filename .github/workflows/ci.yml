@@ -57,7 +57,11 @@ jobs:
   # off an undici diagnostics message, and the shape of that message is Node's to
   # change: on a Node whose undici renamed them the guard goes quiet, and
   # `specs/ssrf-guard.md` AC-17 is the canary that catches it. A canary that only
-  # ever ran on one of three supported majors is not watching the other two.
+  # ever ran on one of the supported majors is not watching the others.
+  #
+  # 26 is here because `engines` admits it and `safeFetch` failed every request on it
+  # without any suite noticing (IN-40); `specs/request-budget.md` AC-16 makes a real
+  # request on each of these.
   engines:
     runs-on: ubuntu-latest
 
@@ -67,7 +71,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: ['20', '22']
+        node-version: ['20', '22', '26']
 
     steps:
       - name: Checkout

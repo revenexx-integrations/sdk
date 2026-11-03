@@ -4,6 +4,7 @@ import v8 from 'node:v8';
 import { runInNewContext } from 'node:vm';
 import { createServer } from 'node:http';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
+import { fetch as undiciFetch } from 'undici';
 import {
   clampResponseBytes,
   DEFAULT_MAX_RESPONSE_BYTES,
@@ -393,6 +394,57 @@ test('an answer collected by the garbage collector before it is read still reads
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
       assert.equal((await res.text()).length, 100_000);
+    },
+  ));
+
+// AC-16 — A request reaches its host on every Node the package admits
+// A real request, through the dispatcher and the `fetch` it is sent with, on every
+// Node version CI runs. Node packages stub the global `fetch` and cannot see a
+// mismatch between the two; on Node 26 every request failed until IN-40.
+test('safeFetch sends a real request and returns the runtime\'s own Response, with a body or without [@spec:request-budget:AC-16]', () =>
+  withServer(
+    (req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (c: Buffer) => chunks.push(c));
+      req.on('end', () => {
+        if (req.url === '/empty') {
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ method: req.method, type: req.headers['content-type'] ?? '', body: Buffer.concat(chunks).toString() }));
+      });
+    },
+    async (base) => {
+      const got = await safeFetch(`${base}/`, { timeoutMs: 5_000 });
+      assert.ok(got instanceof Response, 'a response with a body is the runtime\'s Response');
+      assert.equal(got.status, 200);
+      assert.equal(got.url, `${base}/`);
+      assert.deepEqual(await got.json(), { method: 'GET', type: '', body: '' });
+
+      const empty = await safeFetch(`${base}/empty`, { timeoutMs: 5_000 });
+      assert.ok(empty instanceof Response, 'a response without a body is the runtime\'s Response too');
+      assert.equal(empty.status, 204);
+      assert.equal(empty.url, `${base}/empty`);
+
+      const head = await safeFetch(`${base}/`, { method: 'HEAD', timeoutMs: 5_000 });
+      assert.ok(head instanceof Response, 'a HEAD answer is the runtime\'s Response');
+      assert.equal(head.status, 200);
+
+      const form = new FormData();
+      form.set('name', 'Ada');
+      const posted = (await (await safeFetch(`${base}/`, { method: 'POST', body: form, timeoutMs: 5_000 })).json()) as {
+        type: string;
+        body: string;
+      };
+      assert.match(posted.type, /^multipart\/form-data; boundary=/, 'the runtime\'s FormData goes out as a form');
+      assert.match(posted.body, /name="name"\r\n\r\nAda\r\n/);
+
+      const json = (await (
+        await safeFetch(`${base}/`, { method: 'POST', body: '{"a":1}', headers: { 'content-type': 'application/json' }, timeoutMs: 5_000 })
+      ).json()) as { type: string; body: string };
+      assert.deepEqual([json.type, json.body], ['application/json', '{"a":1}']);
     },
   ));
 
@@ -1579,7 +1631,8 @@ test('safeFetch reports an earlier cancellation ahead of a header it would refus
 
 // AC-21 — A header value that cannot be sent is refused without being quoted
 // The rule is a copy of what the runtime refuses, so it is held against the
-// runtime itself, on every Node version CI runs: each Latin-1 character, and two
+// `fetch` a request is actually sent through — undici's own since IN-40 — on
+// every Node version CI runs: each Latin-1 character, and two
 // beyond, inside a value and inside a name, sent for real to a loopback server.
 // What the runtime sends, safeFetch must send; what it refuses, safeFetch must
 // refuse as INVALID_HEADER.
@@ -1590,8 +1643,7 @@ test('the characters safeFetch refuses in a header are exactly the ones the runt
   const codes = [...Array(256).keys(), 0x100, 0xffff];
   const runtimeSends = async (name: string, value: string): Promise<boolean> => {
     try {
-      // biome-ignore lint/nursery/noJsRestrictedProperties: AC-21 holds the copied rule against the runtime's own fetch, on loopback; see the note above
-      await (await globalThis.fetch(`http://127.0.0.1:${port}/`, { headers: [[name, value]] })).arrayBuffer();
+      await (await undiciFetch(`http://127.0.0.1:${port}/`, { headers: [[name, value]] })).arrayBuffer();
       return true;
     } catch {
       return false;

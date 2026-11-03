@@ -6,7 +6,7 @@ where:
   - timeoutConfigField, retryConfigFields — the settings a node offers its author
 docs:
   - docs/overview.md
-updated: 2026-10-27
+updated: 2026-11-03
 ---
 
 # What one request may cost
@@ -186,6 +186,21 @@ signal the engine passes in, which ends the call wherever it has got to.
   resource the budget exists to free, only quieter
 - verify: unit
 
+### AC-16 — A request reaches its host on every Node the package admits
+
+- **Given** a host that answers, on any Node version the package's `engines` admits
+- **When** a node calls `safeFetch` — with a body or without, a form among them
+- **Then** the request arrives as sent, and the answer comes back as the runtime's own
+  `Response`, whether or not it carries a body
+- **Because** `safeFetch` sends through a `fetch` of its own and not the runtime's: the
+  runtime's is built on whichever undici that Node bundles, and the dispatcher that
+  guards the connection only fits the `fetch` of its own undici release. Paired with the
+  runtime's, every request failed on Node 26, and no node package could see it — their
+  suites stub the global `fetch`
+- **And** a `fetch` a test has put in the global's place is still the one called, so
+  those suites keep intercepting the request
+- verify: unit
+
 ## Elsewhere
 
 - **Where a request is allowed to go at all** — the address rules, the redirect hops
@@ -244,3 +259,5 @@ signal the engine passes in, which ends the call wherever it has got to.
   tests that already proved it
 - [IN-36](https://linear.app/revenexx/issue/IN-36) — one budget over every hop of an
   attempt, and a limit on how long its answer may go silent: AC-12 through AC-15
+- [IN-40](https://linear.app/revenexx/issue/IN-40) — every request failed on Node 26,
+  because the guarded dispatcher was paired with the runtime's `fetch`: AC-16
