@@ -13,7 +13,7 @@ where:
   - guardRelaxedForLocalDev — the local-development switch, as every connection reads it
 docs:
   - docs/overview.md
-updated: 2026-10-27
+updated: 2026-11-03
 ---
 
 # The SSRF guard
@@ -337,9 +337,9 @@ although it is private; nothing else changes, and nothing a node does can add to
   a node routes that message to its error output, which nothing redacts. The value is
   usually a key, so the refusal would put it in clear text in the run history and in
   whatever a workflow does with its errors
-- **And** what is refused is held against the runtime itself on every Node version the
-  package is tested on: a character this refuses is one the runtime would refuse, and the
-  other way round
+- **And** what is refused is held against the `fetch` the request is sent through on
+  every Node version the package is tested on: a character this refuses is one that
+  `fetch` would refuse, and the other way round
 - **Pair** AC-8, the other refusal that may not tell the caller more than they need
 - verify: unit
 

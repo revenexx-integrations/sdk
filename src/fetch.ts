@@ -1,3 +1,4 @@
+import { fetch as undiciFetch } from 'undici';
 import { NodeError } from './errors.js';
 import { assertPublicUrl, connectionRefusal, guardConnectionsTo, guardedDispatcher } from './ssrf.js';
 import type { IConfigField } from './types.js';
@@ -60,10 +61,11 @@ export function headerCrossesOrigin(name: string): boolean {
 /**
  * What the runtime refuses in a header value once surrounding whitespace is
  * trimmed: the C0 control characters except the tab, DEL, and anything above
- * Latin-1. The C1 range (U+0080–U+009F) is sent. Read off the runtime, not a
- * spec — `Headers` refuses only NUL, LF and CR, and the dispatcher underneath
- * the rest of C0 and DEL — and held against it on every Node version CI runs by
- * the AC-21 test that sends each character for real.
+ * Latin-1. The C1 range (U+0080–U+009F) is sent. Read off the `fetch` a request
+ * is sent through (undici's own, see `transport`), not a spec — `Headers`
+ * refuses only NUL, LF and CR, and the dispatcher underneath the rest of C0 and
+ * DEL — and held against it on every Node version CI runs by the AC-21 test that
+ * sends each character for real.
  */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is what this pattern is for
 const UNSENDABLE_IN_HEADER_VALUE = /[\0-\x08\x0a-\x1f\x7f\u0100-\uffff]/;
@@ -296,15 +298,18 @@ function attemptFailure(err: unknown, ctxSignal: AbortSignal | undefined, deadli
  * and would not if the body were locked. That happens only once the wrapper is
  * collected too, because the wrapper holds the runtime's response. An answer `new Response` cannot rebuild —
  * a status outside 200–599, a body on a null-body status, a reason phrase beyond
- * Latin-1 — goes back as it came, without the limit, rather than failing where it
- * used to succeed.
+ * Latin-1 — goes back with its status line and body as received, without the
+ * limit, rather than failing where it used to succeed (see {@link asRuntimeResponse}).
  */
 function answerUnderDeadline(
   res: Response,
   ctxSignal: AbortSignal | undefined,
   deadline: AttemptDeadline,
 ): Response {
-  if (!res.body) return res;
+  // An answer without a body is rebuilt too: it came from undici's own `fetch`
+  // (see `transport`), and its `Response` is undici's class rather than the
+  // runtime's, which a caller's `instanceof Response` would not recognise.
+  if (!res.body) return rebuilt(res, null) ?? asRuntimeResponse(res);
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   // `res` itself, not only its body, is held for as long as the wrapper is: the
   // runtime cancels the body of a response once that response is collected, and
@@ -333,13 +338,41 @@ function answerUnderDeadline(
     // a buffer filling while nobody reads.
     { highWaterMark: 0 },
   );
-  let answer: Response;
+  return rebuilt(res, body) ?? asRuntimeResponse(res);
+}
+
+/**
+ * `res` as the runtime's own `Response`, carrying `body` and `res`'s address, or
+ * nothing when `new Response` cannot rebuild it.
+ */
+function rebuilt(res: Response, body: ReadableStream<Uint8Array> | null): Response | undefined {
   try {
-    answer = new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+    return withUrl(new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers }), res.url);
   } catch {
-    return res;
+    return undefined;
   }
-  return withUrl(answer, res.url);
+}
+
+/**
+ * `res` as the runtime's own `Response` when `new Response` refuses its status
+ * line: built with a status the constructor accepts, then given the real one, so
+ * a caller's `instanceof Response` holds for it too. Its body is `res`'s own and
+ * stays outside the inactivity limit (request-budget.md, Gaps).
+ */
+function asRuntimeResponse(res: Response): Response {
+  return withUrl(withStatusLine(new Response(res.body, { headers: res.headers }), res), res.url);
+}
+
+/** `answer` reading `from`'s status line, and so does its clone. */
+function withStatusLine(answer: Response, from: Pick<Response, 'status' | 'statusText' | 'ok'>): Response {
+  const clone = answer.clone.bind(answer);
+  Object.defineProperties(answer, {
+    status: { value: from.status },
+    statusText: { value: from.statusText },
+    ok: { value: from.ok },
+    clone: { value: () => withStatusLine(clone(), from), configurable: true },
+  });
+  return answer;
 }
 
 /**
@@ -354,6 +387,109 @@ function withUrl(answer: Response, url: string): Response {
 }
 
 /**
+ * The runtime's own `fetch`, as it stood when this module was loaded. Kept only
+ * to recognise a replacement, never to send: see {@link transport}.
+ */
+// biome-ignore lint/nursery/noJsRestrictedProperties: read once to recognise a test's replacement of it, never called
+const runtimeFetch = globalThis.fetch;
+
+/**
+ * The `fetch` a request goes out through: undici's own, the one its guarded
+ * {@link guardedDispatcher} belongs to (IN-40). The runtime's built-in `fetch` is
+ * built on whichever undici that Node bundles, and a dispatcher from another
+ * undici major is not an input it supports — Node 26 refuses the SDK's undici 6
+ * `Agent` outright, so every request failed. Pairing the dispatcher with the
+ * `fetch` of its own release keeps the two matched on every Node.
+ *
+ * The one exception is a `fetch` somebody put in the global's place after this
+ * module loaded: that is a test's stub, and every node package's suite reaches
+ * `safeFetch` through one. It is called instead, with the same options, so those
+ * suites keep intercepting the request.
+ */
+function transport(): typeof undiciFetch {
+  // biome-ignore lint/nursery/noJsRestrictedProperties: compared, to call a test's stub in place of the runtime's fetch
+  const current = globalThis.fetch;
+  return current === runtimeFetch ? undiciFetch : (current as unknown as typeof undiciFetch);
+}
+
+/**
+ * Whether anything of a call may have reached a host (PO-808). Starts `false`
+ * and only ever turns `true`: once any hop of any attempt may have put a byte
+ * on the wire, no later failure can say the call was unsent — a POST that got a
+ * 307 may already have acted, and an attempt that timed out after sending may
+ * have landed before the retry that never connected.
+ */
+interface Wire {
+  maybeSent: boolean;
+}
+
+/**
+ * The errors that mean a connection was never made, so no request byte was
+ * written: unresolved, or timed out while connecting. None of them can arise on
+ * a socket that is already open.
+ */
+const NEVER_CONNECTED = new Set(['ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT']);
+
+/**
+ * The socket errors that mean a connection was never made only when `connect`
+ * raised them: refused or unreachable. The kernel reports the same codes on a
+ * socket that is already open and may have written the request — an ICMP
+ * unreachable recorded while it retransmitted — and those carry `read` or
+ * `write` as their `syscall`.
+ */
+const REFUSED_WHILE_CONNECTING = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']);
+
+function connectFailed(e: { code?: unknown; syscall?: unknown } | null | undefined): boolean {
+  if (typeof e?.code !== 'string') return false;
+  return NEVER_CONNECTED.has(e.code) || (REFUSED_WHILE_CONNECTING.has(e.code) && e.syscall === 'connect');
+}
+
+/**
+ * Whether the runtime's error says the connection was never made. Read off the
+ * error's `cause`, or, when the runtime tried several addresses, off every error
+ * of its `AggregateError`: each one must have failed while connecting.
+ */
+function neverConnected(err: unknown): boolean {
+  const cause = (err as { cause?: { code?: unknown; syscall?: unknown; errors?: unknown } } | null | undefined)?.cause;
+  if (!cause) return false;
+  if (Array.isArray(cause.errors) && cause.errors.length > 0) return cause.errors.every(connectFailed);
+  return connectFailed(cause);
+}
+
+/** Mark an error `safeFetch` raised as one that left nothing on the wire: `meta.sent = false`. */
+function markUnsent(err: unknown): void {
+  if (typeof err !== 'object' || err === null) return;
+  const meta = (err as { meta?: unknown }).meta;
+  const sent = { ...(typeof meta === 'object' && meta !== null ? meta : {}), sent: false };
+  try {
+    Object.defineProperty(err, 'meta', { value: sent, writable: true, configurable: true, enumerable: true });
+  } catch {
+    // A frozen error keeps what it said; it is then read as possibly sent.
+  }
+}
+
+/**
+ * Whether the request behind a failed {@link safeFetch} call may have reached
+ * the host — `false` only when the call is known to have put nothing on the wire
+ * on any hop of any attempt, and `true` for every other error, an unknown one
+ * included. A node that writes reads it to decide whether a create may be
+ * repeated: when this is `false` nothing was sent, so nothing can have been
+ * created.
+ *
+ * It reads `meta.sent === false`, which `safeFetch` puts on what it throws in
+ * that case: a refused address — before the lookup or at connect time — a lookup
+ * that ran out of time, a header or URL that cannot be sent, a credential bound
+ * to another origin, and a connection that was refused, could not be resolved or
+ * reached, or timed out while connecting. The last group arrives as the runtime's
+ * own `TypeError('fetch failed')`, unwrapped as before, with the marker added. A
+ * cancellation is the caller's own reason and is never marked.
+ */
+export function mayHaveBeenSent(err: unknown): boolean {
+  const meta = (err as { meta?: { sent?: unknown } } | null | undefined)?.meta;
+  return meta?.sent !== false;
+}
+
+/**
  * A single network request, run under its attempt's budget and wired to the
  * workflow's cancellation signal. Surfaces the budget running out as
  * `NodeError('TIMEOUT')` and re-throws the caller's abort reason on external
@@ -364,17 +500,24 @@ async function timedFetch(
   fetchOptions: RequestInit,
   ctxSignal: AbortSignal | undefined,
   deadline: AttemptDeadline,
+  wire: Wire,
 ): Promise<Response> {
   try {
     // The guarded dispatcher goes last, so a `dispatcher` a caller slipped into the
     // options cannot route the request around the check it makes (IN-28).
-    return await fetch(url, { ...fetchOptions, signal: deadline.signal, dispatcher: guardedDispatcher() } as RequestInit);
+    const send = transport();
+    const res = (await send(url, { ...fetchOptions, signal: deadline.signal, dispatcher: guardedDispatcher() } as Parameters<typeof send>[1])) as unknown as Response;
+    wire.maybeSent = true;
+    return res;
   } catch (err) {
     // A socket the connect-time guard dropped comes back as a generic
     // `TypeError('fetch failed')` — unwrap it first, before the abort/timeout
     // mapping, so a blocked target can never surface as a retryable TIMEOUT.
+    // Both guards act before a byte of the request is written, and so does a
+    // connection that was never made; anything else may have sent something.
     const blocked = connectionRefusal(err);
     if (blocked) throw blocked;
+    if (!neverConnected(err)) wire.maybeSent = true;
     throw attemptFailure(err, ctxSignal, deadline);
   }
 }
@@ -454,11 +597,12 @@ async function guardedFetch(
   fetchOptions: RequestInit,
   ctxSignal: AbortSignal | undefined,
   effectiveMs: number,
+  wire: Wire,
   binding?: { origin: string; crossOriginRedirect: 'refuse' | 'strip' },
 ): Promise<Response> {
   const deadline = attemptDeadline(ctxSignal, effectiveMs);
   try {
-    const res = await followHops(url, fetchOptions, ctxSignal, deadline, effectiveMs, binding);
+    const res = await followHops(url, fetchOptions, ctxSignal, deadline, effectiveMs, wire, binding);
     deadline.clear();
     return answerUnderDeadline(res, ctxSignal, deadline);
   } catch (err) {
@@ -473,6 +617,7 @@ async function followHops(
   ctxSignal: AbortSignal | undefined,
   deadline: AttemptDeadline,
   effectiveMs: number,
+  wire: Wire,
   binding?: { origin: string; crossOriginRedirect: 'refuse' | 'strip' },
 ): Promise<Response> {
   // The initial request is issued with the caller's URL and init untouched
@@ -494,7 +639,7 @@ async function followHops(
     );
     let res: Response;
     try {
-      res = await timedFetch(currentUrl, currentInit, ctxSignal, deadline);
+      res = await timedFetch(currentUrl, currentInit, ctxSignal, deadline, wire);
     } finally {
       release();
     }
@@ -588,10 +733,26 @@ async function followHops(
   }
 }
 
+/**
+ * Make a request through the SSRF guard, under a time budget and an optional
+ * retry budget. A failure that left nothing on the wire says so with
+ * `meta.sent = false` — read it through {@link mayHaveBeenSent}.
+ */
 export async function safeFetch(
   url: string | URL,
   options: SafeFetchOptions = {},
 ): Promise<Response> {
+  const wire: Wire = { maybeSent: false };
+  try {
+    return await sendWithin(url, options, wire);
+  } catch (err) {
+    // A cancellation is the caller's own reason, not an error of ours to mark.
+    if (!wire.maybeSent && err !== options.signal?.reason) markUnsent(err);
+    throw err;
+  }
+}
+
+async function sendWithin(url: string | URL, options: SafeFetchOptions, wire: Wire): Promise<Response> {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, signal: ctxSignal, retry, credential, ...fetchOptions } = options;
   const effectiveMs =
     Number.isFinite(timeoutMs) && timeoutMs > 0
@@ -633,7 +794,7 @@ export async function safeFetch(
     if (ctxSignal?.aborted) throw ctxSignal.reason;
 
     try {
-      return await guardedFetch(url, fetchOptions, ctxSignal, effectiveMs, binding);
+      return await guardedFetch(url, fetchOptions, ctxSignal, effectiveMs, wire, binding);
     } catch (err) {
       if (ctxSignal?.aborted) throw ctxSignal.reason;
       // A blocked address or redirect loop is deterministic — retrying can only
