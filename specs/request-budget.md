@@ -301,3 +301,6 @@ signal the engine passes in, which ends the call wherever it has got to.
   was sent, so a node that writes knows whether it may ask again: AC-17, AC-18
 - [IN-40](https://linear.app/revenexx/issue/IN-40) — every request failed on Node 26,
   because the guarded dispatcher was paired with the runtime's `fetch`: AC-16
+- [IN-62](https://linear.app/revenexx/issue/IN-62) — undici 8 and Node 22.19: AC-16 now
+  sends a form with repeated fields and a file, and a `Blob`, because undici 8 sent the
+  runtime's `FormData` as text

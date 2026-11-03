@@ -1,4 +1,4 @@
-import { fetch as undiciFetch } from 'undici';
+import { FormData as UndiciFormData, fetch as undiciFetch } from 'undici';
 import { NodeError } from './errors.js';
 import { assertPublicUrl, connectionRefusal, guardConnectionsTo, guardedDispatcher } from './ssrf.js';
 import type { IConfigField } from './types.js';
@@ -413,6 +413,26 @@ function transport(): typeof undiciFetch {
 }
 
 /**
+ * The options as undici's own `fetch` reads them (IN-62). A `FormData` the
+ * caller built is the runtime's, and the runtime's class comes from the undici
+ * Node bundles, not from the SDK's: undici 8 does not recognise it and sends
+ * the text `[object FormData]` as `text/plain`. It is copied into undici's own
+ * `FormData`, every entry in order, a file with its name and type. Every other
+ * body — a string, bytes, a `Blob` or `File`, `URLSearchParams`, a stream —
+ * goes through as it is. A test's stub gets the caller's body untouched.
+ */
+function forUndici(fetchOptions: RequestInit): RequestInit {
+  const { body } = fetchOptions;
+  if (!(body instanceof FormData) || body instanceof UndiciFormData) return fetchOptions;
+  const form = new UndiciFormData();
+  for (const [name, value] of body) {
+    if (typeof value === 'string') form.append(name, value);
+    else form.append(name, value, value.name);
+  }
+  return { ...fetchOptions, body: form as unknown as BodyInit };
+}
+
+/**
  * Whether anything of a call may have reached a host (PO-808). Starts `false`
  * and only ever turns `true`: once any hop of any attempt may have put a byte
  * on the wire, no later failure can say the call was unsent — a POST that got a
@@ -506,7 +526,8 @@ async function timedFetch(
     // The guarded dispatcher goes last, so a `dispatcher` a caller slipped into the
     // options cannot route the request around the check it makes (IN-28).
     const send = transport();
-    const res = (await send(url, { ...fetchOptions, signal: deadline.signal, dispatcher: guardedDispatcher() } as Parameters<typeof send>[1])) as unknown as Response;
+    const options = send === undiciFetch ? forUndici(fetchOptions) : fetchOptions;
+    const res = (await send(url, { ...options, signal: deadline.signal, dispatcher: guardedDispatcher() } as Parameters<typeof send>[1])) as unknown as Response;
     wire.maybeSent = true;
     return res;
   } catch (err) {

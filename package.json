@@ -52,7 +52,7 @@
     "release": "changeset publish"
   },
   "engines": {
-    "node": ">=20.3.0"
+    "node": ">=22.19.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.10",
@@ -64,6 +64,6 @@
   },
   "dependencies": {
     "ipaddr.js": "2.5.0",
-    "undici": "6.29.1"
+    "undici": "8.12.3"
   }
 }
