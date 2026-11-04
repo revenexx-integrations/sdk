@@ -27,10 +27,11 @@ and a node asks for the one it cares about.
 
 - **Given** a run context naming `customer_id`, `filters.customer` and `lines[2].sku`
 - **When** `wasUnresolved` is asked for one of those paths
-- **Then** it answers yes, and no for any other path — a parent of a named path
-  included
+- **Then** it answers yes, and yes for a path inside a named one (`filters.customer`
+  when `filters` is named); no for any other path — a parent of a named path included
 - **Because** a node decides per setting: the filter it would drop is one path, not
-  the group it sits in
+  the group it sits in — and a filter whose whole group was one placeholder that found
+  nothing found nothing too
 - verify: unit
 
 ### AC-2 — An engine that names nothing answers no for every setting

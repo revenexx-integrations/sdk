@@ -15,9 +15,18 @@ import type { INodeContext } from './types.js';
  * ```
  *
  * `path` is written as the setting is reached: `customer_id`, `filters.customer`,
- * `lines[2].sku`. `false` on an engine that does not report it, which is what
+ * `lines[2].sku`. A setting inside a named one counts as named: when `filters`
+ * found nothing, so did `filters.customer`. `false` on an engine that does not report it, which is what
  * every node saw before it could ask.
  */
 export function wasUnresolved(ctx: Pick<INodeContext, 'unresolvedSettings'>, path: string): boolean {
-  return ctx.unresolvedSettings?.has(path) ?? false;
+  const named = ctx.unresolvedSettings;
+  if (!named) return false;
+  if (named.has(path)) return true;
+  // A setting inside one the engine names went with it: a `filters` that was one
+  // placeholder and found nothing leaves `filters.customer` empty too.
+  for (const outer of named) {
+    if (path.startsWith(`${outer}.`) || path.startsWith(`${outer}[`)) return true;
+  }
+  return false;
 }
