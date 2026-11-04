@@ -1,5 +1,11 @@
 # @revenexx/integrations-node-sdk
 
+## 2.1.0
+
+### Minor Changes
+
+- bf759b8: A node can ask whether a setting's placeholder found nothing in this record: `INodeContext.unresolvedSettings` and `wasUnresolved(ctx, path)` (IN-63). Such a setting arrives without a value, like one nobody configured; a list node checks before it drops an empty filter.
+
 ## 2.0.0
 
 ### Major Changes
