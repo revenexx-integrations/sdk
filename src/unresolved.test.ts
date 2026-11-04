@@ -13,7 +13,7 @@ test('a setting the engine names is one whose placeholder found nothing [@spec:u
   assert.equal(wasUnresolved(ctx, 'status'), false);
 });
 
-test('a setting inside one the engine names found nothing with it [@spec:unresolved-settings:AC-1]', () => {
+test('a setting inside one the engine names found nothing with it [@spec:unresolved-settings:AC-3]', () => {
   const ctx = { unresolvedSettings: new Set(['filters', 'lines[2]']) };
 
   assert.equal(wasUnresolved(ctx, 'filters.customer'), true);

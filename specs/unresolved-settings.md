@@ -27,11 +27,10 @@ and a node asks for the one it cares about.
 
 - **Given** a run context naming `customer_id`, `filters.customer` and `lines[2].sku`
 - **When** `wasUnresolved` is asked for one of those paths
-- **Then** it answers yes, and yes for a path inside a named one (`filters.customer`
-  when `filters` is named); no for any other path — a parent of a named path included
+- **Then** it answers yes, and no for any other path — a parent of a named path
+  included
 - **Because** a node decides per setting: the filter it would drop is one path, not
-  the group it sits in — and a filter whose whole group was one placeholder that found
-  nothing found nothing too
+  the group it sits in
 - verify: unit
 
 ### AC-2 — An engine that names nothing answers no for every setting
@@ -42,6 +41,17 @@ and a node asks for the one it cares about.
 - **Because** an engine deployed before the list, and a trial run that resolves no
   placeholder, name nothing; a node built on this answer behaves there as every node
   did before it could ask
+- verify: unit
+
+### AC-3 — A setting inside a named one found nothing with it
+
+- **Given** a run context naming `filters` and `lines[2]`
+- **When** `wasUnresolved` is asked for `filters.customer`, `filters[0]` or
+  `lines[2].sku`
+- **Then** it answers yes, and no for a path that only begins with the same letters
+  (`filtersByDate`, `lines[20].sku`)
+- **Because** the engine names the setting that was one placeholder whole; when that is
+  the group, the filter inside it was emptied with it and is not named on its own
 - verify: unit
 
 ## Gaps
