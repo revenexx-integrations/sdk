@@ -129,6 +129,7 @@ interface INodeContext {
     get(credentialsId: string): Promise<Record<string, unknown>>;
   };
   state: INodeState;
+  unresolvedSettings?: ReadonlySet<string>;
 }
 ```
 
@@ -136,6 +137,7 @@ interface INodeContext {
 - `secrets.get(key)` resolves an **opaque** secret string by the key stored in a `secret-ref` config field.
 - `credentials.get(credentialsId)` resolves the **structured** access data of a credential instance referenced by a `credentials-ref` config field (e.g. `{ host, port, user, password }` or `{ accessToken }`). The runtime fulfils it from the credentials broker; for token-based types it always returns a currently-valid token, so call it at execution time rather than caching the result.
 - `state` is what the workflow already knows from earlier runs — see [`INodeState`](#inodestate) below.
+- `unresolvedSettings` names the settings whose placeholder found nothing in this record, as paths (`customer_id`, `filters.customer`). Such a setting arrives without a value, exactly like one nobody configured. Ask with `wasUnresolved(ctx, 'customer_id')`, which also answers on an engine that does not send the list. A list or search node whose optional filter found nothing routes to its error port rather than list without the filter.
 
 ---
 

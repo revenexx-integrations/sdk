@@ -28,3 +28,4 @@ export { allowedTargets, installAllowedTargets, isAllowedTarget } from './allowe
 export * from './retry.js';
 export * from './manifest.js';
 export * from './credentials.js';
+export * from './unresolved.js';

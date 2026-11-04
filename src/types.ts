@@ -354,6 +354,14 @@ export interface INodeContext {
    * reach state its workflow did not ask for.
    */
   state: INodeState;
+  /**
+   * The settings whose placeholder found nothing in this record, as paths —
+   * `customer_id`, `filters.customer`, `lines[2].sku`. Such a setting arrives
+   * without a value, exactly like one nobody configured; this is how a node
+   * tells the two apart. Absent where the engine predates it, so ask through
+   * {@link wasUnresolved} rather than reading it directly.
+   */
+  unresolvedSettings?: ReadonlySet<string>;
 }
 
 /**
