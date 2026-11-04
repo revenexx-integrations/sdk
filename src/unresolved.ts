@@ -10,7 +10,7 @@ import type { INodeContext } from './types.js';
  *
  * ```ts
  * if (wasUnresolved(ctx, 'customer_id')) {
- *   return errorResult('error', new NodeError('No customer ID in this record', 'MISSING_FILTER'));
+ *   return errorResult({ code: 'MISSING_FILTER', message: 'This record has no customer ID to filter by', status: 0 });
  * }
  * ```
  *
