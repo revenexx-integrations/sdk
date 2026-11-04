@@ -55,6 +55,8 @@ What stays out is the machinery behind the name — that is `docs/`, and
 - [`workflow-state.md`](workflow-state.md) — what a workflow remembers between runs: the
   four roles a namespace can have, what each answer obliges a node to handle, and how much
   of the store this package does *not* hold
+- [`unresolved-settings.md`](unresolved-settings.md) — whether a setting's placeholder
+  found nothing in this record, which a list node needs before it drops an empty filter
 
 ### What a built package hands over
 
@@ -92,10 +94,11 @@ at, which is why neither could be backfilled.
   `INodeContext` and `ICredential` guarantee whoever implements them, the iteration
   capability, and the *Key design constraints* in [`../CLAUDE.md`](../CLAUDE.md) that
   read as promises today while living in a file nothing enforces. The largest promise
-  surface in the vertical. One member of the run context is carved out of this row and
-  promised in [workflow-state.md](workflow-state.md), because it is the only one with
-  tests to point at; the signal, the secrets and the credentials a run is handed are
-  still here.
+  surface in the vertical. Two members of the run context are carved out of this row,
+  because they are the ones with tests to point at: the state store, promised in
+  [workflow-state.md](workflow-state.md), and the settings that found nothing, in
+  [unresolved-settings.md](unresolved-settings.md); the signal, the secrets and the
+  credentials a run is handed are still here.
 - **The `rvnxx-nodes` CLI** — which every node package's build runs, and which has no
   test file at all.
 
@@ -315,6 +318,7 @@ name they are holding.
 | `INode.resolveConfigSchema` | [author-time-resolution.md](author-time-resolution.md) |
 | `INode.resolveOutputs` | [author-time-resolution.md](author-time-resolution.md) |
 | `INodeContext.state` | [workflow-state.md](workflow-state.md) |
+| `INodeContext.unresolvedSettings` | [unresolved-settings.md](unresolved-settings.md) |
 | `INodeState` | [workflow-state.md](workflow-state.md) |
 | `installAllowedTargets` | [ssrf-guard.md](ssrf-guard.md) |
 | `isAllowedTarget` | [ssrf-guard.md](ssrf-guard.md) |
@@ -348,6 +352,7 @@ name they are holding.
 | `timeoutConfigField` | [request-budget.md](request-budget.md), [offered-settings.md](offered-settings.md) |
 | `toErrorOutput` | [error-handling.md](error-handling.md) |
 | `toErrorResult` | [error-handling.md](error-handling.md) |
+| `wasUnresolved` | [unresolved-settings.md](unresolved-settings.md) |
 | `withRetry` | [retrying-an-operation.md](retrying-an-operation.md) |
 
 **One name carries three specs.** `safeFetch` is where a request is allowed to go, what
