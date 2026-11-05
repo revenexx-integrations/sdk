@@ -123,7 +123,7 @@ although it is private; nothing else changes, and nothing a node does can add to
   `X-API-Key`
 - **When** it is redirected to a different origin
 - **Then** only the headers that carry no secret — what the request accepts, what its
-  body is and how it is encoded, the conditions, range and idempotency key it is asked
+  body is, the conditions, range and idempotency key it is asked
   under, its SOAP action and who is asking — go on to the next hop, and every other header the caller set is dropped
   before it is made
 - **And** a redirect to the *same* origin keeps every header, so an ordinary redirect
@@ -636,6 +636,11 @@ although it is private; nothing else changes, and nothing a node does can add to
   class depends on where the value came from.
 
 ## Tickets
+
+- [PO-758](https://linear.app/revenexx/issue/PO-758) — AC-7 and AC-20 no longer keep
+  `Content-Encoding` and `Content-Language` on a hop to another origin
+  - They describe a body, and since PO-684 no body crosses an origin. Released as a
+    major, because `headerCrossesOrigin` answers differently for both names.
 
 - [PO-698](https://linear.app/revenexx/issue/PO-698) — added AC-33 and AC-34: the guard
   as a socket lookup and the switch it honours, for a node that opens its own socket and

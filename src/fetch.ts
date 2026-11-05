@@ -17,20 +17,18 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
  * in headers of its own choosing (`X-API-Key`, `api-key`, `x-api-token`, or a
  * name a workflow author typed) and no deny-list can know them all. An allow-list
  * fails the safe way: a missing entry costs a header, never a key.
- * `soapaction` is here because SOAP 1.1 cannot be dispatched without it;
- * `content-encoding` because a 307/308 resends the body as it was, and the next
- * host cannot read a compressed body without being told so; and the conditional,
- * range and idempotency headers because dropping them changes what the request
- * does — a write guarded by `If-Match` would land unguarded, a retried POST
- * without its `Idempotency-Key` could land twice. None carries a secret.
+ * `soapaction` is here because SOAP 1.1 cannot be dispatched without it; and the
+ * conditional, range and idempotency headers because dropping them changes what
+ * the request does — a write guarded by `If-Match` would land unguarded, a retried
+ * POST without its `Idempotency-Key` could land twice. None carries a secret.
+ * `Content-Encoding` and `Content-Language` are not here: they describe a body,
+ * and no body crosses an origin (PO-684), so they would describe nothing (PO-758).
  * Read from outside through {@link headerCrossesOrigin}.
  */
 const CROSS_ORIGIN_SAFE_HEADERS = new Set([
   'accept',
   'accept-encoding',
   'accept-language',
-  'content-encoding',
-  'content-language',
   'content-type',
   'idempotency-key',
   'if-match',
@@ -46,8 +44,7 @@ const CROSS_ORIGIN_SAFE_HEADERS = new Set([
 /**
  * Whether a request header with this name goes on to the next hop when
  * {@link safeFetch} follows a redirect to another origin — `true` for `Accept`,
- * `Accept-Encoding`, `Accept-Language`, `Content-Encoding`, `Content-Language`,
- * `Content-Type`, `Idempotency-Key`, `If-Match`, `If-Modified-Since`,
+ * `Accept-Encoding`, `Accept-Language`, `Content-Type`, `Idempotency-Key`, `If-Match`, `If-Modified-Since`,
  * `If-None-Match`, `If-Range`, `If-Unmodified-Since`, `Range`, `SOAPAction` and
  * `User-Agent`, in any case, and `false` for every other name. The keep-list is by
  * name, so it can only keep a secret out of the headers it drops: a credential
@@ -725,10 +722,11 @@ async function followHops(
     // DELETE. Dropping the body and going on would turn a write into a read the
     // caller believes was a write, so the hop is refused instead (PO-684). It
     // is checked before the target is looked up, so the other origin's DNS does
-    // not see it either, and it is deterministic, so it is not retried.
+    // not see it either, and it is deterministic, so it is not retried. Its code
+    // is its own: `BLOCKED_ADDRESS` means a private target (PO-758).
     if (hasContent(body) && nextUrl.origin !== base.origin) {
       throw new NodeError(
-        'BLOCKED_ADDRESS',
+        'BLOCKED_REDIRECT',
         `Blocked ${redirectStatus} redirect to another origin: it would resend the request body to ${nextUrl.origin}`,
         { status: 0 },
       );
@@ -823,6 +821,7 @@ async function sendWithin(url: string | URL, options: SafeFetchOptions, wire: Wi
       if (
         err instanceof NodeError &&
         (err.code === 'BLOCKED_ADDRESS' ||
+          err.code === 'BLOCKED_REDIRECT' ||
           err.code === 'TOO_MANY_REDIRECTS' ||
           err.code === 'CREDENTIAL_ORIGIN' ||
           err.code === 'INVALID_URL')
