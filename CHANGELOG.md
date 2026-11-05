@@ -1,5 +1,18 @@
 # @revenexx/integrations-node-sdk
 
+## 3.0.0
+
+### Major Changes
+
+- 1bd530e: A redirect refused for anything but where it points has a code of its own, `BLOCKED_REDIRECT`, instead of `BLOCKED_ADDRESS`: one that would resend a request body to another origin, one that downgrades `https` to `http`, and one whose `Location` cannot be read. `BLOCKED_ADDRESS` stays the code of a refused target — a private or reserved address, a host that does not resolve, a port not on the run's list. Neither is retried. A node that ends its run on `BLOCKED_ADDRESS` and routes every other code now routes these three refusals.
+  
+  `Content-Type`, `Content-Encoding` and `Content-Language` no longer survive a redirect to another origin, and `headerCrossesOrigin` answers `false` for all three: they describe a body, and no body crosses an origin.
+- 0fa28b2: `rvnxx-nodes manifest` stops the build when a node with several outputs has outputs a branch cannot tell apart — a fixed output without a name, two with the same name, a generated output whose fallback name repeats another output's, or two outputs named from the same setting — naming the node and the output, and writes no manifest. Up to 2.x the first three were a warning and the last two were not checked. To migrate, give every fixed output a unique `name`, every generated one a fallback name no other output uses, and each its own setting. `buildManifest` does not refuse such a node, and `outputWarnings` keeps its name.
+
+### Minor Changes
+
+- fafbbe6: The manifest says whether each node is a loop: `buildManifest` writes `iteration` on every node, `true` exactly when the node has `extractItems`, and `false` otherwise. It is derived from the code rather than declared, so the platform's save check and the worker recognise a loop by the same sign. The registry has to accept the key before a package built on this release can be registered.
+
 ## 2.1.0
 
 ### Minor Changes
