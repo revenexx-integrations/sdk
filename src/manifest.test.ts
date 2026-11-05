@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { extractManifest, extractManifests } from './extract.js';
 import {
   buildManifest,
   CONFIG_KEY_PATTERN,
@@ -411,4 +412,11 @@ test('buildManifest writes iterates on every node, true only for one with extrac
     ],
   );
   assert.ok(manifest.nodes.every((n) => Object.hasOwn(n, 'iterates')));
+  // The helpers a package may build its manifest with say the same, so no path
+  // leaves the key out.
+  assert.deepEqual(
+    extractManifests([fakeNode, loop, lookalike]).map((n) => n.iterates),
+    [false, true, false],
+  );
+  assert.equal(extractManifest(lookalike).iterates, false);
 });
