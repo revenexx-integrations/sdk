@@ -3,13 +3,14 @@ feature: package-manifest
 title: What a package tells the registry
 where:
   - buildManifest — the envelope a package's build writes
+  - INodeManifestEntry — a node as the manifest carries it, with whether it is a loop
   - parsePackageMeta — what is taken from a package's own metadata
   - packageIconProblem — whether a declared folder icon would be refused
   - nodeManifestProblems — whether a node's names would be refused
   - SLUG_PATTERN, NAMESPACED_SLUG_PATTERN, SEMVER_PATTERN, CONFIG_KEY_PATTERN — the rules it judges them by
 docs:
   - docs/overview.md
-updated: 2026-10-27
+updated: 2026-11-05
 ---
 
 # What a package tells the registry
@@ -194,6 +195,19 @@ nothing to compare against, because there is no second source.
 - **Pair** AC-13, the same stop for the package's folder icon
 - verify: unit
 
+### AC-16 — Every node says whether it is a loop, as its code does
+
+- **Given** a package whose nodes include one with `extractItems` and one without
+- **When** the manifest is built
+- **Then** the first carries `iteration: true` and every other node `iteration: false`,
+  the key written on each node, and a node's own declaration cannot set it
+- **Because** the platform's save check and the worker must recognise a loop by one
+  sign. The worker runs whatever has `extractItems`; the save check sees only the
+  manifest, and guessed from the output names `item` and `done`. Written on every node
+  so that a manifest without the key reads as an older SDK's, the only case in which
+  a reader should still guess
+- verify: unit
+
 ## Elsewhere
 
 - **The image files themselves** — which are collected and how they reach the build —
@@ -211,6 +225,11 @@ nothing to compare against, because there is no second source.
   package. A port with no name is `branch-selection.md`'s warning, not a refusal here.
 - **The name patterns are a copy of the registry's schema, not a shared source.** Kept
   equal by hand; nothing in this repository can see the other side.
+- **A loop still has to name its outputs `item` and `done` (AC-16).** The worker sends
+  a loop's records out of `item` and its result out of `done` by those names, so
+  `iteration` says *that* a node is a loop, not which outputs it uses. Nothing here
+  refuses a looping node without them; a refusal would be a new reason for a build to
+  stop.
 
 **Undecided**
 
@@ -237,5 +256,10 @@ nothing to compare against, because there is no second source.
     either is refused on upload until the registry learns both
     ([integrations#406](https://github.com/revenexx/integrations/pull/406)).
     This spec promises only that they travel.
+- [PO-761](https://linear.app/revenexx/issue/PO-761) — every node carries `iteration`:
+  AC-16
+  - Derived from `extractItems` rather than declared, so the manifest and the bundle
+    cannot disagree. The registry's schema refuses a key it does not list, so a package
+    built on this is refused on upload until the registry accepts `iteration`.
 - [PO-744](https://linear.app/revenexx/issue/PO-744) — a name the registry would refuse
   stops the build: AC-15
