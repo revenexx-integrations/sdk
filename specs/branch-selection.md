@@ -5,10 +5,10 @@ where:
   - INodeResult — the `branch` a node returns
   - isMultiPort — whether a node's outputs are alternatives to choose between
   - assertBranchNamed — the check a node's own test runs on a result
-  - outputProblems, outputWarnings — what the manifest build warns about in a node's output declaration
+  - outputProblems, outputWarnings — what stops the manifest build in a node's output declaration
 docs:
   - docs/overview.md
-updated: 2026-10-15
+updated: 2026-11-05
 ---
 
 # A node with several outputs says which one it took
@@ -25,8 +25,7 @@ between two, and names `out` on success.
 
 A declaration says how many outputs a node has but not what `execute` returns, so the
 build holds only what a declaration can show — that the outputs can be told apart — and
-warns when they cannot (an error from the next major version on, PO-762); the rest is a
-check the node's own tests run.
+stops when they cannot; the rest is a check the node's own tests run.
 
 ## Acceptance criteria
 
@@ -63,15 +62,19 @@ check the node's own tests run.
   known when the package is built, so only naming the branch is safe
 - verify: unit
 
-### AC-4 — The build warns about several outputs that cannot be told apart
+### AC-4 — Several outputs that cannot be told apart stop the build
 
 - **Given** a node declaring several outputs, a fixed one without a name or two with the
-  same name, or a generated one whose fallback repeats a fixed name
+  same name, a generated one whose fallback repeats a fixed name or another generated
+  one's, or two named from the same setting
 - **When** the manifest is built with `rvnxx-nodes manifest`
-- **Then** the build prints a warning naming the node and the output, and carries on
+- **Then** the build fails naming the node and the output, every such output at once,
+  and writes no manifest; `buildManifest` itself does not refuse it
 - **Because** a branch names an output; one that has no name or shares it cannot be
-  chosen. It is a warning in 1.x so that no package stops building on a minor upgrade,
-  and an error from the next major version (PO-762)
+  chosen, and a package that builds anyway fires the wrong output in a run. It was a
+  warning in 1.x and 2.x, so that no package stopped building on an upgrade within a
+  major (PO-762)
+- **Pair** a node whose outputs can be told apart builds
 - verify: unit
 
 ## Gaps
@@ -79,7 +82,7 @@ check the node's own tests run.
 **Known**
 
 - **Whether `execute` returns a branch cannot be read from a declaration.** The build
-  warns per AC-4 and holds nothing about the result; `assertBranchNamed` is the check, and it runs
+  stops per AC-4 and holds nothing about the result; `assertBranchNamed` is the check, and it runs
   only where a node's tests call it. The worker is the other half and, from the integrations release that carries PO-751, fails a step of a
   multi-output node that comes back without a branch. PO-751.
 
@@ -87,7 +90,7 @@ check the node's own tests run.
 
 - [PO-751](https://linear.app/revenexx/issue/PO-751) — a node with several outputs could
   return no branch, and then every output fired
-- [PO-762](https://linear.app/revenexx/issue/PO-762) — the output warning becomes an error
-  in the next major version
+- [PO-762](https://linear.app/revenexx/issue/PO-762) — AC-4's warning became a failure of
+  the build, in 3.0.0
 - [PO-746](https://linear.app/revenexx/issue/PO-746) — the rule that output ports are
   alternatives

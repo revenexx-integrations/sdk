@@ -88,3 +88,47 @@ test('rvnxx-nodes manifest stops on a port name the registry would refuse, befor
   assert.ok(run.stderr.includes('^[a-z][a-z0-9-]{0,62}$'), run.stderr);
   assert.equal(fs.existsSync(join(pkg, 'dist', 'manifest.json')), false);
 });
+
+function nodeWith(slug: string, outputs: unknown[]) {
+  return `{ description: ${JSON.stringify({ slug, version: '1.0.0', category: 'action', name: 'N', inputs: {}, outputs })}, async execute() { return { outputs: {} }; } }`;
+}
+
+// AC-4 — Several outputs that cannot be told apart stop the build
+test('rvnxx-nodes manifest stops on outputs a branch cannot tell apart, naming each, before writing anything [@spec:branch-selection:AC-4]', () => {
+  fs.writeFileSync(
+    join(pkg, 'dist', 'index.js'),
+    `export const NODES = [${nodeWith('acme:unnamed', [
+      { name: 'out', kind: 'default', dataType: 'any' },
+      { kind: 'default', dataType: 'any' },
+    ])}, ${nodeWith('acme:twice', [
+      { name: 'out', kind: 'default', dataType: 'any' },
+      { name: 'out', kind: 'default', dataType: 'any' },
+    ])}, ${nodeWith('acme:fallback', [
+      { name: 'other', kind: 'default', dataType: 'any' },
+      { kind: 'branch', dataType: 'any', sourceFromConfig: 'cases', fallback: { name: 'other' } },
+    ])}];\n`,
+  );
+  const run = manifest({ displayName: 'X' });
+
+  assert.equal(run.status, 1);
+  assert.ok(run.stderr.includes('acme:unnamed: output 2 has no name'), run.stderr);
+  assert.ok(run.stderr.includes('acme:twice: output name "out" is declared twice'), run.stderr);
+  assert.ok(run.stderr.includes('acme:fallback: the fallback name "other" is also the name of a fixed output'), run.stderr);
+  assert.equal(fs.existsSync(join(pkg, 'dist', 'manifest.json')), false);
+});
+
+// AC-4 — Several outputs that cannot be told apart stop the build
+test('rvnxx-nodes manifest builds a node whose outputs can be told apart [@spec:branch-selection:AC-4]', () => {
+  fs.writeFileSync(
+    join(pkg, 'dist', 'index.js'),
+    `export const NODES = [${nodeWith('acme:apart', [
+      { name: 'out', kind: 'default', dataType: 'any' },
+      { name: 'error', kind: 'error', dataType: 'any' },
+    ])}];\n`,
+  );
+  const run = manifest({ displayName: 'X' });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stderr.includes('acme:apart'), false, run.stderr);
+  assert.equal(fs.existsSync(join(pkg, 'dist', 'manifest.json')), true);
+});

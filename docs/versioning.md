@@ -331,6 +331,19 @@ There is currently no automated cross-repo CI guard against an SDK
 major being merged without a matching consumer PR — be deliberate
 about the ordering.
 
+## What a major asks of a package
+
+### 3.0.0
+
+- **Outputs a branch cannot tell apart stop the build (PO-762).** `rvnxx-nodes
+  manifest` used to warn and carry on when a node with several outputs left a fixed
+  output unnamed, named two the same, or gave a generated output a fallback name a
+  fixed one already has. From 3.0.0 it fails, naming the node and the output, and
+  writes no manifest — and it also refuses two generated outputs with one fallback
+  name, or two named from the same setting. Fix: give every fixed output a unique
+  `name`, every generated one a fallback name no other output uses, and each its own
+  setting.
+
 ## How `1.0.0` happened
 
 Through the `0.x` range, SemVer convention allowed every minor bump to break
