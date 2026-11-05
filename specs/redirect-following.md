@@ -51,7 +51,7 @@ way whichever host answered would prefer.
 
 - **Given** a redirect whose target cannot be resolved against the address it came from
 - **When** the hop is considered
-- **Then** the call fails and no request is made for it
+- **Then** the call fails with `BLOCKED_REDIRECT` and no request is made for it
 - **Because** the alternative is guessing what was meant, and a guess here is a request
   to an address nobody wrote down
 - **Pair** AC-2
@@ -128,11 +128,12 @@ way whichever host answered would prefer.
 
 ## Tickets
 
-- [PO-758](https://linear.app/revenexx/issue/PO-758) — AC-6's refusal has a code of its
-  own, `BLOCKED_REDIRECT`, where it shared `BLOCKED_ADDRESS` with a private target
-  - A caller that ended the run on a private target and routed everything else now told
-    the two apart by the message only. Released as a major, because a caller that reads
-    the code sees a different one.
+- [PO-758](https://linear.app/revenexx/issue/PO-758) — AC-3's and AC-6's refusals have a
+  code of their own, `BLOCKED_REDIRECT`, where they shared `BLOCKED_ADDRESS` with a
+  private target
+  - A caller that ended the run on a private target and routed everything else could
+    tell them apart by the message only. Released as a major, because a caller that
+    reads the code sees a different one.
 
 - [PO-684](https://linear.app/revenexx/issue/PO-684) — added AC-6: a redirect that would
   resend a body to another origin is refused — 307 and 308, and 301 and 302 on PUT,

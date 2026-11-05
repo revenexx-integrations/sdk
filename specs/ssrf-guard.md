@@ -29,8 +29,9 @@ supposed to make.
 
 So the ruling happens before the request does, and it is not optional. There is no
 per-node opt-out and no caller-supplied escape hatch: every target is resolved and
-judged, every redirect hop is judged again, and a refusal is a `BLOCKED_ADDRESS`
-error rather than a response. The one relaxation that exists is an environment
+judged, every redirect hop is judged again, and a refused target is a
+`BLOCKED_ADDRESS` error rather than a response — a redirect refused for anything
+other than where it points is `BLOCKED_REDIRECT`. The one relaxation that exists is an environment
 variable the local development stack sets, and it cannot be reached from a
 workflow.
 
@@ -110,7 +111,7 @@ although it is private; nothing else changes, and nothing a node does can add to
 
 - **Given** an `https` target that answers with a redirect to an `http` address
 - **When** a node calls `safeFetch`
-- **Then** the redirect is refused
+- **Then** the redirect is refused with `BLOCKED_REDIRECT`
 - **And** the opposite hop — `http` redirecting to `https` — is followed
 - **Because** a caller that asked for a confidential channel does not lose it to a
   header the other end controls
@@ -122,8 +123,8 @@ although it is private; nothing else changes, and nothing a node does can add to
   `Cookie`, `Proxy-Authorization`, or a header of the caller's own naming such as
   `X-API-Key`
 - **When** it is redirected to a different origin
-- **Then** only the headers that carry no secret — what the request accepts, what its
-  body is, the conditions, range and idempotency key it is asked
+- **Then** only the headers that carry no secret — what the request accepts, the
+  conditions, range and idempotency key it is asked
   under, its SOAP action and who is asking — go on to the next hop, and every other header the caller set is dropped
   before it is made
 - **And** a redirect to the *same* origin keeps every header, so an ordinary redirect
@@ -638,9 +639,12 @@ although it is private; nothing else changes, and nothing a node does can add to
 ## Tickets
 
 - [PO-758](https://linear.app/revenexx/issue/PO-758) — AC-7 and AC-20 no longer keep
-  `Content-Encoding` and `Content-Language` on a hop to another origin
-  - They describe a body, and since PO-684 no body crosses an origin. Released as a
-    major, because `headerCrossesOrigin` answers differently for both names.
+  `Content-Type`, `Content-Encoding` and `Content-Language` on a hop to another origin,
+  and AC-6's downgrade is refused with `BLOCKED_REDIRECT`
+  - The three describe a body, and since PO-684 no body crosses an origin. A refused
+    redirect has its own code so a caller can tell it from a private target. Released
+    as a major, because `headerCrossesOrigin` and the downgrade's code both answer
+    differently.
 
 - [PO-698](https://linear.app/revenexx/issue/PO-698) — added AC-33 and AC-34: the guard
   as a socket lookup and the switch it honours, for a node that opens its own socket and
