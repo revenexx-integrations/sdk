@@ -1155,7 +1155,7 @@ test('safeFetch rejects an https→http downgrade on redirect [@spec:ssrf-guard:
   return withFetch(mock, async () => {
     await assert.rejects(
       () => safeFetch('https://93.184.216.34/start'),
-      (err: unknown) => err instanceof NodeError && err.code === 'BLOCKED_ADDRESS',
+      (err: unknown) => err instanceof NodeError && err.code === 'BLOCKED_REDIRECT',
     );
     assert.equal(calls.length, 1, 'the downgraded target must never be fetched');
   });
@@ -1214,7 +1214,7 @@ test('safeFetch rejects a redirect with an invalid Location header [@spec:redire
   return withFetch(mock, async () => {
     await assert.rejects(
       () => safeFetch('https://93.184.216.34/start'),
-      (err: unknown) => err instanceof NodeError && err.code === 'BLOCKED_ADDRESS',
+      (err: unknown) => err instanceof NodeError && err.code === 'BLOCKED_REDIRECT',
     );
     assert.equal(calls.length, 1, 'an invalid redirect target must never be fetched');
   });
@@ -1244,7 +1244,7 @@ test('safeFetch releases the 3xx response socket on the TOO_MANY_REDIRECTS path 
 
 // AC-11 — A refusal that cannot change is not asked again
 test('safeFetch does not retry a blocked redirect target [@spec:request-budget:AC-11]', () => {
-  const { fetch: mock, calls } = scriptedFetch([redirect(302, 'http://127.0.0.1/')]);
+  const { fetch: mock, calls } = scriptedFetch([redirect(302, 'https://127.0.0.1/')]);
   return withFetch(mock, async () => {
     await assert.rejects(
       () => safeFetch('https://93.184.216.34/start', { retry: { attempts: 3, delayMs: 0 } }),
@@ -1291,7 +1291,7 @@ for (const status of [307, 308]) {
           }),
         (err: unknown) =>
           err instanceof NodeError &&
-          err.code === 'BLOCKED_ADDRESS' &&
+          err.code === 'BLOCKED_REDIRECT' &&
           err.message === `Blocked ${status} redirect to another origin: it would resend the request body to https://93.184.216.35`,
       );
       assert.equal(calls.length, 1, 'the other origin receives nothing, and the refusal is not retried');
@@ -1309,7 +1309,7 @@ for (const [status, method] of [[301, 'PUT'], [302, 'PATCH'], [301, 'DELETE']] a
     return withFetch(mock, async () => {
       await assert.rejects(
         () => safeFetch('https://93.184.216.34/items/1', { method, body: '{"name":"x"}' }),
-        (err: unknown) => err instanceof NodeError && err.code === 'BLOCKED_ADDRESS' && /would resend the request body/.test(err.message),
+        (err: unknown) => err instanceof NodeError && err.code === 'BLOCKED_REDIRECT' && /would resend the request body/.test(err.message),
       );
       assert.equal(calls.length, 1);
     });
@@ -1331,7 +1331,8 @@ test('safeFetch refuses a body-carrying cross-origin hop before it looks the oth
   return withFetch(mock, async () => {
     await assert.rejects(
       () => safeFetch('https://93.184.216.34/token', { method: 'POST', body: 'client_secret=S' }),
-      (err: unknown) => err instanceof NodeError && /would resend the request body to https:\/\/collector\.example/.test(err.message),
+      (err: unknown) =>
+        err instanceof NodeError && err.code === 'BLOCKED_REDIRECT' && /would resend the request body to https:\/\/collector\.example/.test(err.message),
     );
     assert.deepEqual(looked.filter((h) => h === 'collector.example'), [], 'the other origin is never looked up');
     assert.equal(calls.length, 1);
@@ -1388,7 +1389,7 @@ test('safeFetch follows a body through a same-origin hop and refuses it at the h
     await assert.rejects(
       () => safeFetch('https://93.184.216.34/submit', { method: 'POST', body: 'a=1', retry: { attempts: 2, delayMs: 1 } }),
       (err: unknown) => {
-        assert.ok(err instanceof NodeError && err.code === 'BLOCKED_ADDRESS');
+        assert.ok(err instanceof NodeError && err.code === 'BLOCKED_REDIRECT');
         assert.match(err.message, /308 redirect to another origin.*https:\/\/93\.184\.216\.35/);
         return true;
       },
@@ -1489,16 +1490,13 @@ test('safeFetch drops a key in a header of its own on a cross-origin redirect [@
 
 // AC-7 — A secret the caller sent in a header does not cross an origin boundary on a redirect
 // The other half of the allow-list: what carries no secret still describes the
-// request on the next host, so a SOAP call keeps its action and its framing, a
-// resent compressed body stays readable, and a guarded write keeps its guard.
+// request on the next host, so a SOAP call keeps its action and a guarded write
+// keeps its guard.
 test('safeFetch keeps the headers that carry no secret on a cross-origin redirect [@spec:ssrf-guard:AC-7]', () => {
   const kept = {
     accept: 'text/xml',
     'accept-encoding': 'gzip',
     'accept-language': 'de',
-    'content-encoding': 'gzip',
-    'content-language': 'de',
-    'content-type': 'text/xml; charset=utf-8',
     'idempotency-key': 'order-4711',
     'if-match': 'W/"etag-1"',
     'if-modified-since': 'Mon, 12 Oct 2026 08:00:00 GMT',
@@ -1528,10 +1526,11 @@ test('safeFetch keeps the headers that carry no secret on a cross-origin redirec
 // The names a credential would be refused, in the case and spacing an author types
 // them, against the key headers the packages actually send.
 test('headerCrossesOrigin answers true for the kept names and false for key headers [@spec:ssrf-guard:AC-20]', () => {
-  for (const name of ['User-Agent', ' accept ', 'SOAPAction', 'If-Match', 'RANGE', 'Content-Encoding', 'Idempotency-Key']) {
+  for (const name of ['User-Agent', ' accept ', 'SOAPAction', 'If-Match', 'RANGE', 'Accept-Language', 'Idempotency-Key']) {
     assert.equal(headerCrossesOrigin(name), true, `${name} crosses`);
   }
-  for (const name of ['X-API-Key', 'api-key', 'x-api-token', 'Authorization', 'Cookie', 'X-User-Agent']) {
+  // A body's own headers do not cross either: no body crosses an origin (PO-758).
+  for (const name of ['X-API-Key', 'api-key', 'x-api-token', 'Authorization', 'Cookie', 'X-User-Agent', 'Content-Type', 'Content-Encoding', 'Content-Language']) {
     assert.equal(headerCrossesOrigin(name), false, `${name} does not cross`);
   }
 });
@@ -2146,7 +2145,7 @@ test('a redirect refused after the first hop was answered may have sent the requ
   return withLookup(['93.184.216.34'], () =>
     withFetch(mock, async () => {
       await assert.rejects(() => safeFetch('https://api.example', { method: 'POST', body: 'x' }), (err: unknown) => {
-        assert.ok(err instanceof NodeError && err.code === 'BLOCKED_ADDRESS');
+        assert.ok(err instanceof NodeError && err.code === 'BLOCKED_REDIRECT');
         return assertMaybeSent(err);
       });
       assert.equal(calls.length, 1);
