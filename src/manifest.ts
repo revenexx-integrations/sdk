@@ -1,4 +1,4 @@
-import { extractCredentialManifests, extractManifests } from './extract.js';
+import { extractCredentialManifests, extractManifest } from './extract.js';
 import type {
   IConfigField,
   ICredential,
@@ -7,6 +7,7 @@ import type {
   INodeDescription,
   ITemplateDescription,
 } from './types.js';
+import { isNodeWithIteration } from './types.js';
 
 /**
  * Envelope version expected by the integrations server-side
@@ -18,9 +19,25 @@ import type {
  */
 export const MANIFEST_VERSION = 'v0-draft';
 
+/**
+ * A node as the manifest carries it: its description, and whether it is a loop.
+ *
+ * `iterates` is derived from the node's code — `true` exactly when it has
+ * `extractItems` ({@link isNodeWithIteration}) — and is not something an author
+ * declares, so it cannot disagree with the bundle built beside it. The platform's
+ * save check reads it instead of guessing a loop from the output names `item` and
+ * `done`, which is how the worker and that check came to recognise a loop by two
+ * different signs (PO-761). It is written on every node, `false` included: a
+ * manifest without the key is one from an older SDK, and only then may a reader
+ * fall back to the output names.
+ */
+export interface INodeManifestEntry extends INodeDescription {
+  iterates: boolean;
+}
+
 export interface NodeManifest {
   manifestVersion: typeof MANIFEST_VERSION;
-  nodes: INodeDescription[];
+  nodes: INodeManifestEntry[];
   /**
    * Credential types this package publishes. Optional and additive: packages
    * that ship no credentials omit it (older publishers never set it).
@@ -199,7 +216,7 @@ export function buildManifest(
 ): NodeManifest {
   const manifest: NodeManifest = {
     manifestVersion: MANIFEST_VERSION,
-    nodes: extractManifests(nodes),
+    nodes: nodes.map((node) => ({ ...extractManifest(node), iterates: isNodeWithIteration(node) })),
   };
   if (credentials.length > 0) {
     manifest.credentials = extractCredentialManifests(credentials);

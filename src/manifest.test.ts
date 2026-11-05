@@ -374,3 +374,41 @@ test('the name patterns are the registry schema\'s text, character for character
   assert.equal(SEMVER_PATTERN, String.raw`^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$`);
   assert.equal(CONFIG_KEY_PATTERN, '^[a-zA-Z][a-zA-Z0-9-]*$');
 });
+
+// AC-16 — Every node says whether it is a loop, as its code does
+test('buildManifest writes iterates on every node, true only for one with extractItems [@spec:package-manifest:AC-16]', () => {
+  const loop = {
+    description: { ...fakeNode.description, slug: 'test:loop' },
+    async execute() {
+      return { outputs: {} };
+    },
+    extractItems: () => [],
+  };
+  // A node that declares the loop's output names but does not iterate is not a loop,
+  // and a description cannot claim the key for itself.
+  const lookalike = {
+    description: {
+      ...fakeNode.description,
+      slug: 'test:lookalike',
+      outputs: [
+        { name: 'item', kind: 'default' as const, dataType: 'any' as const },
+        { name: 'done', kind: 'default' as const, dataType: 'any' as const },
+      ],
+      iterates: true,
+    },
+    async execute() {
+      return { outputs: {} };
+    },
+  };
+  const manifest = buildManifest([fakeNode, loop, lookalike]);
+
+  assert.deepEqual(
+    manifest.nodes.map((n) => [n.slug, n.iterates]),
+    [
+      [fakeNode.description.slug, false],
+      ['test:loop', true],
+      ['test:lookalike', false],
+    ],
+  );
+  assert.ok(manifest.nodes.every((n) => Object.hasOwn(n, 'iterates')));
+});
