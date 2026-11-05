@@ -64,7 +64,7 @@ test('a branch is held to the names the node can produce [@spec:branch-selection
   assert.doesNotThrow(() => assertBranchNamed(resolved, { outputs: {}, branch: 'anything' }));
 });
 
-test('the build warns about outputs that cannot be told apart and does not throw [@spec:branch-selection:AC-4]', () => {
+test('outputs that cannot be told apart are found, and buildManifest itself does not throw [@spec:branch-selection:AC-4]', () => {
   const unnamed = node([out, { kind: 'default', dataType: 'any' }]);
   assert.equal(outputProblems(unnamed.description).length, 1);
   assert.equal(outputWarnings([unnamed]).length, 1);

@@ -62,9 +62,10 @@ export function outputProblems(description: INodeDescription): string[] {
 }
 
 /**
- * The warnings `rvnxx-nodes manifest` prints for a package's nodes: every
- * {@link outputProblems} finding, worded for the log. In 1.x they are warnings and the
- * build continues; the next major turns them into errors.
+ * Every {@link outputProblems} finding for a package's nodes, worded for the log —
+ * the problems that stop `rvnxx-nodes manifest`. Up to 2.x they were warnings and
+ * the build went on; from 3.0 the package does not build (PO-762). The name is
+ * kept from then, so a caller of it does not break with the build.
  */
 export function outputWarnings(nodes: readonly INode[]): string[] {
   return nodes.flatMap((n) => outputProblems(n.description));

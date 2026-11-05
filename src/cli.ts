@@ -98,16 +98,15 @@ async function runManifest(): Promise<void> {
       '⚠ package.json has no "revenexx.displayName" — the node palette will fall back to the raw package name.',
     );
   }
-  for (const w of outputWarnings(mod.NODES as INode[])) {
-    console.warn(`⚠ ${w} This will be an error in the next major version.`);
-  }
   const manifest = buildManifest(mod.NODES as INode[], credentials, templates);
-  // A name the registry's schema refuses stops the build before anything is
-  // written, every one of them at once, so the author learns the rule here rather
-  // than from a 422 on upload (PO-744). Judged on the manifest itself, which is
-  // what the registry reads.
-  const nameProblems = nodeManifestProblems(manifest.nodes);
-  if (nameProblems.length > 0) fail(nameProblems.join('\n'));
+  // Outputs a branch cannot tell apart, and a name the registry's schema refuses,
+  // stop the build before anything is written, every one of them at once, so the
+  // author learns the rule here rather than from a run that fires the wrong output
+  // or a 422 on upload. The names are judged on the manifest itself, which is what
+  // the registry reads (PO-744); the outputs on the declarations (PO-762 — a
+  // warning in 1.x and 2.x).
+  const problems = [...outputWarnings(mod.NODES as INode[]), ...nodeManifestProblems(manifest.nodes)];
+  if (problems.length > 0) fail(problems.join('\n'));
 
   const outDir = resolve(projectRoot, 'dist');
   const outFile = resolve(outDir, 'manifest.json');
