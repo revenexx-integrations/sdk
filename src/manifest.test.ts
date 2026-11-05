@@ -377,7 +377,7 @@ test('the name patterns are the registry schema\'s text, character for character
 });
 
 // AC-16 — Every node says whether it is a loop, as its code does
-test('buildManifest writes iterates on every node, true only for one with extractItems [@spec:package-manifest:AC-16]', () => {
+test('buildManifest writes iteration on every node, true only for one with extractItems [@spec:package-manifest:AC-16]', () => {
   const loop = {
     description: { ...fakeNode.description, slug: 'test:loop' },
     async execute() {
@@ -395,7 +395,7 @@ test('buildManifest writes iterates on every node, true only for one with extrac
         { name: 'item', kind: 'default' as const, dataType: 'any' as const },
         { name: 'done', kind: 'default' as const, dataType: 'any' as const },
       ],
-      iterates: true,
+      iteration: true,
     },
     async execute() {
       return { outputs: {} };
@@ -404,19 +404,19 @@ test('buildManifest writes iterates on every node, true only for one with extrac
   const manifest = buildManifest([fakeNode, loop, lookalike]);
 
   assert.deepEqual(
-    manifest.nodes.map((n) => [n.slug, n.iterates]),
+    manifest.nodes.map((n) => [n.slug, n.iteration]),
     [
       [fakeNode.description.slug, false],
       ['test:loop', true],
       ['test:lookalike', false],
     ],
   );
-  assert.ok(manifest.nodes.every((n) => Object.hasOwn(n, 'iterates')));
+  assert.ok(manifest.nodes.every((n) => Object.hasOwn(n, 'iteration')));
   // The helpers a package may build its manifest with say the same, so no path
   // leaves the key out.
   assert.deepEqual(
-    extractManifests([fakeNode, loop, lookalike]).map((n) => n.iterates),
+    extractManifests([fakeNode, loop, lookalike]).map((n) => n.iteration),
     [false, true, false],
   );
-  assert.equal(extractManifest(lookalike).iterates, false);
+  assert.equal(extractManifest(lookalike).iteration, false);
 });

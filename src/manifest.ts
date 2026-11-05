@@ -21,7 +21,7 @@ export const MANIFEST_VERSION = 'v0-draft';
 /**
  * A node as the manifest carries it: its description, and whether it is a loop.
  *
- * `iterates` is derived from the node's code by `extractManifest` — `true` exactly
+ * `iteration` is derived from the node's code by `extractManifest` — `true` exactly
  * when it has `extractItems` (`isNodeWithIteration`) — and is not something an author
  * declares, so it cannot disagree with the bundle built beside it. The platform's
  * save check reads it instead of guessing a loop from the output names `item` and
@@ -31,7 +31,7 @@ export const MANIFEST_VERSION = 'v0-draft';
  * fall back to the output names.
  */
 export interface INodeManifestEntry extends INodeDescription {
-  iterates: boolean;
+  iteration: boolean;
 }
 
 export interface NodeManifest {

@@ -142,7 +142,7 @@ the `rvnxx-nodes` CLI. The *Key design constraints* below are part of the first 
 
 - `src/extract.ts` — `extractManifest` / `extractManifests` (nodes) and `extractCredentialManifest` / `extractCredentialManifests` (credentials) helpers that pull the descriptions off one or many instances (used by the node registry to build manifests without running nodes).
 
-- `src/manifest.ts` — `buildManifest` / `MANIFEST_VERSION` — wrap node, credential and template descriptions in the `{ manifestVersion, nodes, credentials, templates? }` envelope the registry expects (`credentials` and `templates` are added only when non-empty; every node entry carries `iterates`, derived from `extractItems`, `false` included — PO-761).
+- `src/manifest.ts` — `buildManifest` / `MANIFEST_VERSION` — wrap node, credential and template descriptions in the `{ manifestVersion, nodes, credentials, templates? }` envelope the registry expects (`credentials` and `templates` are added only when non-empty; every node entry carries `iteration`, derived from `extractItems`, `false` included — PO-761).
 
 - `src/cli.ts` — the `rvnxx-nodes` CLI (`bin`); `rvnxx-nodes manifest` imports a package's built `dist/index.js`, reads its `NODES` (and optional `CREDENTIALS` / `TEMPLATES`) exports and writes `dist/manifest.json`.
 

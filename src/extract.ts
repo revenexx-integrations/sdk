@@ -3,13 +3,13 @@ import type { ICredential, ICredentialDescription, INode } from './types.js';
 import { isNodeWithIteration } from './types.js';
 
 /**
- * A node as the manifest carries it: its description, and `iterates` derived from
+ * A node as the manifest carries it: its description, and `iteration` derived from
  * its code. Every path that builds a node manifest goes through here, so none can
  * leave the key out, and the derived value is written last, over anything a
  * description declares under that name (PO-761).
  */
 export function extractManifest(node: INode): INodeManifestEntry {
-  return { ...node.description, iterates: isNodeWithIteration(node) };
+  return { ...node.description, iteration: isNodeWithIteration(node) };
 }
 
 export function extractManifests(nodes: INode[]): INodeManifestEntry[] {

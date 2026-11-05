@@ -748,7 +748,7 @@ synchronous). The runtime detects it via the `isNodeWithIteration` type guard an
 calls `extractItems` instead of relying on slug-based detection; it is the
 designated dispatch point for future child-workflow execution. The manifest says
 the same thing for the platform, which never sees a node's code: `buildManifest`
-writes `iterates` on every node, `true` exactly when it has `extractItems`, and the
+writes `iteration` on every node, `true` exactly when it has `extractItems`, and the
 save check reads that instead of guessing a loop from its output names (PO-761). A
 loop still names its outputs `item` and `done`, because the worker sends its records
 and its result out of those two.
