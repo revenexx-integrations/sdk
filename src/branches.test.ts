@@ -75,6 +75,25 @@ test('outputs that cannot be told apart are found, and buildManifest itself does
     { kind: 'branch', dataType: 'any', sourceFromConfig: 'cases', fallback: { name: 'other' } },
   ]);
   assert.match(outputProblems(clash.description)[0] ?? '', /fallback name "other"/);
+  const twoFallbacks = node([
+    { kind: 'branch', dataType: 'any', sourceFromConfig: 'a', fallback: { name: 'else' } },
+    { kind: 'branch', dataType: 'any', sourceFromConfig: 'b', fallback: { name: 'else' } },
+  ]);
+  assert.deepEqual(outputProblems(twoFallbacks.description), [
+    'test:node: the fallback name "else" is declared by two generated outputs, so a branch "else" is ambiguous.',
+  ]);
+  const oneSetting = node([
+    { kind: 'branch', dataType: 'any', sourceFromConfig: 'cases', fallback: { name: 'else' } },
+    { kind: 'branch', dataType: 'any', sourceFromConfig: 'cases', fallback: { name: 'other' } },
+  ]);
+  assert.deepEqual(outputProblems(oneSetting.description), [
+    'test:node: two outputs are named from the setting "cases", so a branch cannot tell them apart.',
+  ]);
+  const apart = node([
+    { kind: 'branch', dataType: 'any', sourceFromConfig: 'a', fallback: { name: 'elseA' } },
+    { kind: 'branch', dataType: 'any', sourceFromConfig: 'b', fallback: { name: 'elseB' } },
+  ]);
+  assert.deepEqual(outputProblems(apart.description), []);
   assert.deepEqual(outputProblems(node([{ kind: 'branch', dataType: 'any' }]).description), []);
   assert.deepEqual(outputProblems(node([out, errorPort()]).description), []);
 });

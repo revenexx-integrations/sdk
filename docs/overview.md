@@ -266,7 +266,8 @@ Output ports are alternatives: exactly one fires. A node with **more than one ou
 from the integrations release that carries PO-751 — until then a missing `branch` fires
 every output. Check a result in the node's own tests with `assertBranchNamed(node, result)`.
 `rvnxx-nodes manifest` stops the build when a node's several outputs cannot be told apart
-(an unnamed or repeated output name, a fallback name that repeats a fixed one), naming
+(an unnamed or repeated output name, a fallback name that repeats another output's, two
+outputs named from the same setting), naming
 the node and the output and writing no manifest — a warning up to 2.x, a failure from
 3.0 (PO-762). Fix it by giving every fixed output a unique `name`, and a generated
 output a fallback name no fixed output uses.

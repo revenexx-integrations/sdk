@@ -31,8 +31,9 @@ const isGenerated = (p: IOutputPort): boolean => p.sourceFromConfig !== undefine
  * Returns one sentence per problem, empty when there is none.
  *
  * A node with several ports must give each fixed port a unique `name`, since `branch`
- * names one of them, and a generated port's `fallback` name must not repeat a fixed
- * one. (Whether `execute` really returns a `branch` cannot be read from a declaration
+ * names one of them; a generated port's `fallback` name must repeat neither a fixed
+ * name nor another generated port's; and two ports may not be named from the same
+ * setting. (Whether `execute` really returns a `branch` cannot be read from a declaration
  * — see {@link assertBranchNamed}.)
  */
 export function outputProblems(description: INodeDescription): string[] {
@@ -52,10 +53,25 @@ export function outputProblems(description: INodeDescription): string[] {
       seen.add(port.name);
     }
   }
+  const fallbacks = new Set<string>();
+  const sources = new Set<string>();
   for (const port of outputs) {
+    if (!isGenerated(port)) continue;
     const fb = port.fallback?.name;
-    if (isGenerated(port) && fb !== undefined && seen.has(fb)) {
+    if (fb !== undefined && seen.has(fb)) {
       problems.push(`${description.slug}: the fallback name "${fb}" is also the name of a fixed output, so a branch "${fb}" is ambiguous.`);
+    } else if (fb !== undefined && fallbacks.has(fb)) {
+      problems.push(`${description.slug}: the fallback name "${fb}" is declared by two generated outputs, so a branch "${fb}" is ambiguous.`);
+    } else if (fb !== undefined) {
+      fallbacks.add(fb);
+    }
+    // Two outputs named from one setting produce the same names, so none of them
+    // can be told apart.
+    const source = port.sourceFromConfig;
+    if (source !== undefined && sources.has(source)) {
+      problems.push(`${description.slug}: two outputs are named from the setting "${source}", so a branch cannot tell them apart.`);
+    } else if (source !== undefined) {
+      sources.add(source);
     }
   }
   return problems;

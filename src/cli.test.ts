@@ -89,7 +89,6 @@ test('rvnxx-nodes manifest stops on a port name the registry would refuse, befor
   assert.equal(fs.existsSync(join(pkg, 'dist', 'manifest.json')), false);
 });
 
-// AC-4 — Several outputs that cannot be told apart stop the build
 function nodeWith(slug: string, outputs: unknown[]) {
   return `{ description: ${JSON.stringify({ slug, version: '1.0.0', category: 'action', name: 'N', inputs: {}, outputs })}, async execute() { return { outputs: {} }; } }`;
 }
@@ -104,6 +103,9 @@ test('rvnxx-nodes manifest stops on outputs a branch cannot tell apart, naming e
     ])}, ${nodeWith('acme:twice', [
       { name: 'out', kind: 'default', dataType: 'any' },
       { name: 'out', kind: 'default', dataType: 'any' },
+    ])}, ${nodeWith('acme:fallback', [
+      { name: 'other', kind: 'default', dataType: 'any' },
+      { kind: 'branch', dataType: 'any', sourceFromConfig: 'cases', fallback: { name: 'other' } },
     ])}];\n`,
   );
   const run = manifest({ displayName: 'X' });
@@ -111,6 +113,7 @@ test('rvnxx-nodes manifest stops on outputs a branch cannot tell apart, naming e
   assert.equal(run.status, 1);
   assert.ok(run.stderr.includes('acme:unnamed: output 2 has no name'), run.stderr);
   assert.ok(run.stderr.includes('acme:twice: output name "out" is declared twice'), run.stderr);
+  assert.ok(run.stderr.includes('acme:fallback: the fallback name "other" is also the name of a fixed output'), run.stderr);
   assert.equal(fs.existsSync(join(pkg, 'dist', 'manifest.json')), false);
 });
 

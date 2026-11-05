@@ -8,7 +8,7 @@ where:
   - outputProblems, outputWarnings — what stops the manifest build in a node's output declaration
 docs:
   - docs/overview.md
-updated: 2026-10-15
+updated: 2026-11-05
 ---
 
 # A node with several outputs says which one it took
@@ -65,7 +65,8 @@ stops when they cannot; the rest is a check the node's own tests run.
 ### AC-4 — Several outputs that cannot be told apart stop the build
 
 - **Given** a node declaring several outputs, a fixed one without a name or two with the
-  same name, or a generated one whose fallback repeats a fixed name
+  same name, a generated one whose fallback repeats a fixed name or another generated
+  one's, or two named from the same setting
 - **When** the manifest is built with `rvnxx-nodes manifest`
 - **Then** the build fails naming the node and the output, every such output at once,
   and writes no manifest; `buildManifest` itself does not refuse it

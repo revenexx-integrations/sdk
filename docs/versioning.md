@@ -339,9 +339,10 @@ about the ordering.
   manifest` used to warn and carry on when a node with several outputs left a fixed
   output unnamed, named two the same, or gave a generated output a fallback name a
   fixed one already has. From 3.0.0 it fails, naming the node and the output, and
-  writes no manifest. Fix: give every fixed output a unique `name`, and a generated
-  one a fallback name no fixed output uses. On 5 November 2026 all 26 node packages
-  passed (365 nodes, built from each `main` and checked with the 3.0.0 rule).
+  writes no manifest — and it also refuses two generated outputs with one fallback
+  name, or two named from the same setting. Fix: give every fixed output a unique
+  `name`, every generated one a fallback name no other output uses, and each its own
+  setting.
 
 ## How `1.0.0` happened
 
