@@ -1,6 +1,7 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code in this repository. Reasons and history live in
+[`docs/`](docs/index.md); this file keeps what an agent has to obey.
 
 ## Commands
 
@@ -13,144 +14,58 @@ npm run typecheck  # tsc --noEmit
 npm run spec:check # every promise in specs/ bound to the test that proves it
 ```
 
-The SDK ships unit tests (`src/*.test.ts`) — run them with `npm test`. `lint`,
-`typecheck`, `test` and `build` all run in the `test` job of `ci.yml`, which is a
-required status check. `spec:check` runs in a `spec` job of its own, so a spec failure
-reads as a spec failure rather than as a red test. `.github/rulesets/main.json` lists it
-beside `test` and `changeset`, but **that file is an import source, not the ruleset** —
-until it is applied to the live ruleset a red gate can still merge:
-
-```bash
-gh api -X PUT repos/revenexx-integrations/sdk/rulesets/18063253 \
-  --input .github/rulesets/main.json
-```
+`lint`, `typecheck`, `test` and `build` run in the `test` job of `ci.yml`; `spec:check`
+runs in a `spec` job of its own. `.github/rulesets/main.json` is an import source, not the
+live ruleset — see [`docs/branch-protection.md`](docs/branch-protection.md), and
+[`docs/security-scanning.md`](docs/security-scanning.md) for gitleaks and osv-scanner.
 
 ### biome: linter on, formatter off
 
-`biome.json` (schema **2.5.x** — the 1.9 shape is a different config format)
-enables the **linter only**. Three things about it are load-bearing:
+- **No `fetch`, use `safeFetch`.** `style/noRestrictedGlobals` catches bare `fetch`,
+  `nursery/noJsRestrictedProperties` catches `globalThis.fetch`. **`src/fetch.ts` is the
+  one exception** (via `overrides`); a second exception is a second way past the SSRF
+  guard. Test-file ignores stay per-line, never widened to a file.
+- **Tests stub by assigning `globalThis.fetch` after import** — `safeFetch` calls that
+  stub instead of undici's own `fetch`. Do not mock undici or the dispatcher.
+- **The formatter is deliberately off.** Turning it on reformats most of the repo: its
+  own commit, never a passenger.
+- **`biome.json` takes no `//` comments and then fails silently** to built-in defaults —
+  the `fetch` rule goes off with no error. If a rule seems not to fire, write a deliberate
+  violation instead of trusting the output.
 
-- **The rule it exists for is `style/noRestrictedGlobals` on `fetch`.** This is
-  the package that defines `safeFetch` and `assertPublicUrl`, and PO-185 was a
-  raw `fetch` in `src/credentials.ts` posting OAuth client credentials at a URL
-  taken from credential config — no SSRF guard. Use `safeFetch`.
-  **`src/fetch.ts` is the one sanctioned exception** (`timedFetch`, called by
-  `guardedFetch` *after* the guard has run) and is excepted via `overrides`.
-  Adding a second exception means adding a second way to bypass the guard.
-  **That rule matches the bare `fetch` identifier only**, so `globalThis.fetch(…)`
-  walks past it — found in the PO-184 review. The member form is covered by
-  `nursery/noJsRestrictedProperties` (`globalThis.fetch` / `global.fetch`, which
-  also catches `globalThis["fetch"]` and destructuring, but not an alias through a
-  variable). It is a *nursery* rule: a biome bump may promote it and change the
-  category, which breaks the `biome-ignore lint/nursery/…` lines in the test files
-  loudly rather than silently. Those ignores — five at the mock seams that save the
-  global to restore it, two on the AC-18 tests that need a connection `safeFetch`
-  did not ask for, and two in `src/fetch.ts` itself, where `transport` reads the
-  global only to recognise a test's stub of it (IN-40) — are per-line on purpose, so
-  the exception is visible where it is taken instead of widening a file.
-- **`safeFetch` sends through undici's own `fetch`, not the runtime's** (IN-40). The
-  guarded dispatcher is an `Agent` from the SDK's own undici, and the runtime's `fetch` is
-  built on whichever undici that Node bundles — Node 26 refused the pairing and every
-  request failed. The same split runs the other way for a body: the runtime's
-  `FormData` is not undici 8's, so `safeFetch` copies it before sending (IN-62). A `fetch` placed in the global *after* the SDK loaded is a test's stub and is
-  called instead, which is the seam every node package's suite intercepts through.
-- **The formatter is deliberately disabled.** Biome disagrees with this repo's
-  hand-wrapped source in 13 to 17 of 22 files depending on `lineWidth` (13 at its
-  narrowest useful setting, 17 at the siblings' 200) — unlike its sibling
-  node packages, the SDK was never biome-formatted. Turning it on is a repo-wide
-  reformat: fine as its own commit, never as a passenger on another change. The
-  sibling packages' `indentStyle`/`lineWidth` values stay in the file for whoever
-  does it.
-- **`biome.json` does not accept `//` comments, and fails silently.** Biome falls
-  back to its built-in defaults with no error, which looks like a working config
-  while the `fetch` rule is off and the formatter is reformatting to tabs. If a
-  rule seems not to fire, probe it (write a deliberate violation) rather than
-  trusting the output. Comments would need the file renamed to `biome.jsonc`,
-  which the three sibling repos do not do.
+Why each of these is so: [`docs/linting.md`](docs/linting.md).
 
-See [`docs/security-scanning.md`](docs/security-scanning.md) for the scanners
-(gitleaks, osv-scanner) and [`docs/branch-protection.md`](docs/branch-protection.md)
-for the rulesets — which, unlike the sibling repos', are live, because this repo
-is public.
+## Tickets and skills
 
-## Skills
+Tracker: **Linear** · Team: **Integration Engineering** · Project: **Integration Studio** —
+every new ticket from this repository goes there unless the ticket says why not. That
+team's key is `IN`, which is where every new `IN-nnn` in this repository's commits and pull
+requests comes from. It took Integration Studio over from Product Engineering on 20 October
+2026, so a `PO-nnn` in the history is a ticket filed before the move, and keeps that number.
 
-[`.claude/skills/`](.claude/skills/README.md) carries three, and its README says which
-are ours and which are vendored. A fourth is **named rather than carried**: before
-filing or retitling an issue, read the `ticket` skill — the six kinds of ticket and the
-shape each one takes, the title rule with its prohibitions and its prefix slot, the five
-labelled lines every kind opens with, the language rule, and the duplicate check that
-comes before creating anything. Tickets from here go to Linear, team **Product
-Engineering**, project **Integration Studio**, key `PO`, which is where every `PO-nnn`
-in this repository's commits and pull requests comes from.
+Before filing or retitling a ticket, read the `ticket` skill. It is maintained once, in
+`integrations-meta/.claude/skills/ticket/SKILL.md`, and deliberately not copied here.
+[`.claude/skills/`](.claude/skills/README.md) carries the rest.
 
-It is deliberately not a copy in this clone: it is maintained once, in
-`integrations-meta`, and the four node packages that each kept a copy all drifted from
-that source while claiming to be identical to it — a copy is a fork the moment somebody
-edits either end. A checkout that cannot see the skill by name reads
-`integrations-meta/.claude/skills/ticket/SKILL.md` until `skills-catalog` makes that
-unnecessary. The one to know about before changing behaviour is
-**[`feature-spec`](.claude/skills/feature-spec/SKILL.md)** — promised behaviour lives in
-`specs/*.md`, and every promise is bound to the test that proves it. Install it, or
-update it, from the registry:
-
-```bash
-revenexx skills add revenexx/skills-catalog feature-spec
-```
-
-Its gate is installed: [`spec.config.json`](spec.config.json) declares the one layer
-this package has, `scripts/spec-check.mjs` enforces it, and [`specs/`](specs/README.md)
-holds the promises. **Change what this SDK promises its consumers → change the spec in
-the same commit, and the test with it.**
-
-`spec.config.json` carries the one thing this package decided differently from its
-siblings, in `$comment_audience`: a library has no screen, so the exported name *is*
-the address a consumer reaches a promise by, and a criterion may write `safeFetch`
-where a spec for a product with a UI would name a button. The machinery behind the
-name still belongs in `docs/`.
-
-[`specs/README.md`](specs/README.md) is the index, and it is the only place that says
-how much is promised — do not restate the count here, or the next spec falsifies this
-file. It also carries the register of what is *not* promised, which is where the two
-surfaces with no tests to point at are recorded: the node and credential contract, and
-the `rvnxx-nodes` CLI. The *Key design constraints* below are part of the first of those
-— they read as promises and are held by nothing yet.
+**[`feature-spec`](.claude/skills/feature-spec/SKILL.md):** promised behaviour lives in
+`specs/*.md`, and every promise is bound to the test that proves it (`spec.config.json`,
+`scripts/spec-check.mjs`). **Change what this SDK promises its consumers → change the spec
+in the same commit, and the test with it.** [`specs/README.md`](specs/README.md) is the
+index and the only place that says how much is promised — do not restate the count here.
+Because a library has no screen, a criterion may name an export (`safeFetch`) where a
+product spec would name a button.
 
 ## Architecture
 
-`@revenexx/integrations-node-sdk` is a tiny shared TypeScript library consumed by individual Revenexx integration node packages. It ships dual ESM/CJS output via `tsup`.
+`@revenexx/integrations-node-sdk` is the shared contract library every Revenexx
+integration node package depends on, shipped as dual ESM/CJS via `tsup`. Every module is
+public and re-exported from `src/index.ts`; the contracts (`INode`, `INodeContext`,
+`ICredential`, `ITemplateDescription`, …) live in `src/types.ts`, and the `rvnxx-nodes`
+CLI in `src/cli.ts`. Tests sit beside the code as `src/*.test.ts`.
 
-**Source modules (all public, re-exported from `src/index.ts`):**
+**Key design constraints** — part of the node and credential contract, which
+`specs/README.md` records as not yet promised:
 
-- `src/types.ts` — all interfaces and union types that define the node and credential contracts:
-  - `INode` — the interface every integration node must implement (`description` + `execute`)
-  - `INodeDescription` — static metadata (slug, version, category, ports, config schema)
-  - `INodeContext` — runtime context injected into `execute` (signal, logger, secrets, credentials, state)
-  - `INodeState` — the tenant state store a workflow remembers between runs (mapping / cursor / dedupe / digest — `dedupe` is the role, `claim` its operation); the role decides whether a write is immediate or only counts once the run completes
-  - `INodeDescription.inputs` is `Record<string, IInputPort>` — single-input nodes use the conventional key `'in'`; fan-in nodes (merge, join) declare multiple named keys
-  - `INodeResult` — what `execute` must return (output map + optional branch name)
-  - `INodeWithIteration` / `isNodeWithIteration` — optional capability for nodes that drive iteration over a collection
-  - Credential contract: `ICredential`, `ICredentialDescription`, `ICredentialContext`, `ICredentialField`, `ICredentialTestResult`, `ICredentialResolveResult`, `ICredentialOAuthAuthorize`, `isOAuthAuthorizeCredential`
-  - Template contract: `ITemplateDescription`, `ITemplateTrigger` (plain-data workflow blueprints a package can ship)
-  - Supporting types: `IInputPort`, `IOutputPort`, `IConfigField`, `IConfigOption`, `IConfigValidation`
-
-- `src/credentials.ts` — abstract base classes that implement `ICredential` so credential authors only fill in the gaps: `BaseCredential`, `SimpleValueCredential`, `ApiKeyCredential`, `BasicAuthCredential`, `OAuth2ClientCredentialsCredential`, `OAuth2AuthCodeCredential`. Concrete credentials `extend` one of these (e.g. `SmtpCredential extends SimpleValueCredential`).
-
-- `src/localized.ts` — `normalizeLocalized` helper that reduces a `LocalizedString` to a single plain string (shared by the UI and Laravel rendering).
-
-- `src/errors.ts` — `NodeError` class for unexpected/system-level failures thrown inside `execute`.
-
-- `src/extract.ts` — `extractManifest` / `extractManifests` (nodes) and `extractCredentialManifest` / `extractCredentialManifests` (credentials) helpers that pull the descriptions off one or many instances (used by the node registry to build manifests without running nodes).
-
-- `src/manifest.ts` — `buildManifest` / `MANIFEST_VERSION` — wrap node, credential and template descriptions in the `{ manifestVersion, nodes, credentials, templates? }` envelope the registry expects (`credentials` and `templates` are added only when non-empty; every node entry carries `iteration`, derived from `extractItems`, `false` included — PO-761).
-
-- `src/cli.ts` — the `rvnxx-nodes` CLI (`bin`); `rvnxx-nodes manifest` imports a package's built `dist/index.js`, reads its `NODES` (and optional `CREDENTIALS` / `TEMPLATES`) exports and writes `dist/manifest.json`.
-
-- `src/index.ts` — barrel re-export of all modules.
-
-The SDK also ships its own unit tests: `src/credentials.test.ts`, `src/localized.test.ts`, `src/manifest.test.ts`.
-
-**Key design constraints:**
 - `IOutputPort.kind` (`'default' | 'branch' | 'error'`) controls routing in the workflow engine; `sourceFromConfig` lets the node dynamically name an output from a config field value.
 - `INodeDescription.outputs` may be an empty array (PO-201): that marks a **terminal node** (dead end — no edge may leave it), the mirror image of `inputs: {}` on a trigger. Only for nodes with genuinely no continuation, e.g. `StopAndErrorNode`, which always throws. Never declare a port that can never fire just to fill the field.
 - **What an output carries (PO-408):** `IOutputPort.fields` stays a flat name → `{ dataType, description? }` map, and a value inside a record is declared beside it under a dotted name (`counts.added`) that the studio and the worker read as a path. Promised in [`specs/output-fields.md`](specs/output-fields.md); do not add a nested member to `IOutputField` — the registry's manifest schema refuses one.
@@ -158,6 +73,6 @@ The SDK also ships its own unit tests: `src/credentials.test.ts`, `src/localized
 - `LocalizedString` is `string | Record<string, string>` — all user-visible text fields accept either a plain string or a locale map.
 - `INodeContext.signal` is always provided by the engine; nodes must propagate it to all I/O.
 - **Error contract (PO-442):** where the fault came from decides, not the node author — a fault in the node's own configuration ends the run (`throw NodeError`), a fault in the data a record carried or in the world around the run takes the `error` output (`errorResult` / `toErrorResult`, or `httpErrorResult` where the port declares `body`). Never both for one condition. The rule and its three classes are promised in [`specs/error-handling.md`](specs/error-handling.md) and this line does not restate them: it was a second, differently-cut wording of the same rule, which is how four pairs of shipped nodes came to answer one situation two ways.
-- `execute(ctx, inputs)` receives a `Record<string, unknown>` keyed by port name; single-input nodes read `inputs['in']`.
+- `execute(ctx, inputs)` receives a `Record<string, unknown>` keyed by port name; single-input nodes read `inputs['in']`, fan-in nodes (merge, join) declare multiple named keys.
 - **Dynamic (author-time) config/ports (PO-143):** a config field may set `dynamic: true` (+ `dependsOn`) so its `options` — or, for `type: 'dynamic-schema'`, its whole flat field set — are resolved while editing; an output may set `resolveOutputs: true` for a generic port set. A node supplies these via the optional `INode` resolvers `loadOptions` / `resolveConfigSchema` / `resolveOutputs`, which receive an `INodeAuthorContext` and run in the node-runtime host — **never** in `execute` (results are snapshotted into the workflow blob at save). A `dependsOn`-driving field must be a literal (no `expressionAllowed`).
 - **When a setting applies (PO-410):** a config field may set `showIf: { key, op, value? }` — another field's key, an operator from `OPERATORS`, and what to compare against — and the editor draws it only while that holds. Not `dependsOn`, which sits beside it and re-*resolves* a dynamic field instead of deciding whether it is drawn. `evaluate` is what the fourteen operators mean and `settingApplies(field, config)` is the answer for one field; the vocabulary is shared with the condition nodes in `integrations-nodes-core`, which re-export it from here. A condition's driving key must be a literal too, and the platform refuses one against an `expressionAllowed` field.

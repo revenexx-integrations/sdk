@@ -70,7 +70,13 @@ are open to any collaborator.
 3. Repeat for `release-tags.json`, `branch-names.json` and `release-branches.json`.
    When updating existing rulesets after a change here (e.g. the `changeset`
    required check or the `changeset-release/*` exclude), edit the live ruleset to
-   match — import only creates new ones.
+   match — import only creates new ones. For `main.json` that is one call; until it
+   runs, a red gate the file lists can still merge:
+
+   ```bash
+   gh api -X PUT repos/revenexx-integrations/sdk/rulesets/18063253 \
+     --input .github/rulesets/main.json
+   ```
 4. On the **release-tags** ruleset, confirm the **Bypass list** contains
    **Repository admin** *and* the **release GitHub App** (the App actually pushes
    the tag — without it in the bypass list, publishing is blocked). Add the App by

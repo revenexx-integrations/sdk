@@ -61,3 +61,4 @@ manifest's `templates[]`.
 - [Versioning & Release Policy](versioning.md)
 - [Branch & Release-Tag Protection](branch-protection.md)
 - [Security Scanning](security-scanning.md)
+- [Linting: why `biome.json` looks the way it does](linting.md)
