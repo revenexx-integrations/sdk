@@ -511,6 +511,28 @@ export interface INodeAuthorContext {
    * search endpoint or use it to filter the options they return.
    */
   search?: string;
+  /**
+   * A short-lived store the node runtime keeps for this node between author-time
+   * calls (IN-82). Each call runs in a fresh process, so anything a node keeps in
+   * memory is gone by the next one — a dialog that asks for a dropdown, a field
+   * set and the output ports does the same expensive work three times. A value
+   * set here is there for the next call of the same node, in the same tenant and
+   * the same bundle.
+   *
+   * A cache, not storage: it may be absent (an older runtime, a test), may miss
+   * at any time, and forgets on its own after a few minutes. A node reads it
+   * first and falls back to doing the work. Values are JSON — what does not
+   * survive `JSON.stringify` does not come back — and a value too large to keep
+   * is dropped rather than refused. The runtime scopes it; the key only has to
+   * tell this node's own values apart, and must include whatever the value
+   * depends on (an address, a credential id, a route).
+   */
+  cache?: {
+    /** The value kept under `key`, or `undefined` when there is none. */
+    get(key: string): Promise<unknown>;
+    /** Keeps `value` under `key`. Never throws for a value it cannot keep. */
+    set(key: string, value: unknown): Promise<void>;
+  };
 }
 
 export interface INode {
