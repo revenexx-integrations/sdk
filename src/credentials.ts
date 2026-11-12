@@ -87,7 +87,13 @@ export abstract class BaseCredential implements ICredential {
   async test(_ctx: ICredentialContext, config: Config): Promise<ICredentialTestResult> {
     for (const field of this.description.fields) {
       if (field.required && (config[field.key] === undefined || config[field.key] === '')) {
-        return { ok: false, message: `Missing required field "${field.key}"` };
+        return {
+          ok: false,
+          message: {
+            de: `Pflichtfeld „${field.key}“ fehlt`,
+            en: `Missing required field "${field.key}"`,
+          },
+        };
       }
     }
     return { ok: true };
@@ -435,7 +441,13 @@ export abstract class OAuth2AuthCodeCredential
       new URL(this.tokenUrl(config));
       this.clientId(config);
       this.clientSecret(config);
-      return { ok: true, message: 'Configuration valid — complete the OAuth consent to finish setup.' };
+      return {
+        ok: true,
+        message: {
+          de: 'Konfiguration gültig — schließen Sie die OAuth-Zustimmung ab, um die Einrichtung zu beenden.',
+          en: 'Configuration valid — complete the OAuth consent to finish setup.',
+        },
+      };
     } catch (err) {
       return { ok: false, message: err instanceof Error ? err.message : String(err) };
     }

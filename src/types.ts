@@ -674,7 +674,15 @@ export interface ICredentialContext {
 
 export interface ICredentialTestResult {
   ok: boolean;
-  message?: string;
+  /**
+   * What the test says to the operator, shown beside the credential and kept as
+   * its last test message. A `LocalizedString` like every other text a package
+   * shows (PO-400): our own sentence should carry `{ de, en }`, and the studio
+   * picks the language it is set to — also when it reads the stored message back
+   * after a language switch. A plain string still works, for a pass-through such
+   * as a thrown error's own text, and stays in the language it came in.
+   */
+  message?: LocalizedString;
 }
 
 export interface ICredentialResolveResult {

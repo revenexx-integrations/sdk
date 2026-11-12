@@ -489,6 +489,22 @@ test('OAuth2AuthCodeCredential.test passes with a complete config [@spec:credent
   assert.equal(result.ok, true);
 });
 
+// AC-14 — A credential test answers in German and in English
+test('BaseCredential.test names a missing field in both languages [@spec:credentials:AC-14]', async () => {
+  const result = await new SmtpCredential().test(ctx(), { host: 'h' });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.message, { de: 'Pflichtfeld „port“ fehlt', en: 'Missing required field "port"' });
+});
+
+// AC-14 — A credential test answers in German and in English
+test('OAuth2AuthCodeCredential.test says what is left in both languages [@spec:credentials:AC-14]', async () => {
+  const result = await new StrictAuthCodeCredential().test(ctx(), { clientId: 'id', clientSecret: 'sec' });
+  assert.equal(result.ok, true);
+  const message = result.message as Record<string, string>;
+  assert.match(message.de, /OAuth-Zustimmung/);
+  assert.match(message.en, /OAuth consent/);
+});
+
 // AC-12 — A refusal from the token endpoint names the OAuth fields and nothing else
 test('token-endpoint errors surface OAuth fields but never the raw body [@spec:credentials:AC-12]', async (t) => {
   // Body includes a field that must NOT leak into the error message.
