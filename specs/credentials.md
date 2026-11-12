@@ -6,7 +6,7 @@ where:
   - OAuth2ClientCredentialsCredential, OAuth2AuthCodeCredential — the kinds that mint and refresh
 docs:
   - docs/overview.md
-updated: 2026-09-17
+updated: 2026-11-12
 ---
 
 # Standing in for the person who owns the account
@@ -176,6 +176,19 @@ failure never repeats what the account said.**
 - **Pair** AC-5, the same exchange against an endpoint that answers with a token
 - verify: unit
 
+### AC-14 — A credential test answers in German and in English
+
+- **Given** a credential test that fails on a missing setting, or an OAuth credential
+  whose configuration is complete but not yet consented
+- **When** it is tested
+- **Then** the answer carries the sentence in German and in English, and the studio
+  shows the one it is set to
+- **Because** the answer is the package's own sentence beside an interface that is
+  otherwise in the operator's language; a thrown error's own text is passed on as it
+  came and stays in its language
+- **Pair** AC-11, which promises what the sentence names
+- verify: unit
+
 ## Elsewhere
 
 - **The rules AC-6 judges an endpoint by** — which addresses count as private, how a
@@ -225,3 +238,5 @@ failure never repeats what the account said.**
 - [PO-497](https://linear.app/revenexx/issue/PO-497) — AC-3: the name a key credential
   read its setting under and the name it handed the key on under were two separate
   answers, so naming one alone was a half-change no node test could see
+- [PO-400](https://linear.app/revenexx/issue/PO-400) — AC-14: a test's answer was typed
+  as one plain string, so no package could ship it in a second language

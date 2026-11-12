@@ -686,7 +686,9 @@ export class SmtpCredential extends SimpleValueCredential {
 Key contract points:
 
 - `test(ctx, config)` returns `ICredentialTestResult` (`{ ok, message? }`) — it
-  **does not** throw or return `void`. Called on-demand by the broker.
+  **does not** throw or return `void`. Called on-demand by the broker. `message`
+  is a `LocalizedString`: write your own sentence as `{ de, en }` so the studio
+  shows it in its language; a thrown error's text may pass through as a string.
 - `resolve(ctx, config, durableCreds)` returns `ICredentialResolveResult`
   (`{ credentials, expiresAt? }`). `durableCreds` holds system-managed long-lived
   secrets (e.g. a rotated `refresh_token`) and is `null` until they exist.
