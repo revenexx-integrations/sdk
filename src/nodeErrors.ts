@@ -38,9 +38,43 @@ export function toErrorOutput(err: unknown): NodeErrorOutput {
     return { code: 'TIMEOUT', message: 'Request timed out', status: 0 };
   }
   if (err instanceof Error) {
-    return { code: 'REQUEST_FAILED', message: err.message, status: 0 };
+    const codes = causeCodes(err);
+    const message = codes.length > 0 ? `${err.message} (${codes.join(', ')})` : err.message;
+    return { code: 'REQUEST_FAILED', message, status: 0 };
   }
   return { code: 'REQUEST_FAILED', message: String(err), status: 0 };
+}
+
+/**
+ * What a system error code looks like: `ECONNRESET`, `ENOTFOUND`,
+ * `UND_ERR_CONNECT_TIMEOUT`, `CERT_HAS_EXPIRED`. Anything else in a `code` —
+ * a lowercase word, a number, a sentence — is not taken, because the message
+ * this feeds reaches the tenant and must carry nothing but a code.
+ */
+const SYSTEM_ERROR_CODE = /^[A-Z][A-Z0-9_]{1,63}$/;
+
+/**
+ * The codes of why a request got no answer, read off the error's `cause`: the
+ * cause's own `code`, or — when the runtime tried several addresses and the cause
+ * is an `AggregateError` — each distinct code of its `errors`, in the order met.
+ *
+ * Only the code. The cause's own message names the address and port it tried
+ * (`connect ECONNREFUSED 10.31.0.41:8080`), which may be the platform's own
+ * network and must not reach a tenant (IN-105).
+ */
+function causeCodes(err: Error): string[] {
+  const cause = (err as { cause?: unknown }).cause;
+  if (typeof cause !== 'object' || cause === null) return [];
+  const nested = (cause as { errors?: unknown }).errors;
+  const codes: string[] = [];
+  const take = (candidate: unknown) => {
+    const code = (candidate as { code?: unknown } | null | undefined)?.code;
+    if (typeof code === 'string' && SYSTEM_ERROR_CODE.test(code) && !codes.includes(code)) codes.push(code);
+  };
+  if (Array.isArray(nested)) for (const candidate of nested) take(candidate);
+  // The aggregate's own code counts only where none of the addresses tried carried one.
+  if (codes.length === 0) take(cause);
+  return codes;
 }
 
 /** Wrap an error output into an `INodeResult` routed to the `error` port. */

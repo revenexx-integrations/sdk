@@ -54,6 +54,73 @@ test('an abort becomes TIMEOUT and anything else REQUEST_FAILED [@spec:error-han
   });
 });
 
+/** The runtime's own shape for a request that got no answer: `TypeError('fetch failed')` with the reason as its cause. */
+function fetchFailed(cause?: unknown): TypeError {
+  return cause === undefined ? new TypeError('fetch failed') : new TypeError('fetch failed', { cause });
+}
+
+/** A system error as the runtime raises it: a message naming the address, and a code. */
+function systemError(code: string, message: string): Error {
+  return Object.assign(new Error(message), { code });
+}
+
+test('a request without an answer says which kind of failure it was, and nothing of the address [@spec:error-handling:AC-1]', () => {
+  const refused = toErrorOutput(fetchFailed(systemError('ECONNREFUSED', 'connect ECONNREFUSED 10.31.0.41:8080')));
+  assert.deepEqual(refused, { code: 'REQUEST_FAILED', message: 'fetch failed (ECONNREFUSED)', status: 0 });
+
+  assert.equal(
+    toErrorOutput(fetchFailed(systemError('ECONNRESET', 'read ECONNRESET'))).message,
+    'fetch failed (ECONNRESET)',
+  );
+  assert.equal(
+    toErrorOutput(fetchFailed(systemError('ENOTFOUND', 'getaddrinfo ENOTFOUND sap.internal.example'))).message,
+    'fetch failed (ENOTFOUND)',
+  );
+
+  // Several addresses tried: each distinct code once, in the order met, and none
+  // of the addresses the aggregate's own errors name.
+  const aggregate = Object.assign(
+    new AggregateError(
+      [
+        systemError('ECONNREFUSED', 'connect ECONNREFUSED 10.31.0.41:8080'),
+        systemError('ETIMEDOUT', 'connect ETIMEDOUT [fd00::41]:8080'),
+        systemError('ECONNREFUSED', 'connect ECONNREFUSED 10.31.0.42:8080'),
+      ],
+      'connect failed',
+    ),
+    { code: 'ECONNREFUSED' },
+  );
+  const several = toErrorOutput(fetchFailed(aggregate));
+  assert.equal(several.message, 'fetch failed (ECONNREFUSED, ETIMEDOUT)');
+  assert.doesNotMatch(several.message, /10\.31|fd00|8080/);
+
+  // An aggregate whose errors carry no code still says the code it carries itself.
+  const bare = Object.assign(new AggregateError([new Error('one'), new Error('two')], 'connect failed'), {
+    code: 'EHOSTUNREACH',
+  });
+  assert.equal(toErrorOutput(fetchFailed(bare)).message, 'fetch failed (EHOSTUNREACH)');
+});
+
+test('a failure without a readable cause code keeps its message as it was [@spec:error-handling:AC-1]', () => {
+  assert.deepEqual(toErrorOutput(fetchFailed()), { code: 'REQUEST_FAILED', message: 'fetch failed', status: 0 });
+  // A cause without a code, a cause that is not an object, and a code that is not
+  // a system error code (it could carry anything) add nothing.
+  assert.equal(toErrorOutput(fetchFailed(new Error('connect to 10.31.0.41 failed'))).message, 'fetch failed');
+  assert.equal(toErrorOutput(fetchFailed('10.31.0.41:8080')).message, 'fetch failed');
+  assert.equal(toErrorOutput(fetchFailed(systemError('refused by 10.31.0.41', 'x'))).message, 'fetch failed');
+  assert.equal(toErrorOutput(fetchFailed({ code: 111 })).message, 'fetch failed');
+
+  // The code and status an author branches on do not change.
+  const out = toErrorOutput(fetchFailed(systemError('ECONNRESET', 'read ECONNRESET')));
+  assert.equal(out.code, 'REQUEST_FAILED');
+  assert.equal(out.status, 0);
+
+  // A NodeError keeps its own message: what it says was written for the author already.
+  const node = new NodeError('TIMEOUT', 'Request timed out after 5000ms');
+  (node as Error & { cause?: unknown }).cause = systemError('ETIMEDOUT', 'connect ETIMEDOUT 10.31.0.41:8080');
+  assert.equal(toErrorOutput(node).message, 'Request timed out after 5000ms');
+});
+
 test('a routed failure names the output it took [@spec:error-handling:AC-2]', () => {
   const res = errorResult({ code: 'TIMEOUT', message: 'too slow', status: 0 });
   assert.equal(res.branch, 'error');
