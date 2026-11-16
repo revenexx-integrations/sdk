@@ -52,10 +52,11 @@ node.**
 - **And** a `REQUEST_FAILED` says why where the error knows it, by the system's own
   code: a failure whose cause carries one appends it — `fetch failed (ECONNRESET)`,
   `fetch failed (UND_ERR_SOCKET)`, and where several addresses were tried each distinct
-  code once — and an error raised while looking a name up or connecting is reported as
-  its call and code alone, `getaddrinfo ENOTFOUND`. Only codes: never the wording of a
-  cause, nor the host, address or port an attempt went to; `code` and `status` are the
-  same as without it
+  code once — an error raised while looking a name up or connecting is reported as its
+  call and code alone, `getaddrinfo ENOTFOUND`, and one that tried several addresses
+  itself names each distinct code, `Connection failed (ECONNREFUSED)`. What is added is only codes, never
+  the wording of a cause, and the host, address or port a lookup or connect error named
+  is left out; `code` and `status` are the same as without it
 - **Because** the editor offers the author fields to branch on before any run exists, so
   the three have to mean the same thing behind every node in every package — and a
   failure every node reports in the same two words cannot tell a firewall from a dead

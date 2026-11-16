@@ -119,6 +119,26 @@ test('a lookup or connect error raised directly is reported by its call and code
   });
   assert.equal(toErrorOutput(connect).message, 'connect ECONNREFUSED');
 
+  // The guard's own lookup marks its error only with the hostname, not with a syscall.
+  const guarded = Object.assign(new Error('getaddrinfo ENOTFOUND sftp.internal.example'), {
+    code: 'ENOTFOUND',
+    hostname: 'sftp.internal.example',
+  });
+  assert.equal(toErrorOutput(guarded).message, 'getaddrinfo ENOTFOUND');
+
+  // A socket library trying several addresses throws the aggregate itself, with no message.
+  const both = Object.assign(
+    new AggregateError(
+      [
+        Object.assign(new Error('connect ECONNREFUSED 10.31.0.41:22'), { code: 'ECONNREFUSED', syscall: 'connect' }),
+        Object.assign(new Error('connect ECONNREFUSED [fd00::41]:22'), { code: 'ECONNREFUSED', syscall: 'connect' }),
+      ],
+      '',
+    ),
+    { code: 'ECONNREFUSED' },
+  );
+  assert.equal(toErrorOutput(both).message, 'Connection failed (ECONNREFUSED)');
+
   // A socket error on a connection already open names no address, and keeps its message.
   const reset = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET', syscall: 'read' });
   assert.equal(toErrorOutput(reset).message, 'read ECONNRESET');

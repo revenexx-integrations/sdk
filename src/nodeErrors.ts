@@ -81,10 +81,15 @@ const MAX_CODES = 4;
  */
 function requestFailedMessage(err: Error): string {
   try {
-    const own = systemCode(err);
-    const syscall = (err as { syscall?: unknown }).syscall;
-    if (own && typeof syscall === 'string' && ADDRESSING_SYSCALLS.has(syscall)) return `${syscall} ${own}`;
-    const codes = causeCodes(err);
+    const addressing = addressingCall(err);
+    if (addressing) return addressing;
+    // Several addresses tried by a socket library without fetch: the aggregate
+    // itself is thrown, with an empty message and one error per address.
+    if (Array.isArray((err as { errors?: unknown }).errors)) {
+      const codes = codesOf(err);
+      if (codes.length > 0) return `${err.message || 'Connection failed'} (${codes.join(', ')})`;
+    }
+    const codes = codesOf((err as { cause?: unknown }).cause);
     return codes.length > 0 ? `${err.message} (${codes.join(', ')})` : err.message;
   } catch {
     return 'Request failed';
@@ -97,8 +102,26 @@ function systemCode(candidate: unknown): string | undefined {
   return typeof code === 'string' && SYSTEM_ERROR_CODE.test(code) ? code : undefined;
 }
 
-function causeCodes(err: Error): string[] {
-  const cause = (err as { cause?: unknown }).cause;
+/**
+ * A system error raised while looking a name up or connecting, as its call and
+ * code alone. Node marks one with its `syscall`; the guard's own lookup marks one
+ * only with the `hostname` it could not resolve, so that counts as a lookup too.
+ */
+function addressingCall(err: Error): string | undefined {
+  const own = systemCode(err);
+  if (!own) return undefined;
+  const syscall = (err as { syscall?: unknown }).syscall;
+  if (typeof syscall === 'string') return ADDRESSING_SYSCALLS.has(syscall) ? `${syscall} ${own}` : undefined;
+  if ('hostname' in err) return `getaddrinfo ${own}`;
+  return undefined;
+}
+
+/**
+ * The codes an error carries for why it failed: each distinct code of its
+ * `errors` where it is an aggregate, otherwise — or where none of those carried
+ * one — its own `code`.
+ */
+function codesOf(cause: unknown): string[] {
   if (typeof cause !== 'object' || cause === null) return [];
   const nested = (cause as { errors?: unknown }).errors;
   const codes: string[] = [];
