@@ -101,6 +101,56 @@ test('a request without an answer says which kind of failure it was, and nothing
   assert.equal(toErrorOutput(fetchFailed(bare)).message, 'fetch failed (EHOSTUNREACH)');
 });
 
+test('a lookup or connect error raised directly is reported by its call and code, without the host [@spec:error-handling:AC-1]', () => {
+  // The shape the guard ahead of every safeFetch call re-throws when a name does not resolve.
+  const lookup = Object.assign(new Error('getaddrinfo ENOTFOUND sap.internal.example'), {
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'sap.internal.example',
+  });
+  assert.deepEqual(toErrorOutput(lookup), { code: 'REQUEST_FAILED', message: 'getaddrinfo ENOTFOUND', status: 0 });
+
+  // A client that connects without fetch (an FTP, SFTP or SMTP library) throws the socket's own error.
+  const connect = Object.assign(new Error('connect ECONNREFUSED 10.31.0.41:8080'), {
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '10.31.0.41',
+    port: 8080,
+  });
+  assert.equal(toErrorOutput(connect).message, 'connect ECONNREFUSED');
+
+  // A socket error on a connection already open names no address, and keeps its message.
+  const reset = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET', syscall: 'read' });
+  assert.equal(toErrorOutput(reset).message, 'read ECONNRESET');
+});
+
+test('socket and certificate failures from the runtime are named too [@spec:error-handling:AC-1]', () => {
+  // A connection the far end dropped arrives from undici as a SocketError, not as ECONNRESET.
+  const dropped = Object.assign(new Error('other side closed'), { name: 'SocketError', code: 'UND_ERR_SOCKET' });
+  assert.equal(toErrorOutput(fetchFailed(dropped)).message, 'fetch failed (UND_ERR_SOCKET)');
+  assert.equal(
+    toErrorOutput(fetchFailed(systemError('CERT_HAS_EXPIRED', 'certificate has expired'))).message,
+    'fetch failed (CERT_HAS_EXPIRED)',
+  );
+});
+
+test('an error object that resists being read still routes [@spec:error-handling:AC-1]', () => {
+  const hostile = fetchFailed();
+  Object.defineProperty(hostile, 'cause', {
+    get() {
+      throw new Error('no');
+    },
+  });
+  assert.deepEqual(toErrorOutput(hostile), { code: 'REQUEST_FAILED', message: 'Request failed', status: 0 });
+
+  // A sparse aggregate of enormous length is read only so far, and names few codes.
+  const errors: unknown[] = [];
+  errors.length = 2 ** 31;
+  for (const [i, code] of ['EA', 'EB', 'EC', 'ED', 'EE', 'EF'].entries()) errors[i] = { code };
+  const wide = toErrorOutput(fetchFailed({ errors }));
+  assert.equal(wide.message, 'fetch failed (EA, EB, EC, ED)');
+});
+
 test('a failure without a readable cause code keeps its message as it was [@spec:error-handling:AC-1]', () => {
   assert.deepEqual(toErrorOutput(fetchFailed()), { code: 'REQUEST_FAILED', message: 'fetch failed', status: 0 });
   // A cause without a code, a cause that is not an object, and a code that is not

@@ -2,4 +2,4 @@
 "@revenexx/integrations-node-sdk": minor
 ---
 
-`toErrorOutput` names why a request got no answer. A `REQUEST_FAILED` whose cause carries a system error code now says it in its message — `fetch failed (ECONNRESET)`, or each distinct code once where several addresses were tried — so a refused connection, a reset, a timeout while connecting and a name that did not resolve can be told apart in the run. Only the code is added, never the cause's own wording with the address it tried; `code` and `status` are unchanged.
+`toErrorOutput` names why a request failed. A `REQUEST_FAILED` whose cause carries a system error code now says it in its message — `fetch failed (ECONNRESET)`, or each distinct code once where several addresses were tried — and an error raised while looking a name up or connecting reads as its call and code, `getaddrinfo ENOTFOUND`, without the host or address its own message named. So a refused connection, a dropped one, a certificate problem and a name that did not resolve can be told apart in the run. Only codes are added; `code` and `status` are unchanged.

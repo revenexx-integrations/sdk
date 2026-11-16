@@ -49,12 +49,13 @@ node.**
   raises its own budget as `NodeError('TIMEOUT')` and re-throws the engine's abort
   reason untouched, so a node that checks its signal before routing never brings one
   here (see the gap below)
-- **And** a `REQUEST_FAILED` that got no answer at all — refused, reset, timed out while
-  connecting, a name that did not resolve — names which in its message, by the system's
-  own code: `fetch failed (ECONNRESET)`, and where several addresses were tried each
-  distinct code once. What it adds is only the code — never the cause's own wording,
-  which names the address and port the attempt went to — and `code` and `status` are
-  the same as without it
+- **And** a `REQUEST_FAILED` says why where the error knows it, by the system's own
+  code: a failure whose cause carries one appends it — `fetch failed (ECONNRESET)`,
+  `fetch failed (UND_ERR_SOCKET)`, and where several addresses were tried each distinct
+  code once — and an error raised while looking a name up or connecting is reported as
+  its call and code alone, `getaddrinfo ENOTFOUND`. Only codes: never the wording of a
+  cause, nor the host, address or port an attempt went to; `code` and `status` are the
+  same as without it
 - **Because** the editor offers the author fields to branch on before any run exists, so
   the three have to mean the same thing behind every node in every package — and a
   failure every node reports in the same two words cannot tell a firewall from a dead
@@ -126,14 +127,14 @@ node.**
   questions, which is what a shape with no single home does to a corpus. Whoever answers
   it retires those eight against the answer rather than adding a ninth. `message`
   carrying the far end's own wording is the half with a security edge — PO-345. One
-  part is settled: a request that got no answer adds the system's error code and never
-  the address it tried (AC-1, IN-105).
+  part is settled: a request that failed on the way adds the system's error code and
+  never the host or address it tried (AC-1, IN-105).
 
 ## Tickets
 
 - [IN-105](https://linear.app/revenexx/issue/IN-105) — a request that got no answer said
   only `fetch failed`: the message now names the system's code for why, and never the
-  address
+  host or address
 - [PO-442](https://linear.app/revenexx/issue/PO-442) — nothing said which failures end a
   run and which the workflow could carry on from: the three classes above, the shape and
   the port lifted out of `integrations-nodes-core` so every package reaches one copy
