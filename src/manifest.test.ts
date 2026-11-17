@@ -113,7 +113,7 @@ test('buildManifest carries a credential network declaration and a vpn-route set
         { key: 'host', label: 'Host', type: 'string', required: true },
         { key: 'port', label: 'Port', type: 'number', required: true },
       ],
-      network: { kind: 'tcp', hostField: 'host', portField: 'port' },
+      network: { kind: 'tcp', hostField: 'host', portField: 'port', portMapField: 'dataPorts' },
     },
   };
   const routedNode: INode = {
@@ -129,7 +129,7 @@ test('buildManifest carries a credential network declaration and a vpn-route set
   };
   const manifest = buildManifest([routedNode], [routedCredential, fakeCredential]);
 
-  assert.deepEqual(manifest.credentials?.[0]?.network, { kind: 'tcp', hostField: 'host', portField: 'port' });
+  assert.deepEqual(manifest.credentials?.[0]?.network, { kind: 'tcp', hostField: 'host', portField: 'port', portMapField: 'dataPorts' });
   assert.equal('network' in (manifest.credentials?.[1] ?? {}), false);
   const [route, url] = manifest.nodes[0]?.config ?? [];
   assert.equal(route?.type, 'vpn-route');

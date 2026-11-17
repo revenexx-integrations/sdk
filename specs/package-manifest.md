@@ -10,7 +10,7 @@ where:
   - SLUG_PATTERN, NAMESPACED_SLUG_PATTERN, SEMVER_PATTERN, CONFIG_KEY_PATTERN — the rules it judges them by
 docs:
   - docs/overview.md
-updated: 2026-11-05
+updated: 2026-11-17
 ---
 
 # What a package tells the registry
@@ -171,8 +171,8 @@ nothing to compare against, because there is no second source.
   (`network`), and a node with a `vpn-route` setting that names the kind of route it
   wants (`routeKind`)
 - **When** the manifest is built
-- **Then** both arrive exactly as declared, and a credential kind or a setting that
-  declares none carries none
+- **Then** both arrive exactly as declared — a `tcp` declaration's port map key
+  included — and a credential kind or a setting that declares none carries none
 - **Because** the studio offers a VPN route only where the kind says what the route
   replaces, and the platform substitutes exactly those fields; a declaration lost or
   defaulted on the way is a choice the author did not make
@@ -241,6 +241,8 @@ nothing to compare against, because there is no second source.
 
 ## Tickets
 
+- [PO-844](https://linear.app/revenexx/issue/PO-844) — AC-14: a `tcp` declaration may
+  name a port map key, carried like the rest
 - [PO-126](https://linear.app/revenexx/issue/PO-126) — credentials joined the envelope,
   which is where AC-2 comes from
 - [PO-161](https://linear.app/revenexx/issue/PO-161) — the display label read from the
