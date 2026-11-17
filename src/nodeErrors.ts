@@ -38,9 +38,103 @@ export function toErrorOutput(err: unknown): NodeErrorOutput {
     return { code: 'TIMEOUT', message: 'Request timed out', status: 0 };
   }
   if (err instanceof Error) {
-    return { code: 'REQUEST_FAILED', message: err.message, status: 0 };
+    return { code: 'REQUEST_FAILED', message: requestFailedMessage(err), status: 0 };
   }
   return { code: 'REQUEST_FAILED', message: String(err), status: 0 };
+}
+
+/**
+ * What a system error code looks like: `ECONNRESET`, `ENOTFOUND`,
+ * `UND_ERR_SOCKET`, `CERT_HAS_EXPIRED`. Anything else in a `code` — a lowercase
+ * word, a number, a sentence, a dotted name — is not taken, because the message
+ * this feeds reaches the tenant and must carry nothing but a code.
+ */
+const SYSTEM_ERROR_CODE = /^[A-Z][A-Z0-9_]{1,63}$/;
+
+/**
+ * The calls whose own error message names the host or address it tried
+ * (`getaddrinfo ENOTFOUND sap.internal`, `connect ECONNREFUSED 10.31.0.41:8080`).
+ * Such an error is reported by its call and code alone.
+ */
+const ADDRESSING_SYSCALLS = new Set(['getaddrinfo', 'connect']);
+
+/** How many entries of an aggregate are read, and how many codes are named at most. */
+const MAX_AGGREGATE_ENTRIES = 16;
+const MAX_CODES = 4;
+
+/**
+ * The message of a `REQUEST_FAILED`, with why the request got no answer where
+ * the error says so (IN-105):
+ *
+ * - The runtime's own `TypeError('fetch failed')` carries the reason as its
+ *   `cause`: its `code`, or, where several addresses were tried and the cause is
+ *   an `AggregateError`, each distinct code of its `errors`. They are appended:
+ *   `fetch failed (ECONNRESET)`.
+ * - A system error raised while resolving or connecting — the guard's own lookup
+ *   ahead of a `safeFetch` call throws one — names the host or address in its
+ *   message, so it is reported as its call and code: `getaddrinfo ENOTFOUND`.
+ *
+ * Only codes. The wording of a cause, and the message of an addressing system
+ * error, carry the address and port the attempt went to, which may be the
+ * platform's own network and must not reach a tenant. Reading a hostile error
+ * object never throws out of here: the caller is a catch block.
+ */
+function requestFailedMessage(err: Error): string {
+  try {
+    const addressing = addressingCall(err);
+    if (addressing) return addressing;
+    // Several addresses tried by a socket library without fetch: the aggregate
+    // itself is thrown, with an empty message and one error per address.
+    if (Array.isArray((err as { errors?: unknown }).errors)) {
+      const codes = codesOf(err);
+      if (codes.length > 0) return `${err.message || 'Connection failed'} (${codes.join(', ')})`;
+    }
+    const codes = codesOf((err as { cause?: unknown }).cause);
+    return codes.length > 0 ? `${err.message} (${codes.join(', ')})` : err.message;
+  } catch {
+    return 'Request failed';
+  }
+}
+
+function systemCode(candidate: unknown): string | undefined {
+  if (typeof candidate !== 'object' || candidate === null) return undefined;
+  const code = (candidate as { code?: unknown }).code;
+  return typeof code === 'string' && SYSTEM_ERROR_CODE.test(code) ? code : undefined;
+}
+
+/**
+ * A system error raised while looking a name up or connecting, as its call and
+ * code alone. Node marks one with its `syscall`; the guard's own lookup marks one
+ * only with the `hostname` it could not resolve, so that counts as a lookup too.
+ */
+function addressingCall(err: Error): string | undefined {
+  const own = systemCode(err);
+  if (!own) return undefined;
+  const syscall = (err as { syscall?: unknown }).syscall;
+  if (typeof syscall === 'string') return ADDRESSING_SYSCALLS.has(syscall) ? `${syscall} ${own}` : undefined;
+  if ('hostname' in err) return `getaddrinfo ${own}`;
+  return undefined;
+}
+
+/**
+ * The codes an error carries for why it failed: each distinct code of its
+ * `errors` where it is an aggregate, otherwise — or where none of those carried
+ * one — its own `code`.
+ */
+function codesOf(cause: unknown): string[] {
+  if (typeof cause !== 'object' || cause === null) return [];
+  const nested = (cause as { errors?: unknown }).errors;
+  const codes: string[] = [];
+  const take = (candidate: unknown) => {
+    const code = systemCode(candidate);
+    if (code && !codes.includes(code) && codes.length < MAX_CODES) codes.push(code);
+  };
+  if (Array.isArray(nested)) {
+    for (let i = 0; i < Math.min(nested.length, MAX_AGGREGATE_ENTRIES); i++) take(nested[i]);
+  }
+  // The aggregate's own code counts only where none of the addresses tried carried one.
+  if (codes.length === 0) take(cause);
+  return codes;
 }
 
 /** Wrap an error output into an `INodeResult` routed to the `error` port. */
