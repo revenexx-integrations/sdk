@@ -642,14 +642,23 @@ export interface ICredentialDescription {
    * - `http` — the route's endpoint replaces the base of the `urlField` value,
    *   keeping any path the author typed after it.
    *
+   * A `tcp` declaration may add `portMapField` (PO-844): a config key that is
+   * **not** one of `fields`. Through a route the platform fills it with
+   * `{ "<port on the host>": <relay port> }` for every enabled `tcp` route of
+   * the same connection to the same host, the route itself included; without a
+   * route the key is absent. For a protocol that opens further connections to
+   * ports the server names — FTP's data connections — so the code dials the
+   * relay port of the port the server named, on the host it was given.
+   *
    * The stored configuration is never rewritten; the platform substitutes the
    * route's current endpoint each time the credential is tested or resolved.
    *
    * **Accepted by the registry only once integrations#406 is deployed** — until
-   * then a package declaring it is refused on upload.
+   * then a package declaring it is refused on upload. `portMapField` likewise
+   * only once the integrations release carrying PO-844 is.
    */
   network?:
-    | { kind: 'tcp'; hostField: string; portField: string }
+    | { kind: 'tcp'; hostField: string; portField: string; portMapField?: string }
     | { kind: 'http'; urlField: string };
 }
 
