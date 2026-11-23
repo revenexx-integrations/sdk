@@ -27,7 +27,8 @@ and a node asks for the one it cares about.
 
 - **Given** a run context naming `customer_id`, `filters.customer` and `lines[2].sku`
 - **When** `wasUnresolved` is asked for one of those paths
-- **Then** it answers yes, and no for any other path — a parent of a named path
+- **Then** `wasUnresolved` answers yes for a named path
+- **And** `wasUnresolved` answers no for any other path — a parent of a named path
   included
 - **Because** a node decides per setting: the filter it would drop is one path, not
   the group it sits in
@@ -48,7 +49,8 @@ and a node asks for the one it cares about.
 - **Given** a run context naming `filters` and `lines[2]`
 - **When** `wasUnresolved` is asked for `filters.customer`, `filters[0]` or
   `lines[2].sku`
-- **Then** it answers yes, and no for a path that only begins with the same letters
+- **Then** `wasUnresolved` answers yes
+- **And** `wasUnresolved` answers no for a path that only begins with the same letters
   (`filtersByDate`, `lines[20].sku`)
 - **Because** the engine names the setting that was one placeholder whole; when that is
   the group, the filter inside it was emptied with it and is not named on its own

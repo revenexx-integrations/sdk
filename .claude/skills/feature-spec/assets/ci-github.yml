@@ -17,6 +17,14 @@
 #     host, than to start the stack here.
 #   * Never add `--since` to this job. That mode is a report, always exits 0, and
 #     would leave a green check proving nothing.
+#   * `--base` and `fetch-depth: 0` serve the register (`register` in
+#     spec.config.json): the gate compares what the register shows against the base
+#     and asks for a version bump when it changed, which needs the base's history. A
+#     repository without the key ignores both. A base the gate cannot find fails the
+#     job, except after a force-push: `before` then names a commit no branch reaches,
+#     so the run passes an empty base and the gate compares against `origin/main`.
+#     On a force-push to main itself that is HEAD, so the bump rule finds nothing to
+#     compare; the gate says so in a note rather than passing in silence.
 #
 # A job that exists is not yet a guarantee: unless `spec-check` is a REQUIRED status
 # check on the protected branch, a pull request can merge while it is red.
@@ -32,9 +40,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 {{SETUP}}
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
       - run: {{INSTALL}}
-      - run: {{RUN}}
+      - run: {{RUN}} --base "${{ github.event.pull_request.base.sha || (!github.event.forced && github.event.before) || '' }}"

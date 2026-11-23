@@ -39,7 +39,8 @@ looks like something.**
 
 - **Given** text declared as one string per language
 - **When** it is reduced, with or without a language named
-- **Then** the named language is used, and a default one when none was named
+- **Then** the named language is used
+- **And** a default language is used when none was named
 - verify: unit
 
 ### AC-3 — A language that was not written falls back to one that was

@@ -106,8 +106,8 @@ nothing to compare against, because there is no second source.
 
 - **Given** a label that is empty, only spaces, or padded with them
 - **When** it is read
-- **Then** an empty or space-only label is treated as absent, and a padded one arrives
-  trimmed
+- **Then** an empty or space-only label is treated as absent
+- **And** a padded label arrives trimmed
 - **Because** the label is drawn in a palette: a space-only one renders as a nameless
   entry nobody can search for, which is worse than falling back to the package name
 - **Pair** AC-7
@@ -117,8 +117,8 @@ nothing to compare against, because there is no second source.
 
 - **Given** a name or version padded with spaces, or consisting only of spaces
 - **When** they are read
-- **Then** they arrive trimmed, and a space-only one becomes empty rather than a string
-  of spaces
+- **Then** a padded name or version arrives trimmed
+- **And** a space-only name or version becomes empty rather than a string of spaces
 - verify: unit
 
 ### AC-10 — Metadata that is not readable yields a safe shape, not a failure
@@ -145,7 +145,8 @@ nothing to compare against, because there is no second source.
 
 - **Given** a node that declares where it stands in its palette folder
 - **When** the manifest is built
-- **Then** the position arrives as it was declared, and a node that declares none carries none
+- **Then** the position arrives as it was declared
+- **And** a node that declares no position carries none
 - **Because** the position is how a package orders a folder independently of the order of
   `NODES`; a default filled in here would be indistinguishable from one the author chose
 - **Pair** AC-11
@@ -156,10 +157,11 @@ nothing to compare against, because there is no second source.
 - **Given** metadata declaring an icon for the package's folder under this platform's
   group — well formed, blank, not text, or not a Lucide name
 - **When** it is read, and when the manifest is built
-- **Then** a well-formed icon arrives trimmed, a blank one counts as none, one that is
-  not text counts as none with a warning — as the registry reads both — and one that is
-  not `lucide:` and a kebab-case name stops the build before the package's code runs,
-  naming the field and the value
+- **Then** a well-formed icon arrives trimmed
+- **And** a blank icon counts as none, as the registry reads it
+- **And** an icon that is not text counts as none with a warning, as the registry reads it
+- **And** an icon that is not `lucide:` and a kebab-case name stops the build before the
+  package's code runs, naming the field and the value
 - **Because** the registry refuses such a package on upload; stopping here tells the
   author while they can still fix it, rather than when a release fails
 - **Pair** AC-7
@@ -167,12 +169,13 @@ nothing to compare against, because there is no second source.
 
 ### AC-14 — What a VPN route replaces, and a setting that picks one, are carried as declared
 
-- **Given** a credential kind that declares which of its fields a VPN route replaces
-  (`network`), and a node with a `vpn-route` setting that names the kind of route it
-  wants (`routeKind`)
+- **Given** both of these declarations
+  - a credential kind that declares which of its fields a VPN route replaces (`network`)
+  - a node with a `vpn-route` setting that names the kind of route it wants
+    (`routeKind`)
 - **When** the manifest is built
-- **Then** both arrive exactly as declared — a `tcp` declaration's port map key
-  included — and a credential kind or a setting that declares none carries none
+- **Then** both arrive exactly as declared — a `tcp` declaration's port map key included
+- **And** a credential kind or a setting that declares none carries none
 - **Because** the studio offers a VPN route only where the kind says what the route
   replaces, and the platform substitutes exactly those fields; a declaration lost or
   defaulted on the way is a choice the author did not make
@@ -181,14 +184,16 @@ nothing to compare against, because there is no second source.
 
 ### AC-15 — A name the registry would refuse stops the build, naming the node, the field and the rule
 
-- **Given** a node whose slug, version, port name, `sourceFromConfig`, fallback name,
-  setting key, `dependsOn` key, `showIf` key or named credential type does not match the
-  pattern the registry's schema holds it to — a port called `notFound`, say, where a
-  setting may be called `postalCode`
+- **Given** a node with a name that does not match the pattern the registry's schema
+  holds it to
+  - its slug, version, port name, `sourceFromConfig`, fallback name, setting key,
+    `dependsOn` key, `showIf` key or named credential type
+  - a port called `notFound`, say, where a setting may be called `postalCode`
 - **When** the manifest is built by `rvnxx-nodes manifest`
-- **Then** the build stops before anything is written, and names every such value with
-  its node, the path of the field and the pattern; a node whose names all match builds
-  as before
+- **Then** the build stops before anything is written
+- **And** the build names every such value with its node, the path of the field and the
+  pattern
+- **And** a node whose names all match builds as before
 - **Because** the registry refuses such a package on upload with a `422`, after the
   build, the tests and the preview have all passed, and renaming a port once workflows
   are wired to it breaks every one of them
@@ -199,8 +204,10 @@ nothing to compare against, because there is no second source.
 
 - **Given** a package whose nodes include one with `extractItems` and one without
 - **When** the manifest is built
-- **Then** the first carries `iteration: true` and every other node `iteration: false`,
-  the key written on each node, and a node's own declaration cannot set it
+- **Then** the node with `extractItems` carries `iteration: true`
+- **And** every other node carries `iteration: false`
+- **And** the key is written on each node
+- **And** a node's own declaration cannot set `iteration`
 - **Because** the platform's save check and the worker must recognise a loop by one
   sign. The worker runs whatever has `extractItems`; the save check sees only the
   manifest, and guessed from the output names `item` and `done`. Written on every node

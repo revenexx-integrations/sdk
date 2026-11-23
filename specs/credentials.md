@@ -101,8 +101,11 @@ failure never repeats what the account said.**
 
 - **Given** a person is about to be sent to the provider to grant access
 - **When** the link is built
-- **Then** it asks for a code, names the application, carries the caller's state, and
-  carries a challenge whose verifier is handed back to the caller
+- **Then** the link does each of these
+  - asks for a code
+  - names the application
+  - carries the caller's state
+  - carries a challenge whose verifier is handed back to the caller
 - **Because** without the challenge, a code intercepted on its way back can be redeemed
   by whoever intercepted it; without the state, the callback cannot be tied to the
   person who started
@@ -155,7 +158,8 @@ failure never repeats what the account said.**
 - **Given** a token endpoint that refuses, answering with the standard error fields and
   whatever else it chooses to include
 - **When** the failure reaches the caller
-- **Then** it carries the error and its description, and no other part of that answer
+- **Then** the failure carries the error and its description
+- **And** the failure carries no other part of that answer
 - **Because** the body of a token response is the least predictable thing this package
   handles and can carry anything the provider put there; passing it through verbatim
   puts it in logs, in run records and in front of whoever opens the failed run
@@ -167,8 +171,8 @@ failure never repeats what the account said.**
 - **Given** a token endpoint that answers with far more than a token exchange could
   honestly need
 - **When** the credential is resolved
-- **Then** the resolve fails for the weight of the answer, and it fails that way
-  whether the answer was a token or a refusal
+- **Then** the resolve fails for the weight of the answer
+- **And** the resolve fails that way whether the answer was a token or a refusal
 - **Because** this is the one answer in the package no node's settings stand in front
   of, so there is nobody to offer the cap to and nobody to notice its absence — and a
   resolve runs in the worker every workflow shares, which is what reading an
@@ -181,8 +185,8 @@ failure never repeats what the account said.**
 - **Given** a credential test that fails on a missing setting, or an OAuth credential
   whose configuration is complete but not yet consented
 - **When** it is tested
-- **Then** the answer carries the sentence in German and in English, and the studio
-  shows the one it is set to
+- **Then** the test's answer carries its sentence in German and in English
+- **And** the studio shows the test's sentence in the language the studio is set to
 - **Because** the answer is the package's own sentence beside an interface that is
   otherwise in the operator's language; a thrown error's own text is passed on as it
   came and stays in its language

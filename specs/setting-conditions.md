@@ -37,8 +37,8 @@ same answer.**
 - **Given** a node whose setting declares a condition — a key, an operator, and where
   the operator takes one, a value
 - **When** the manifest is built
-- **Then** the condition is carried through as declared, and a setting that declares
-  none carries none
+- **Then** the condition is carried through as declared
+- **And** a setting that declares no condition carries none
 - **Because** the manifest is the only thing an editor reads before anything runs; a
   condition lost here is a field drawn under a choice that makes it meaningless, which
   is the whole failure this exists to end
@@ -49,9 +49,10 @@ same answer.**
 - **Given** a setting with a condition, and the values an author has filled in — which
   mid-edit routinely means none of them
 - **When** the setting is asked whether it applies
-- **Then** it applies while the condition holds, does not while it fails, and always
-  applies when it has no condition; a value that is not there reads as absent rather
-  than as an error
+- **Then** the setting applies while the condition holds
+- **And** the setting does not apply while the condition fails
+- **And** a setting with no condition always applies
+- **And** a value that is not there reads as absent rather than as an error
 - **Because** the answer is needed on every keystroke, before anything is saved and
   before anything is valid — a condition that threw on a half-filled form would be
   unusable exactly when it is needed
@@ -61,8 +62,9 @@ same answer.**
 
 - **Given** the operators a condition may use
 - **When** each is applied to a pair of values
-- **Then** it answers as the answer table states, every operator in the vocabulary has
-  a row in that table, and a word outside the vocabulary is refused
+- **Then** each operator answers as the answer table states
+- **And** every operator in the vocabulary has a row in that table
+- **And** a word outside the vocabulary is refused
 - **Because** these are the same words a condition node offers an author, and the same
   words a second implementation has to reproduce — the editor deciding whether to draw
   a setting, the platform deciding whether to demand one. A vocabulary whose meaning is

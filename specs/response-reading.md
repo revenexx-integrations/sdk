@@ -72,8 +72,9 @@ quietly handed on as text.
 
 ### AC-5 — A cap above the hard ceiling does not lift it
 
-- **Given** a caller asks to read with a cap larger than the ceiling this package
-  enforces — or with one that is zero, negative or not a number
+- **Given** a caller asks to read with a cap that cannot stand, in either of these ways
+  - larger than the ceiling this package enforces
+  - zero, negative or not a number
 - **When** the answer is read
 - **Then** the ceiling applies
 - **Because** the ceiling protects a worker shared by every workflow, so it cannot be
@@ -132,8 +133,8 @@ quietly handed on as text.
 
 - **Given** a node offers the size cap as one of its settings
 - **When** the setting is declared
-- **Then** it arrives as a number with the package default and an upper bound, and
-  that bound is the hard ceiling even when the node names a larger one
+- **Then** the setting arrives as a number with the package default and an upper bound
+- **And** the upper bound is the hard ceiling even when the node names a larger one
 - **Because** a node author should not have to restate the ceiling, and neither they
   nor the workflow author should be able to declare their way past it
 - **Pair** AC-5, which is the same ceiling enforced at the read rather than at the

@@ -96,7 +96,8 @@ rather than after it.
 
 - **Given** the engine's signal has already aborted
 - **When** the loop is entered
-- **Then** the operation is not run even once, and the call ends with the abort
+- **Then** the operation is not run even once
+- **And** the call ends with the abort
 - **Because** the run is over; work started after that point cannot be used and its
   side effects are nobody's responsibility
 - **Pair** AC-1, the same call with a signal that never aborts

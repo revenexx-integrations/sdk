@@ -41,8 +41,8 @@ engine.**
 - **Given** a node deciding whether to create a record in the target system or update the
   one already there
 - **When** it asks a mapping namespace for the partner id of the key it holds
-- **Then** it is answered either the partner id or `null`, and both are ordinary values it
-  branches on
+- **Then** the node is answered either the partner id or `null`
+- **And** the partner id and `null` are both ordinary values the node branches on
 - **Because** create-or-update is the question every integration opens with, so a
   correlation that does not exist yet is the most ordinary answer there is; signalled as a
   failure it would make the common path the exceptional one
@@ -53,8 +53,9 @@ engine.**
 - **Given** a node processing a delivery that may be the second copy of one it has already
   seen
 - **When** it claims the key of that delivery
-- **Then** it is told whether it got the claim, and a refusal is a value it routes to a
-  duplicate branch rather than something thrown at it
+- **Then** the node is told whether it got the claim
+- **And** a refusal is a value the node routes to a duplicate branch rather than something
+  thrown at it
 - **Because** at-least-once delivery makes a duplicate the normal case, and a normal case
   that arrives as a failure gets handled as an incident
 - **Pair** AC-1 — the same promise for the other of the two answers a store gives, and the
@@ -67,8 +68,9 @@ engine.**
 - **Given** a node reading a source incrementally
 - **When** it reads the watermark the last completed run left, and stages the one this run
   reached
-- **Then** it is handed the committed value as it stands, and the value it stages is passed
-  on exactly as written — a timestamp, a provider page token, whatever the source counts in
+- **Then** the node is handed the committed watermark as it stands
+- **And** the watermark the node stages is passed on exactly as written
+  - a timestamp, a provider page token, whatever the source counts in
 - **Because** how far a read got is the source's vocabulary and not this package's: a shape
   imposed here would fit whichever provider happened to be in mind when it was chosen
 - verify: unit
@@ -77,8 +79,9 @@ engine.**
 
 - **Given** a node syncing entities of which only a few have changed since the last run
 - **When** it asks whether an entity still carries the digest it is holding
-- **Then** the answer arrives before it writes anything, so a node told the entity is
-  unchanged finishes without performing the write and without staging a new digest
+- **Then** the answer arrives before the node writes anything
+- **And** a node told the entity is unchanged finishes without performing the write and
+  without staging a new digest
 - **Because** the whole point of a digest is the write that does not happen: an answer that
   only arrived afterwards would cost exactly what it was meant to save
 - verify: unit
@@ -88,7 +91,8 @@ engine.**
 - **Given** a node package testing a node that reads and writes what its workflow remembers
 - **When** it builds the run context to exercise that node with
 - **Then** the whole state surface can be stood in for by plain objects, in that package's
-  own tests, with nothing imported from this package but the type
+  own tests
+- **And** the stand-in needs nothing imported from this package but the type
 - **Because** a node's own tests are the only place its create-or-update and duplicate
   branches are ever checked; a store that could only be faked by standing up the engine
   would leave every node author choosing between a test against the real store and no test

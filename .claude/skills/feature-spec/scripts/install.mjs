@@ -275,6 +275,22 @@ if (usesReporter) vendor('spec-claims-reporter.mjs', 'scripts/spec-claims-report
 const defaults = readJson(join(assets, 'spec.config.json'), "the skill's spec.config.json")
 const existing = readJson(join(root, 'spec.config.json'), 'the existing spec.config.json')
 const config = existing ?? { ...defaults, suites }
+/**
+ * A `manifest.json` carrying a version and a name is what an app looks like, and an
+ * app's specs are what the capability register reads. A fresh install there switches
+ * the register on, with today's version as the floor: every spec this corpus will hold
+ * is written from now on, so none can claim an earlier release. An install that finds
+ * a config already in place leaves it alone, as with every other key, and says so.
+ */
+const appManifest = readJson(join(root, 'manifest.json'), 'manifest.json')
+const isApp = Boolean(appManifest?.version && appManifest?.name && appManifest?.vendor)
+if (!existing && isApp) {
+  config.register = { floor: appManifest.version }
+  say(review, `\`register\` is on with \`floor: ${appManifest.version}\`, because a \`manifest.json\` names this repo an app — every spec carries \`since:\` and \`visibility:\`, and \`npm run features\` writes \`features.json\` for the capability register — after every spec change and every version bump. Drop the key if nothing reads this repo as a register`)
+}
+else if (existing && isApp && !existing.register) {
+  say(review, `this repo has a \`manifest.json\` and its config no \`register\` — if the capability register should list its features, add \`"register": { "floor": "<first version that shipped specs>" }\`, backfill \`since:\` and \`visibility:\` in every spec, and commit what \`spec-check --emit\` writes. The key's \`$comment\` in the skill's \`assets/spec.config.json\` says what it switches on`)
+}
 if (!existing) {
   say(review, '`ceiling` is empty — fill in what this repo\'s harness cannot reach at any layer (a mocked transport, an external system), so a promise beyond it lands on `manual` or `todo` rather than on a layer that cannot prove it')
   say(review, `\`houseRules\` points at \`${config.specDir}/README.md\`, whose last sections are empty on purpose and fill at different times — the surface register with the first spec, because every spec's \`where:\` already holds the material; the words and the cuts when this repo has one to record. What must NOT go in there is anything this file already has a key for: \`suites\`, \`ceiling\`, \`audience\`, \`ticketPattern\`, \`indexRegister\` are settled here, and stating one twice produces two truths about one thing`)
@@ -327,8 +343,16 @@ test that proves it; \`spec:check\` holds the two together.
      points of its life — settled by agreement and written down so the next author
      follows them. Empty until two authors could reasonably write two words for one
      thing. Settling one obliges a sweep: replace the word that lost in every spec
-     and here, in the same change, because nothing in the gate can see a drifted
-     term. A word a sibling corpus already settled is borrowed and cited, not
+     and here, in the same change. Record the words that lost, and the gate sweeps
+     with you — the word that won opens the entry in bold, the ones it replaced
+     follow \`Not:\` to the end of that sentence, and each of them is then an error
+     wherever it still stands:
+
+       - **cost centre** — the money a line is booked against. Not: *cost center*,
+         *costcentre*.
+
+     An entry with no \`Not:\` settles a word without retiring a synonym and is read
+     as prose. A word a sibling corpus already settled is borrowed and cited, not
      decided again. -->
 
 ## The surfaces, and what the product calls them
@@ -376,7 +400,7 @@ if (pkg) {
     // silently would be the overwrite this script promises not to do.
     const indent = /^[ \t]+/m.exec(pkgText)?.[0] ?? 2
     const eol = pkgText.includes('\r\n') ? '\r\n' : '\n'
-    pkg.scripts = { ...scripts, 'spec:check': 'node scripts/spec-check.mjs' }
+    pkg.scripts = { ...scripts, 'spec:check': 'node scripts/spec-check.mjs', ...(config.register && !('features' in scripts) && { features: 'node scripts/spec-check.mjs --emit' }) }
     const body = JSON.stringify(pkg, null, indent).replaceAll('\n', eol)
     writeFileSync(pkgPath, pkgText.endsWith('\n') || pkgText.endsWith('\r\n') ? `${body}${eol}` : body)
     say(done, 'package.json → scripts["spec:check"]')
@@ -458,6 +482,14 @@ if (kept.length) console.log(`\nalready present, left alone:\n${kept.map(f => ` 
 
 if (existing) {
   say(review, 'this repo already had a `spec.config.json`, so it was left untouched — the layers above are the ones it declares, not the ones this run detected. Merge anything missing by hand')
+  if (!existing.wordRegister) say(review, "this config has no `wordRegister`, so a word this corpus settles is written down and swept by hand — the gate cannot see a term that drifted back. Copy the key and its `$comment` from the skill's `assets/spec.config.json`, and check the heading against the one this index uses")
+  // Against `undefined`, not against falsiness, and per key rather than for both at
+  // once. A ratchet's whole point is that 0 is a real and common figure — the one a
+  // fully migrated corpus records — so `!existing.formDebt?.longPromises` said
+  // "unmeasured" about the strictest config there is. And `&&` meant a config
+  // recording exactly one of the two was told about neither.
+  const unmeasured = ['longPromises', 'compoundPromises'].filter(k => existing.formDebt?.[k] === undefined)
+  if (unmeasured.length) say(review, `this config's \`formDebt\` records no ${unmeasured.map(k => `\`${k}\``).join(' / ')} — ${unmeasured.length > 1 ? 'the two promise-sentence counts go' : 'that promise-sentence count goes'} unmeasured. Add ${unmeasured.length > 1 ? 'both keys' : 'the key'} set to what \`spec:check\` reports once ${unmeasured.length > 1 ? 'they are' : 'it is'} in, which is this corpus's debt on the day it adopts ${unmeasured.length > 1 ? 'them' : 'it'}`)
   if (!existing.indexAsides) say(review, "this config has no `indexAsides`, so every section of the index except the register is read as the inventory — a bullet in the words section or the surface register counts as a spec's index row if a link opens it, and the real row can then be deleted in silence. Copy the key from the skill's `assets/spec.config.json` and check the four headings against the ones this index actually uses")
 }
 else {

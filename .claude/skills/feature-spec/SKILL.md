@@ -1,7 +1,7 @@
 ---
 name: feature-spec
-description: Keep a single point of truth for promised behaviour in specs/*.md and bind every promise to a test that proves it, via "@spec:feature:AC-n" tags a spec:check gate enforces in both directions. Use when writing or changing a feature spec, when a ticket changes promised behaviour, when wiring a test to an acceptance criterion, when spec:check fails, when asking which promises changed between two refs, or when installing the gate in a repository that has none yet. Invoke as "/feature-spec" followed by a ticket id, a spec path, or a feature area to bring a spec and its tests in line with reality.
-version: 1.0.0
+description: Keep a single point of truth for promised behaviour in specs/*.md and bind every promise to a test that proves it, via "@spec:feature:AC-n" tags a spec:check gate enforces in both directions. Use when writing or changing a feature spec, when a ticket changes promised behaviour, when wiring a test to an acceptance criterion, when spec:check fails, when asking which promises changed between two refs, when an app's specs feed the capability register (since/visibility/summary frontmatter, features.json), or when installing the gate in a repository that has none yet. Invoke as "/feature-spec" followed by a ticket id, a spec path, or a feature area to bring a spec and its tests in line with reality.
+version: 1.6.0
 visibility: private
 license: MIT
 allowed-tools:
@@ -192,17 +192,31 @@ The order is fixed, and most of it is checked:
 
 | Section | | Holds |
 | --- | --- | --- |
-| frontmatter | required | `feature` (equals the filename), `title`, `where` (at least one, in product language), `updated` (a real date, not in the future); `docs:` optional |
+| frontmatter | required | `feature` (equals the filename), `title`, `where` (at least one, in product language), `updated` (a real date, not in the future); `docs:` optional. With `register` on in the config: `since`, `visibility`, a public spec's `summary` (an internal one carries none), a renamed one's `formerly`; a hand-set date goes in `register.pinned` — [`references/spec-anatomy.md`](references/spec-anatomy.md#the-registers-fields) |
 | `# H1` | required | the same words as `title:` |
 | intro | required | opens by naming its subject in bold, in words from the title; closes on one bold line carrying the promise; nothing bold between the two |
 | `## Acceptance criteria` | required | `### AC-n — one promise`, then **Given** / **When** / **Then**, optional **And** / **Because** / **Pair**, and `verify:` last |
 | `## Elsewhere` | optional | what *another* spec promises — and it sits above `## Gaps` |
-| `## Gaps` | optional | what *this* spec does not promise, each entry under one of **Undecided** / **Known** / **Unreachable**, and the section opens on a label rather than a paragraph |
+| `## Gaps` | optional | what *this* spec does not promise, each entry under one of **Undecided** / **Known** / **Unreachable**, and the section opens on a label rather than a paragraph. A decision is not a gap: [`references/spec-anatomy.md`](references/spec-anatomy.md) says where it goes |
 | `## Tickets` | required | always last, one line per ticket |
 
 Each slot has one job, and `verify:` closes the criterion — the promise comes first,
 the machine-readable line answering for it comes last. `- reason:` and `- ticket:`
-say something about that line and are the only bullets that may follow it.
+say something about that line and are the only bullets that may follow it. **Those
+labels are the whole vocabulary of a criterion body**, and the gate holds it: no
+unlabelled bullet, no label the row above does not list, no loose paragraph. The reason
+is the promise report rather than tidiness — it reads a criterion by its labelled
+bullets, so a sentence written any other way is not read at all, and a promise the
+report cannot read fully fails silently to appear when it changes. What the rule
+allows, and where a refused sentence goes instead:
+[`references/spec-anatomy.md`](references/spec-anatomy.md).
+
+**A promise slot holds one promise, in at most 25 words.** A `**Then**` that states two
+outcomes is two promises under one tag, and the second one has a slot of its own —
+`**And**`. Both are counted as `formDebt` ratchets rather than enforced outright, so a
+corpus adopts them by paying them down. The present tense, what a hedge costs when it is
+shortened away, and why most promises are correctly passive:
+[`references/spec-anatomy.md`](references/spec-anatomy.md).
 
 **A new spec is not finished until the index has a row for it.** `specs/README.md`
 lists every spec, and the gate checks both directions — a spec missing from it, and a
@@ -210,8 +224,9 @@ row naming a file that is gone.
 
 **The index is one file and six sections, and they are the same six in every
 repository**, so a reader who knows one corpus's index knows where to look in the next.
-**Only the inventory and the register are checked** — the gate knows the other four by
-name, from `indexAsides` in the config, but only so that it can tell them apart from the
+**Three of the six are checked** — the inventory, the register, and the words, the last
+of them only where an entry retires a word. The gate knows the rest by name, from
+`indexAsides` in the config, but only so that it can tell them apart from the
 inventory. It would not notice one missing or reordered, and a renamed one has to be
 renamed in the config too, so those four are held by the next author to open the file:
 
@@ -220,7 +235,7 @@ renamed in the config too, so those four are held by the next author to open the
 | the inventory | with the first spec | one entry per spec, each opening its own bullet or row |
 | *what is not promised yet* | with the first surface left unpromised | the surface, and the ticket that will promise it — its heading is `indexRegister` in the config, and the row goes when the promise lands |
 | *how a spec is cut here* | with the first cut that took an argument | the calls the granularity list leaves to judgement, decided once |
-| *words these specs use* | with the first word two authors could write two ways | the terms the product leaves open, settled by agreement |
+| *words these specs use* | with the first word two authors could write two ways | the terms the product leaves open, settled by agreement — each entry naming the words it replaced, which is what the gate sweeps for |
 | *the surfaces, and what the product calls them* | with the first spec | one row per name a consumer reaches a promise by, and which spec promises it |
 | *how this stays true* | at install | what the gate holds and the command that runs it, for a reader who arrives without this skill |
 
@@ -233,12 +248,14 @@ Which words need settling cannot be known that early: it takes two authors reach
 two defensible words, and a section written before that is guesswork about a
 disagreement nobody has had.
 
-**Settling a word obliges a sweep of the corpus in the same change** — grep for the
-word that lost and replace it wherever it stands, specs and index alike. Nothing checks
-this and nothing can: a drifted term breaks no promise, so every file involved is green
-before the sweep and green after, and the only thing that finds those places is
-somebody writing the word down. `updated:` records when a promise last changed, so a
-file whose prose was only aligned keeps the date it has.
+**Settling a word obliges a sweep of the corpus in the same change** — replace the word
+that lost wherever it stands, specs and index alike. Write the loser into the entry and
+the gate sweeps with you: the word that won opens the entry in bold, the ones it
+replaced follow `Not:`, and each of them is then an error anywhere in the corpus. That
+is the whole reason the entry names them — a drifted term breaks no promise, so without
+the row every file involved is green before the sweep and green after. `updated:`
+records when a promise last changed, so a file whose prose was only aligned keeps the
+date it has.
 
 Which entry a register row carries, how a surface the product does not name is
 recorded, and what a word a sibling corpus already settled obliges:
@@ -367,6 +384,24 @@ one rule that outranks every entry in it:
 moved — the question a release note asks, and one a diff of `specs/` cannot answer.
 It is a report, not a gate, and always exits 0. See
 [`references/promise-diff.md`](references/promise-diff.md).
+
+## The capability register
+
+Where `register` is set in `spec.config.json` — an app, whose features the platform
+lists — the corpus is also the register's source. Each spec states `since:` and
+`visibility:`, and a public one a `summary:`; `npm run features` (`spec-check --emit`)
+writes them, with every criterion, to `features.json`, which is committed beside the
+specs. **A change to that file is a change to what the register shows, and it ships
+as a version**: against the base, the gate fails when the file changed and the
+manifest's version did not rise. The file carries the version too, so **every version
+bump runs `npm run features` again**, even without a spec change. A prose edit, a `**Because**`, a gap or the `updated:`
+date never reach the file, so they never ask for a release. A spec that disappears
+names its successor in `formerly:` or a row under `## Retired features` in the index:
+`` - `<id>` — <reason> ``, then the spec that carries its promises now, if any. When
+the register is switched on in a repository whose specs already shipped,
+`spec-check --backfill-since` writes every `since:` and the `floor` from git history,
+and the change raises the version: the first `features.json` is a register change too.
+The fields and the rules: [`references/spec-anatomy.md`](references/spec-anatomy.md#the-registers-fields).
 
 ## Install, once per repository
 

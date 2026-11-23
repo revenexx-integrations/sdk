@@ -32,9 +32,10 @@ every reader of the manifest exactly as written.**
 - **Given** a node whose output declares a value and, beside it, a value inside it
   under a dotted name
 - **When** the manifest is built and written out
-- **Then** both arrive as declared: the dotted name is one name — not split, not
-  folded into the value it points into, not dropped — and each keeps its type and its
-  sentence
+- **Then** both arrive as declared
+- **And** the dotted name arrives as one name — not split, not folded into the value it
+  points into, not dropped
+- **And** the value and the dotted name each keep their type and their sentence
 - **Because** the manifest is the only thing the editor reads before anything runs; a
   dotted name that arrived as anything else would offer the author a path the node
   never declared, or none at all
