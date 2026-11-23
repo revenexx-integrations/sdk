@@ -133,10 +133,9 @@ although it is private; nothing else changes, and nothing a node does can add to
   credentials meant for somebody else, and a node puts its key in whatever header the
   service asks for. A rule that names the secret headers is only as complete as the
   last name somebody remembered; one that names the harmless ones costs a header when
-  it is incomplete, never a key
-- **Note** this is about headers only. The body a redirect resends is the *Known* gap
-  below. The headers kept are chosen by name, so a secret put into one of *them* is
-  not covered here — AC-20 is how a credential stays out of them
+  it is incomplete, never a key. This is about headers only. The body a redirect resends
+  is the *Known* gap below. The headers kept are chosen by name, so a secret put into
+  one of *them* is not covered here — AC-20 is how a credential stays out of them
 - verify: unit
 
 ### AC-8 — A refusal never discloses the address a hostname resolved to
@@ -181,17 +180,18 @@ although it is private; nothing else changes, and nothing a node does can add to
 - **Then** it is refused, in either IP version and in the forms that embed one version
   inside the other
 - **And** an address just outside one of those ranges is allowed
-- **And** where a form carries an address of the other version, it is that carried
-  address that decides — so the same form holding a public address is allowed, and a
-  target does not become unreachable for the notation it arrived in
+- **And** where an IPv4-mapped form or the NAT64 well-known prefix carries an address of
+  the other version, it is that carried address that decides — so the same form holding
+  a public address is allowed, and a target does not become unreachable for the notation
+  it arrived in
+- **And** a 6to4 or Teredo address is refused whole, whatever address it carries
 - **Because** the ranges are contiguous and the boundaries are where a range check goes
   wrong — one octet out and the cloud metadata address reads as public, or a customer's
-  real host becomes unreachable
-- **Note** which forms are unwrapped rather than refused whole is a reachability
-  question, not a safety one: a private address is refused either way. The IPv4-mapped
-  forms and the NAT64 well-known prefix are unwrapped, because on an IPv6-only network
-  with DNS64 the latter is what every IPv4-only host resolves to; 6to4 and Teredo are
-  refused whole, being legacy transition rather than infrastructure anything here runs on
+  real host becomes unreachable. Which forms are unwrapped rather than refused whole is a
+  reachability question, not a safety one: a private address is refused either way. The
+  NAT64 well-known prefix is unwrapped because on an IPv6-only network with DNS64 it is
+  what every IPv4-only host resolves to; 6to4 and Teredo are legacy transition rather
+  than infrastructure anything here runs on
 - verify: unit
 
 ### AC-12 — A host that can be judged without asking DNS is judged without asking
@@ -277,9 +277,8 @@ although it is private; nothing else changes, and nothing a node does can add to
 - **Then** it is left alone and carries its request as usual
 - **Because** this package runs inside somebody else's process, and a judgement that
   applied to every socket in it would cut the internal calls the worker is built on —
-  a guard that breaks its host is a guard somebody switches off
-- **Note** the scope is the target, host and port together, and not the caller: what
-  is promised is that a target nothing here is reaching is untouched, which is
+  a guard that breaks its host is a guard somebody switches off. The scope is the
+  target, host and port together, and not the caller: what is promised is that a target nothing here is reaching is untouched, which is
   narrower than "only our own connections" — see the gap that records the difference
 - verify: unit
 
@@ -481,27 +480,31 @@ although it is private; nothing else changes, and nothing a node does can add to
 
 ### AC-31 — A list that is absent or malformed allows nothing
 
-- **Given** no allow-list installed, or a property under its name that is not a frozen
-  list of well-formed `"<ip>:<port>"` entries held where it cannot be changed — a writable
-  or reconfigurable property, an accessor, an entry without a port, with a port out of
-  range, with a host name, or an IPv6 address without brackets
-- **Or** a list with an entry whose address is not an RFC 1918 IPv4 address or an IPv6
-  unique-local one: loopback, link-local (the metadata service `169.254.169.254` and
-  `fe80::/10` among it), unspecified, multicast, broadcast, carrier-grade NAT, reserved
-  or public
+- **Given** an allow-list that is absent or malformed, in any of these ways:
+  - no allow-list installed
+  - a property under its name that is not a frozen list of well-formed `"<ip>:<port>"`
+    entries held where it cannot be changed — a writable or reconfigurable property, an
+    accessor, an entry without a port, with a port out of range, with a host name, or an
+    IPv6 address without brackets
+  - a list with an entry whose address is not an RFC 1918 IPv4 address or an IPv6
+    unique-local one: loopback, link-local (the metadata service `169.254.169.254` and
+    `fe80::/10` among it), unspecified, multicast, broadcast, carrier-grade NAT, reserved
+    or public
 - **When** `allowedTargets` or `isAllowedTarget` reads it
 - **Then** it reads as an empty list and allows nothing — not the entries that happened
   to be well formed
 - **And** `installAllowedTargets` refuses a malformed entry rather than installing a list
   that would then read as empty
+- **And** while `RVNXX_SSRF_TARGETS_ALLOW_LOOPBACK` is set, a loopback entry is admitted
+  too — one in `127.0.0.0/8`, or `::1`
 - **Because** a property that is not shaped the way the host installs it was not
   installed by the host, and honouring part of it would let whoever set it decide which
   private addresses a run reaches. And a route is only ever served at a private overlay
   address, so a list naming anything else was built from wrong data — opening the
-  metadata service to every node in the run is the cost of honouring it
-- **Note** a test can only listen on loopback, so `RVNXX_SSRF_TARGETS_ALLOW_LOOPBACK`
-  additionally admits `127.0.0.0/8` and `::1` entries. It is for this package's tests
-  alone: no production process sets it, and the sandbox a node runs in is not handed it
+  metadata service to every node in the run is the cost of honouring it. A test can only
+  listen on loopback, which is what the loopback switch is for. It is for this package's
+  tests alone: no production process sets it, and the sandbox a node runs in is not
+  handed it
 - verify: unit
 
 ### AC-32 — A refused address is never connected to
@@ -516,8 +519,8 @@ although it is private; nothing else changes, and nothing a node does can add to
   caller something: an open port completes the handshake and a closed one does not, and
   the two came back as different errors. Whoever controls the DNS behind a URL could map
   which ports answer on the network the worker sits in, one call at a time, without a
-  byte of any request arriving anywhere
-- **Note** the connection is opened by a dispatcher of this package's own, which judges
+  byte of any request arriving anywhere. The connection is opened by a dispatcher of this
+  package's own, which judges
   every address it is about to connect to and connects only to those it approved; a
   `dispatcher` a caller passes in the options is replaced by it. The connect-time
   judgement of AC-17 stays behind it as the second line
@@ -538,9 +541,8 @@ although it is private; nothing else changes, and nothing a node does can add to
   from one to the next; a name that does not resolve fails as the resolver said
 - **Because** a rule kept in two places is two rules: the copy in a node package had
   already stopped announcing its relaxation and logging its refusals before anybody
-  noticed, and a change to the rule here would never have reached it
-- **Note** a host written as an address never reaches a lookup — Node does not resolve
-  it — so the caller judges a literal itself, with `isBlockedAddress` and
+  noticed, and a change to the rule here would never have reached it. A host written as
+  an address never reaches a lookup — Node does not resolve it — so the caller judges a literal itself, with `isBlockedAddress` and
   `isAllowedTarget`
 - **Pair** AC-32, the same judgement inside `safeFetch`'s own dispatcher
 - verify: unit

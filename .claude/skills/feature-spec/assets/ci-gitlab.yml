@@ -23,6 +23,15 @@
 #     host, than to start the stack here.
 #   * Never add `--since` to this job. That mode is a report, always exits 0, and
 #     would leave a green pipeline proving nothing.
+#   * `--base` and `GIT_DEPTH: 0` serve the register (`register` in
+#     spec.config.json): the gate compares what the register shows against the base
+#     and asks for a version bump when it changed, which needs the base's history. A
+#     repository without the key ignores both. A base the gate cannot find fails the
+#     job, except after a force-push: `CI_COMMIT_BEFORE_SHA` then names a commit no
+#     branch reaches, so the run passes an empty base and the gate compares against
+#     `origin/main`. On a force-push to main itself that is HEAD, so the bump rule
+#     finds nothing to compare; the gate says so in a note rather than passing in
+#     silence.
 #
 # A job that exists is not yet a guarantee: unless the pipeline is required to
 # succeed before merge ("Pipelines must succeed" in the project's merge-request
@@ -30,9 +39,13 @@
 spec-check:
   stage: test
   image: node:lts
+  variables:
+    GIT_DEPTH: 0
   script:
     - {{INSTALL}}
-    - {{RUN}}
+    - BASE="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-$CI_COMMIT_BEFORE_SHA}"
+    - if [ -z "$CI_MERGE_REQUEST_DIFF_BASE_SHA" ] && ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then BASE=; fi
+    - {{RUN}} --base "$BASE"
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

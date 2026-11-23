@@ -7,11 +7,13 @@ decide the cases it does not show.
 - [The filename and the title do different jobs](#the-filename-and-the-title-do-different-jobs)
 - [The intro's two bold spans](#the-intros-two-bold-spans)
 - [Where each kind of sentence goes](#where-each-kind-of-sentence-goes)
+- [How a promise sentence is written](#how-a-promise-sentence-is-written)
 - [Three kinds of gap, and the boundary beside them](#three-kinds-of-gap-and-the-boundary-beside-them)
 - [Retiring an AC id](#retiring-an-ac-id)
 - [Referring to another spec's criterion](#referring-to-another-specs-criterion)
 - [Where a rejected alternative goes](#where-a-rejected-alternative-goes)
 - [The index](#the-index)
+- [The register's fields](#the-registers-fields)
 - [Where the names come from, and where they are written down](#where-the-names-come-from-and-where-they-are-written-down)
 
 ## The annotated file
@@ -164,6 +166,55 @@ gate can see.
 | `**Pair**` | which criterion is its positive control | whoever maintains its test |
 | `verify:` | whether this promise is proven, and how | anyone deciding whether to trust it |
 
+**That table is the whole vocabulary of a criterion body**, and the gate holds it:
+those bullets, the `verify:` line, and the two that say something about it —
+`reason:` and `ticket:`. Nothing else. Not an unlabelled bullet, not a bullet under a
+label the table does not list, not a loose paragraph. A label is **one word**, and
+the sentence follows it: `- **Given** a cost centre with a budget`, never
+`- **Given a cost centre** with a budget`. What the rule deliberately allows, because
+a gate that refuses a correct document is worse than no gate:
+
+- A bullet **wraps** onto further lines, which is the norm — and it may carry a
+  further **indented** paragraph after a blank line. A paragraph at column 0 after a
+  blank line is inside nothing, and that is the shape the rule refuses.
+- A **nested** bullet is part of the bullet above it, whatever it opens on — and its
+  text is read as part of that bullet, so changing it changes the promise. Only a
+  bullet at the criterion's own indentation has to carry a label from the table, and
+  only that one is read as the criterion's own — a `verify:` nested under a promise
+  says something about that bullet and states no level.
+- A **fenced block** is content, not structure, wherever it stands: a `- foo` line
+  inside one is not a bullet, a `- verify:` line inside one states no level, and
+  either fence marker counts, backticks or tildes. Its own indentation says whose it
+  is — indented under a bullet it is that bullet's content, so changing it changes
+  the promise; at the criterion's own edge it belongs to the criterion and ends the
+  bullet above it, exactly as a paragraph there does.
+- An **HTML comment** is not the body's text. It says something to whoever edits the
+  file and nothing to whoever reads the promise, so it is neither refused nor read —
+  the same exemption the settled-words sweep gives one.
+- A **retirement notice** sits between two criteria rather than inside one, so it is
+  where a criterion body ends — see [Retiring an AC id](#retiring-an-ac-id).
+
+One bullet does not wrap: **`verify:`**, whose value is read off a single line. A
+sentence written under it continues nothing, with or without a blank line between.
+`reason:` and `ticket:` are prose and wrap like any other bullet, and they may be
+**indented under the `verify:` line** as readily as written beside it — they say
+something about that line, so nesting them under it is agreeing with the format.
+`verify:` itself is read at the body's edge alone: one nested under a promise says
+something about that bullet and states no level. A **numbered item**
+wraps nothing either — Markdown starts a new list at `1.`, so the item is a line of
+its own and the format has no place for one: name the part instead of counting it.
+
+**The promise bullets stand at the body's own left edge**, alongside `verify:` and
+not deeper than it. The edge is what "nested" means here, so a criterion that indents
+its `**Given**` / `**When**` / `**Then**` under a `verify:` line at the margin has
+written its whole promise inside something else: the gate reads no promise there, and
+a criterion with none is refused rather than passed in silence.
+
+A sentence the rule refuses is usually in the wrong section rather than the wrong
+shape: one about a neighbouring spec belongs in `## Elsewhere`, one about something
+nobody has decided in `## Gaps`, and one about why the promise must hold in
+`**Because**` — which is the next rule.
+
 **`**Because**` is product reasoning and nothing else.** A pair note goes to
 `**Pair**`. An explanation of the *machinery* — requests in flight, caches, fan-out,
 merge order — goes to the `docs/` companion and is linked from the frontmatter.
@@ -175,17 +226,110 @@ thing the bullet is for. What actually makes a `**Because**` long is usually con
 in the wrong slot — check that the pair note went to `**Pair**` and the machinery to
 `docs/` before adding lines.
 
+## How a promise sentence is written
+
+The rules below are the promise slots' own, and they stop at the slot: the intro,
+`**Because**` and `## Gaps` are prose and are governed by nothing here. Three of them
+come from ASD-STE100, the controlled English the aerospace industry wrote so a
+maintenance instruction could not be read two ways — a spec has the same reader problem
+and one more, because a promise is also a test's brief.
+
+**One promise per sentence, and the slot for the second one already exists.** A
+`**Then**` stating two outcomes is two promises wearing one tag: the test that claims it
+proves whichever half its author had in mind, and no reader can tell which. Split at the
+join, and the second outcome becomes its own `**And**` — the slot exists for exactly
+this. The join is almost always a semicolon or a comma before "and", and those are the
+two shapes the gate counts — a semicolon inside a code span excepted, which is a
+payload's punctuation and not the sentence's. A noun list joined on "and" alone ("the
+budget and the buyer's limit") is one promise and is never reported. An Oxford list
+("the amount, the date, and the state") *is* reported, and that is a known false
+positive rather than a rule: separating it from a genuine three-clause promise needs a
+parser, and the count is a ratchet, where being told to split a promise that did not
+need it costs an `**And**` and being told nothing costs the rule.
+
+**At most 25 words in a promise sentence** — `**Given**`, `**When**`, `**Then**` and
+`**And**` alike. Not a style figure: past roughly that length a promise has stopped
+being one sentence, and what pushed it over is nearly always a second promise, a reason
+that belongs in `**Because**`, or machinery that belongs in `docs/`. Check those three
+before rewording. Unlike `**Because**`, where a stated length would invite padding to
+reach it, a promise has a natural size and the number names it.
+
+What is counted is the sentence. A promise wrapped over three lines is one sentence and
+is measured as one; a nested bullet beneath it is the detail of that single outcome and
+is not measured at all — its own wrapped lines no more than its first — and neither is
+a further paragraph the bullet carries after a blank line, nor a fenced block beneath
+it: the sentence ended where the detail began. Both are still read as part of the
+promise, so changing either is a promise change the `--since` report names. So the
+criterion below promises nine words, not thirty-three,
+and enumerating the columns beneath it costs nothing against either count:
+
+```markdown
+- **Then** the list shows one row per request line
+  - the amount, in the currency the line was raised in
+  - the date the line was raised
+  - the state the line is in
+```
+
+**Present tense, and a hedge is content.** A spec says what happens, not what will
+happen or what has happened. The exception runs the other way and matters more: "the
+answer says the announcement is still owed" and "the announcement was not written" are
+different promises, and a shorter sentence that promotes a hedge to a fact has not been
+simplified — it has been changed. Never trade "may", "still" or "at most" for length.
+
+**Active where the actor is a consumer or a named surface; passive everywhere else, and
+that is correct.** This is where a spec parts company with ordinary plain-language
+advice. Naming the actor is the standard fix for a passive sentence, and here the actor
+of most promises is the application itself — which a spec never names. "The outcome is
+recorded" is right; "the workflow service records the outcome" buys grammar with the one
+thing this format bans. Use the active voice where the actor is the consumer, an
+administrator, another product, or a surface the register holds; leave the rest passive.
+Nothing counts this, for the same reason.
+
+**One word, one meaning.** Two words for one action cost every reader a translation and
+every author a decision, so the corpus settles one and the index records it — including
+the words it replaced, which is what lets the gate sweep for the loser. See
+[the words register](#where-the-names-come-from-and-where-they-are-written-down).
+
+**The two counted rules are ratchets, not gates.** `formDebt.longPromises` and
+`formDebt.compoundPromises` hold what the corpus contains today; new writing follows the
+form and each touched spec pays down its share. A corpus adopting them starts at
+whatever `spec:check` reports and works down, exactly as the gap labels did.
+
+**And the limit of all of them: form is not substance.** A promise nobody confirmed is
+still an invention after it has been split in two, shortened to 19 words and put in the
+present tense — a clean, short, well-punctuated invention. These rules make a true
+promise easier to read and a false one no less false.
+
 ## Three kinds of gap, and the boundary beside them
 
 | Label | Means | What it is waiting for |
 | --- | --- | --- |
 | `**Undecided**` | nobody has confirmed what the behaviour should be | a decision |
-| `**Known**` | a limitation somebody decided to live with | nothing — name the ticket if one exists |
+| `**Known**` | a shortfall somebody decided to live with — the product would behave differently if it were as it should be | nothing — name the ticket if one exists |
 | `**Unreachable**` | the promise is agreed; the harness cannot reach it today | test-harness work |
 
 Only the kinds a spec actually has get a label. Order them as above so two specs read
 the same way. The set is closed: a fourth kind belongs in this table before it belongs
 in a spec. `Undecided` is the default and the honest one.
+
+**A decision is not a gap, and `**Known**` is where decisions go to hide.** "We chose
+not to warn", "the platform owns how long it is kept", "colours are not promised" all
+read as limitations somebody lives with, and none of them is one: nothing falls short.
+One question sorts them — **would the entry still be true of a perfect product?** If
+it would, it is not a gap, and it goes where the format keeps that kind of statement:
+
+| The entry records | Where it goes |
+| --- | --- |
+| a behaviour the product has on purpose — including something it deliberately does not offer, where offering it would be a regression | a criterion, with its test |
+| something deliberately not promised because another layer owns it | the intro, one sentence naming the owner — or the sentence of the criterion it qualifies |
+| something deliberately not promised because it is appearance or layout | the index's *how a spec is cut here*, once for the corpus |
+| a promise another spec makes | `## Elsewhere` |
+| a request that was declined | `## Tickets`, under that ticket (`## Where a rejected alternative goes`) |
+
+What stays under `**Known**` is what a later ticket could fix: a control that cannot be
+reached, a list that stops short, a name that says the wrong thing. A decision filed
+there has no test holding it, and a reader scanning for what is broken reads it as
+broken.
 
 **A bold line, not a heading and not an inline lead-in.** Inside `## Gaps` a line that
 is nothing but bold text is reserved for these three, which is how the gate tells a
@@ -315,6 +459,75 @@ change for the call to change.
 tag, the run hints that grep for them, and sibling-link resolution. Pay that once and
 deliberately, or not at all.
 
+## The register's fields
+
+Only where `register` is set in `spec.config.json`; a repository without the key is
+asked for none of this.
+
+| Field | Holds |
+| --- | --- |
+| `since:` | the first version that shipped these promises, `x.y.z` — never below the config's `floor`, never above the manifest's version. A spec new in a change carries the version that change ships |
+| `visibility:` | `public` or `internal`, with no default: either default would decide for the author who reads the spec. Internal specs, and every criterion of every spec, reach internal readers only |
+| `summary:` | one sentence of at most 25 words, for a reader outside the company; required when public, and refused on an internal spec. It is the only sentence the public register shows, so it is written for that reader and not lifted from the intro |
+| `formerly:` | the ids a renamed spec carried before, so a link or a learned mapping to the old id still lands |
+
+**`visibility:` follows the reader who would notice.** `public` when a merchant or an
+integrator notices the capability in the product or uses it deliberately. `internal` for
+test tooling (backdating, say), for platform wiring between apps (events, vocabularies,
+service entry, principal resolution), and for operational mechanics that have no user
+action of their own (budgets, recompute). When in doubt, `internal`, with a line in the
+PR body: making a spec public later is a patch bump, and taking a public one back is not
+quiet.
+
+**`since:` of a spec written before the rule** is the version it first shipped in, and
+never earlier than `floor` — the first version that shipped specs at all. Earlier
+availability was not recorded, and the register says so rather than guessing.
+`spec-check --backfill-since` writes both from git history, read along the deployed line
+— `origin/main`'s first parents, or HEAD's without `origin/main` — so it dates a spec
+the same on `main` and on a branch that merged `main` in: the first release on that line
+that contains the spec, where it landed if that commit raised the version, else the next
+one that did. A version only a branch carried never counts, and a merge does not date a
+spec to the release its other side shipped. The floor is the lowest of them. Renames are
+followed, copies are not. Two kinds of spec are listed, left alone, and make the run
+exit 1. One history cannot date — added twice, brought in by a merge, or behind a
+release candidate whose parent has no readable version — may be older than every settled
+one, so while one is listed the floor is only lowered, never raised. One not committed
+or not shipped yet ships above HEAD's version and does not hold the floor back. A
+shallow clone is refused. Whether a version was ever deployed is not in git, and neither
+is whether a spec's file is older than its promise: read the list of written values
+before committing them, and where history is wrong, pin the right date in
+`register.pinned` — `{ "<feature>": { "since": "x.y.z", "reason": "…" } }`. The backfill
+writes a pin instead of history, and `spec:check` fails a `since:` that differs from its
+pin, so a later run cannot put the script's value back. A pin names an existing spec and
+says why.
+
+**What reaches `features.json` is what the register shows**: the fields above, `title`,
+`where`, and each criterion's heading, its `**Given**` / `**When**` / `**Then**`
+/ `**And**` and its layers — a retired one as its retirement line and the criteria it
+names. Nothing else does, which is why the file measures the bump rule: an edit that
+leaves it unchanged needs no release, and one that changes it needs one. `docs:` stays
+out: its paths mean nothing outside the repository, and renaming a doc page is not a
+release. The file also carries the manifest's `version`, so a version bump re-emits it.
+
+**A spec that goes away** leaves the register, and whatever pointed at it has to be
+told where. Renamed, the new spec says `formerly: [<old-id>]`. Removed, the index
+records it under `## Retired features` — one row per id, the reason, and the spec
+that carries its promises now, if any:
+
+```markdown
+## Retired features
+
+- `list-to-order` — no order is placed from a list any more; the list becomes a cart,
+  [list-to-cart.md](list-to-cart.md) (RAD-145)
+```
+
+The row opens on the id in code, not on a link: the spec it names no longer exists,
+and the section is read as an aside rather than as inventory. After the id come a dash
+and the reason, which is required; links to successor specs and the ticket are
+optional. The gate reads rows only — an id named in a sentence of that section does not
+record anything — and fails a row without a reason, a row for a spec that still exists,
+and a second row for the same id. Rows stay after the release that retired the spec.
+
 ## Where the names come from, and where they are written down
 
 Two vocabularies earn their place in the spec directory's `README.md`, and they divide
@@ -367,6 +580,32 @@ question rather than a defect: a name is worth adding only where a reader has to
 to the thing. Recorded all the same, because otherwise the description that turns up in
 a ticket reads as sloppiness rather than as the symptom it is — there was nothing to
 look up.
+
+**A words entry records the word that lost, and that is what makes the sweep
+checkable.** Settling a word obliges replacing the loser everywhere it stands, in the
+same change — and while the entry held only the winner, nothing could see a word that
+drifted back, because a drifted term breaks no promise and every file stays green. So
+the entry names both: the word that won opens it in bold, the words it replaced follow
+the marker `Not:` to the end of that sentence, and each of them is then an error
+wherever it still stands, in a spec or in the index.
+
+```markdown
+- **cost centre** — the money a request line is booked against. Not: *cost center*,
+  *costcentre*.
+- **approver** — whoever a request is waiting for. Not: *reviewer*.
+```
+
+The marker is what the gate reads (`wordRegister` in the config names the section), and
+an entry without it is prose: a word this corpus simply uses, settled against nothing,
+costs no row and is reported nowhere. Code spans, fenced blocks, HTML comments,
+filenames, paths and link targets are swept over — an identifier in a payload is not
+this corpus's vocabulary, and neither is the *reviewer* inside `reviewer-assignment.md`,
+where the only repair would be a rename reaching every `@spec:` tag that names the
+feature. The same exemptions hold where the register is READ: the worked example above
+would otherwise retire *cost center* across any repository that copied it. A row therefore
+arrives with its own sweep already done, which is why this one is an outright error and
+not a `formDebt` ratchet like the promise-sentence counts: on the day the row is
+written, the count it could ratchet is zero.
 
 **A word a sibling corpus already settled is borrowed, and cited as borrowed.** Two
 spec corpora in one product family share their roles and most of their nouns, and

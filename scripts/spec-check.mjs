@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* NOTICE: vendored by the revenexx skills catalog from
- * revenexx/studio-integrations@5e951a1, scripts/spec-check.mjs.
+ * revenexx/studio-integrations@1cb899e, scripts/spec-check.mjs.
  *
  * Deviations from upstream — keep this list true when re-vendoring:
  *
@@ -29,6 +29,96 @@
  *      1.25+). It is the second adapter that reads a RUN rather than a listing, for
  *      the same reason the node:test reporter does — `go test -list` prints top-level
  *      function names and nothing else — and the first whose runner exposes a skip.
+ *   7. One reading of "nested", and it is the criterion body's own left edge rather
+ *      than column 0 (`bodyEdge`, PO-322). Upstream at this pin has three readings
+ *      and they disagree: `strayBody` calls every line of a body written at an indent
+ *      nested and reports nothing at all, while `parseSpecText` drops a labelled
+ *      sub-bullet's text from the fingerprint but appends a plain one's. Also here:
+ *      `RETIRED_LINE` is one constant instead of two that differed on an indent, a
+ *      `~~~` fence is a fence, and a bold run that is a phrase and a numbered item
+ *      each report as themselves instead of as an unlabelled bullet and a paragraph.
+ *      The three meta bullets split here rather than sharing one gate: `verify:` is
+ *      read at the body's edge alone, because one nested under a promise states no
+ *      level, while `reason:` and `ticket:` are read wherever they stand, because
+ *      they are about the `verify:` line and the format tells their author they
+ *      belong under it. Upstream reads all three at any indent.
+ *      `RETIRED_LINE` covers the two readings that ask what a notice IS — where a
+ *      criterion body ends, and what `retirements()` collects. The numeric-order
+ *      check reads a leading id at column 0 and nothing else, on purpose, and is
+ *      neither of them; the note at that site says so.
+ *   8. A blank line does not end a promise slot; what follows it does, at the
+ *      criterion's edge or below it. Upstream ends the slot at the gap, so a bullet's
+ *      own indented second paragraph — which the vocabulary rule allows and the gate
+ *      accepts — is in the promise's bullet and outside its fingerprint. Here it is
+ *      inside the fingerprint and outside the sentence the word count measures, on
+ *      the same reading that keeps a nested bullet out of it: the promise ended at
+ *      the blank line, and what follows is that bullet's detail.
+ *   9. One reading of a fenced block and of an HTML comment, `readBody`, which every
+ *      rule inside a criterion body now goes through. Upstream — and this file until
+ *      the second review round — gave fence state to the vocabulary rule alone, so a
+ *      fenced `- verify:` was counted as a second level the criterion declared and a
+ *      fenced `- **Then**` put a code sample into the promise's fingerprint; and no
+ *      rule anywhere exempted a comment, which the words sweep exempts by name. Also
+ *      here: a numbered item ends the bullet above it rather than wrapping it, a
+ *      nested bullet's WRAP lines are outside the promise sentence as the bullet
+ *      itself already was, and a criterion whose promise bullets do not stand at its
+ *      body's edge is reported rather than read as a criterion with no promise.
+ *  10. The capability register, which has no upstream (RAD-329): with `register` in
+ *      the config, the frontmatter fields `since`, `visibility`, `summary` and
+ *      `formerly` are checked, `--emit` writes the corpus to `features.json`, and
+ *      `--base <ref>` compares that file against the base — a changed register needs
+ *      a raised version, a new spec dates itself to it, and a vanished one is named
+ *      by `formerly:` or the index's `## Retired features`. Without the key the gate
+ *      reaches the same verdicts as before, with two exceptions: `where:` became one
+ *      `listField` reader shared with `docs:` and `formerly:`, and a bracketed flow
+ *      list now splits on its commas, so an empty one (`where: [ , ]`) now fails; and
+ *      an empty `feature:` or `updated:` no longer reads the next line's bare token
+ *      (`where:`) as its value, so it reports as missing.
+ *  11. Fixes to the register from the customers pilot review (RAD-359). A
+ *      `## Retired features` entry counts only as a row — a list item opening on the
+ *      id in code, then a dash and a reason — and a row with no reason, a row for a
+ *      spec that still exists, and a second row for one id fail on every run. A
+ *      `features.json` that differs only in `version` says so in its stale error.
+ *      `docs:` no longer reaches `features.json`. A base without `features.json`
+ *      still asks for a raised version, because the platform never reads an approved
+ *      version again. `--backfill-since` writes `since:` and `register.floor` from git
+ *      history and lists what history does not settle.
+ *  12. Fixes from the review of customers#67 (RAD-362). `--backfill-since` refuses a
+ *      shallow clone, lists a spec whose parent commit it cannot read rather than
+ *      taking it as raised, counts a version only where a commit raised it over every
+ *      parent (a merge carries the version its other side released), reads only the
+ *      commits that change the manifest, holds `register.floor` back while a spec is
+ *      open unless it goes down, and writes it inside `register` only. A later release
+ *      commit with an unreadable parent lists the spec rather than being skipped. A
+ *      `## Retired features` row is a list item outside a fenced block and not nested
+ *      in another row; a fence closes on its bare marker, and one never closed fails.
+ *      A `#` line inside a fenced block neither opens nor ends a `##` section, and a
+ *      tab-indented `#` line is code, not a heading. Only a spec history cannot date
+ *      holds the floor back, and the floor written is `register`'s own top-level key.
+ *      Its dating rule — a version counted where a commit raised it over every parent,
+ *      later release commits read off the add commit's descendants — is replaced by 13.
+ *  13. Fixes from the register rollout reviews (RAD-366). `--backfill-since` dates a
+ *      spec along the deployed line, `origin/main`'s first parents (HEAD's without
+ *      one): the first release on it that contains the spec. This replaces item 12's
+ *      reading by the add commit and the commits raised over every parent, which dated
+ *      a spec by a version only its branch had. `register.pinned` holds a `since:` set
+ *      by hand: the backfill writes it, and the gate fails a spec that differs. A
+ *      `since:` is compared past a trailing comment. A block-list entry keeps a
+ *      trailing `]`. A line that opens on `<!--`, or starts inside a comment that
+ *      opened a line, is an HTML block and never a bullet; a comment opened mid-line
+ *      leaves the words after its `-->` in the promise. An internal spec's `summary:`
+ *      fails. `--base` and `--since` take a following flag as a missing value, and a
+ *      base that is HEAD itself prints that the bump rule compared only uncommitted
+ *      changes. Only the line's commits that change the manifest are read as release
+ *      candidates. A spec's renames are followed by name, in topological order, so
+ *      neither a copy git 2.56 walks into nor its source's add counts as the spec's
+ *      birth. A spec HEAD holds whose history shows no add (brought in by a merge), and
+ *      any git failure while dating, lists the spec as undated rather than as not
+ *      shipped; a pin with no x.y.z `since` lists its spec, and a `register.pinned`
+ *      that is no object stops the run. The JSON readers share one scan, and a key
+ *      written twice is read at its last occurrence. Released as 1.6.0: a repo green on
+ *      1.5.0 can fail on an internal spec's `summary:`, on a pin, on a fence never
+ *      closed, or lose a criterion line that opens on `<!--`.
  */
 /**
  * Feature-spec gate.
@@ -68,7 +158,7 @@
  */
 
 import { execFileSync, execSync } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -93,12 +183,23 @@ const config = JSON.parse(readFileSync(join(root, 'spec.config.json'), 'utf8'))
  * half the world writes a script argument.
  */
 const argv = process.argv.slice(2).filter(a => a !== '--')
-const sinceAt = argv.findIndex(a => a === '--since' || a.startsWith('--since='))
-const joined = sinceAt >= 0 && argv[sinceAt].startsWith('--since=')
-const sinceValue = sinceAt < 0 ? null : joined ? argv[sinceAt].slice('--since='.length) : argv[sinceAt + 1]
+/**
+ * A flag's value, as `--flag=<v>` or as the argument after it, and the indexes it takes.
+ * An argument after it that is itself a flag is a missing value, never the value: read
+ * as one, `--base --emit` switched emit off in silence and failed on "no such commit".
+ * `undefined` is missing, `null` is a flag not given.
+ */
+const flagValue = name => {
+  const at = argv.findIndex(a => a === name || a.startsWith(`${name}=`))
+  if (at < 0) return { at, value: null, takes: [] }
+  if (argv[at].startsWith(`${name}=`)) return { at, value: argv[at].slice(name.length + 1), takes: [at] }
+  const next = argv[at + 1]
+  return next === undefined || next.startsWith('-') ? { at, value: undefined, takes: [at] } : { at, value: next, takes: [at, at + 1] }
+}
+const { at: sinceAt, value: sinceValue, takes: sinceTakes } = flagValue('--since')
 // Whatever the flag did not consume is an argument this script does not know, and a
 // script that ignores one answers a question it was not asked.
-const consumed = new Set(sinceAt < 0 ? [] : joined ? [sinceAt] : [sinceAt, sinceAt + 1])
+const consumed = new Set(sinceTakes)
 /**
  * `--native` runs every suite's listing on this host instead of in the container it
  * declares. It exists for CI, which installs the toolchains directly and has no
@@ -107,12 +208,47 @@ const consumed = new Set(sinceAt < 0 ? [] : joined ? [sinceAt] : [sinceAt, since
 const nativeAt = argv.findIndex(a => a === '--native')
 if (nativeAt >= 0) consumed.add(nativeAt)
 const native = nativeAt >= 0
+/**
+ * `--emit` writes the register file (`register.file` in the config) from the corpus
+ * and stops short of the suites: what the register says is the specs' business, and a
+ * file that could only be written while every test runs would be written less often
+ * than the specs change. The format checks still run, and a corpus that fails them
+ * writes nothing — the register never carries what the gate would refuse.
+ */
+const emitAt = argv.findIndex(a => a === '--emit')
+if (emitAt >= 0) consumed.add(emitAt)
+const emitting = emitAt >= 0
+/**
+ * `--backfill-since` writes `since:` into every spec and `register.floor` into the
+ * config, from git history (RAD-359). It is for the change that switches the register
+ * on in a repository whose specs already shipped, so that nobody types thirty dates
+ * from memory. It reads history and writes; it checks nothing else.
+ */
+const backfillAt = argv.findIndex(a => a === '--backfill-since')
+if (backfillAt >= 0) consumed.add(backfillAt)
+const backfilling = backfillAt >= 0
+/**
+ * `--base <ref>` names what the register is compared against: the pull request's base
+ * in CI, the commit before a push. Without it the gate asks for `origin/main`, and
+ * without that it says the comparison did not run rather than calling it passed. A
+ * base that is given and cannot be found fails the run.
+ */
+const { at: baseAt, value: baseArg, takes: baseTakes } = flagValue('--base')
+for (const i of baseTakes) consumed.add(i)
 const unknown = argv.filter((_, i) => !consumed.has(i))
 if (unknown.length) {
   console.error(`spec-check: unknown argument${unknown.length === 1 ? '' : 's'} — ${unknown.join(', ')}`)
-  console.error('spec-check: the flags are `--since <ref>` / `--since=<ref>` / `--since <a>..<b>`, and `--native`')
+  console.error('spec-check: the flags are `--since <ref>` / `--since=<ref>` / `--since <a>..<b>`, `--native`, `--emit`, `--backfill-since` and `--base <ref>`')
   process.exit(2)
 }
+// An empty `--base` is what CI hands over when the event has no base at all — a
+// manual run, a branch's first push — so it reads as "none given" rather than as a
+// typo. The all-zero sha is git's own way of saying the same thing on a new branch.
+if (baseAt >= 0 && baseArg === undefined) {
+  console.error('spec-check: --base needs a ref — `--base origin/main` or a commit sha')
+  process.exit(2)
+}
+const givenBase = baseArg && !/^0+$/.test(baseArg) ? baseArg : null
 if (sinceAt >= 0 && !sinceValue) {
   console.error('spec-check: --since needs a ref — `--since origin/main` or `--since <a>..<b>`')
   process.exit(2)
@@ -161,6 +297,244 @@ const SLOT_RE = /^\s*[-*]\s+\*\*([A-Za-z]+)\*\*\s*(.*)$/
  */
 const PROMISE_SLOTS = new Set(['Given', 'When', 'Then', 'And'])
 /**
+ * Every label a criterion body may carry — the promise slots above plus the two
+ * that explain it (`## Where each kind of sentence goes` in the `feature-spec`
+ * skill). Listed here rather than only in the skill because the gate is what
+ * holds it: before PO-322 the parser read the four promise slots, silently
+ * ignored everything else, and nothing anywhere refused a criterion written some
+ * other way — so a promise the report could not read fully simply failed to
+ * appear in it, and the report's completeness was a property of the corpus as it
+ * happened to stand rather than a guarantee.
+ *
+ * Narrower than the skill's table would be a real disagreement, not a stricter
+ * gate: the skill teaches the form, and a label it offers that this refuses fails
+ * a correct document. Add to both or neither.
+ */
+const BODY_SLOTS = new Set([...PROMISE_SLOTS, 'Because', 'Pair'])
+/**
+ * The meta bullets that close a criterion — `- verify:`, and the two that say
+ * something about it. Their placement is `measureForm`'s `verifyNotLast`; that
+ * they are the only non-labelled bullets allowed at all is the rule below.
+ */
+const META_BULLET_RE = /^\s*[-*]\s*(?:verify|reason|ticket):/
+/**
+ * `verify:` alone, which is the one bullet in a criterion that cannot wrap: its
+ * value is a list of levels and `parseSpecText` reads it off a single line.
+ * `reason:` and `ticket:` are prose and do wrap — `accessibility.md` AC-3 and
+ * `credential-oauth.md` AC-4 and AC-5 each run a `reason:` over three lines — so
+ * they continue like any other bullet.
+ */
+const VERIFY_BULLET_RE = /^\s*[-*]\s*verify:/
+/**
+ * A retirement notice — `*AC-5 retired before it ever held — …*`, often running to
+ * several lines. It sits between two criteria and therefore inside the block of
+ * the one above, which is an artefact of where a block ends rather than something
+ * anybody wrote into that criterion.
+ *
+ * So it is also where a criterion body ENDS, which is the thing PO-322 had to state
+ * before any rule could refuse content inside one. Ending there rather than
+ * skipping the line is what makes it right for a notice of any length: the first
+ * reading matched only the opening line and reported the three corpus notices that
+ * wrap — a rule failing correct documents on its first run.
+ *
+ * One constant, hoisted here from `retirements()` below, because two readings of
+ * "a retirement notice" is two answers to one question: the second one accepted an
+ * indent and a double space and the first did not, so an indented notice ended a
+ * criterion body while being a retirement nowhere else. The callers that already
+ * trimmed the line before testing it were the ones saying which reading was meant.
+ */
+const RETIRED_LINE = /^\s*\*AC-(\d+)\s+retired\b/
+/** A list bullet, at whatever indentation. */
+const BULLET_RE = /^\s*[-*]\s/
+/**
+ * A fenced block's delimiter. Both markers, because CommonMark has both and reading
+ * only backticks left a `~~~` block's contents to be read as bullets and prose — one
+ * fenced sample reported as three faults.
+ */
+const FENCE_RE = /^\s*(?:```|~~~)/
+/**
+ * A bullet whose bold run is a phrase — `- **Given a cost centre** with a budget`.
+ * Not a slot: `SLOT_RE` reads `[A-Za-z]+`, so a label is one word. Recognised only
+ * to be reported, and reported as itself, because "carries an unlabelled bullet"
+ * told the author to add the thing they were looking at.
+ */
+const BOLD_OPENING_RE = /^\s*[-*]\s+\*\*([^*]+)\*\*/
+/** An ordered-list item — refused like any other unlabelled line, but named. */
+const ORDERED_RE = /^\s*\d+[.)]\s/
+/** How far a line is indented. */
+const column = l => /^(\s*)/.exec(l)[1].length
+/**
+ * The left edge of a criterion body: the shallowest bullet it carries. Everything
+ * deeper is inside the bullet above it, and that is the ONLY reading of "nested"
+ * this file has — one helper, because it had three and they disagreed. Read at the
+ * edge rather than at column 0 because a body written wholly at an indent is a
+ * correct document: CommonMark takes a list indented by up to three spaces under a
+ * `###` heading as a list, and against column 0 every line of such a body read as
+ * nested, which silently switched the vocabulary rule off.
+ *
+ * Fences and the retirement notice are handled here for the same reason they are
+ * handled by the caller: a `- foo` line inside a fenced block is not a bullet, and
+ * one below the notice is not this criterion's, so counting either would pull the
+ * edge back to a margin the body does not use. A body with no bullet at all has no
+ * edge to read and falls back to the margin.
+ *
+ * `block` excludes the `### AC-n` heading itself.
+ */
+function bodyEdge(block) {
+  let fence = false
+  let commented = false
+  let edge = Infinity
+  for (const l of block) {
+    if (RETIRED_LINE.test(l)) break
+    if (!commented && FENCE_RE.test(l)) { fence = !fence; continue }
+    if (fence) continue
+    // A comment never sets the edge every real bullet is measured from. CommonMark reads
+    // a line that opens on `<!--`, or that starts inside an open comment, as an HTML
+    // block and not as a list item, whatever follows the comment on that line — so a
+    // bullet commented out at column 0, or `<!-- was: --> - old`, is no bullet here.
+    const inside = commented
+    let text = l.replace(/<!--[\s\S]*?-->/g, ' ')
+    if (commented) {
+      const closes = text.indexOf('-->')
+      if (closes < 0) continue
+      text = text.slice(closes + 3)
+      commented = false
+    }
+    if (text.includes('<!--')) commented = true
+    if (inside || /^[ \t]*<!--/.test(l) || !BULLET_RE.test(l)) continue
+    edge = Math.min(edge, column(l))
+  }
+  return edge === Infinity ? 0 : edge
+}
+/**
+ * One criterion body, read once, so that every rule below reads the same body.
+ *
+ * `bodyEdge` above settled where the body's left edge is. This settles the other two
+ * questions each rule was answering for itself and answering differently: whether a
+ * line is inside a fenced block, and whether it is inside an HTML comment.
+ * `parseSpecText` carried no fence state at all, so a fenced `- **Then**` opened a
+ * slot and its text entered the fingerprint — editing a code sample then reported as
+ * a changed promise — while a fenced `- verify:` was counted as a second level the
+ * criterion declared and named deleting the real one as the fix. That is the same
+ * fault as the three readings of "nested" PO-322 folded into one, one question along.
+ * A comment was read as loose prose by the vocabulary rule alone, while the words
+ * sweep exempts one by name and the annotated spec is largely built out of them.
+ *
+ * Every line is returned, in order, because a caller that must not read a line as
+ * structure still has to fold it into the fingerprint — a fenced block under a
+ * promise bullet is that bullet's content, and changing it changes the promise:
+ *
+ *   `fence` / `fenced`  a delimiter, and the content between two of them
+ *   `comment`           a line that carries nothing but an HTML comment
+ *   `blank`
+ *   `line`              everything else — structure, and `own` says whether it sits
+ *                       at the body's edge or inside the bullet above it
+ *
+ * `text` is the line with its indentation and any comment taken off, which is what a
+ * caller matches on; `raw` is what was written, for a message that quotes it and for
+ * the column `own` is read from.
+ *
+ * The body ENDS at a retirement notice, so the lines from there on are absent rather
+ * than returned: the notice sits in the gap between two criteria and belongs to the
+ * format rather than to the criterion whose block happens to reach it.
+ */
+function readBody(block) {
+  const edge = bodyEdge(block)
+  const lines = []
+  let fence = false
+  let commented = false
+  // Whether the open comment began a line (an HTML block, which owns its closing line)
+  // or began mid-line (inline HTML, after whose `-->` the paragraph goes on).
+  let commentBlock = false
+  // Where the block was opened, carried to its closing delimiter and to every line
+  // between: a fenced block belongs to the bullet above it or to the criterion, and
+  // that is decided by the fence's own column and not by the columns inside it —
+  // where a sample is free to write anything, margin included.
+  let fenceOwn = false
+  for (const [i, raw] of block.entries()) {
+    if (RETIRED_LINE.test(raw)) break
+    if (!commented && FENCE_RE.test(raw)) {
+      if (!fence) fenceOwn = column(raw) <= edge
+      fence = !fence
+      lines.push({ i, raw, text: raw.trim(), kind: 'fence', own: fenceOwn })
+      continue
+    }
+    if (fence) { lines.push({ i, raw, text: raw.trim(), kind: 'fenced', own: fenceOwn }); continue }
+    // The reading the words sweep already gives a comment, for its reason: a comment
+    // is not the document's own text. A closed pair comes off wherever it sits, so a
+    // bullet carrying a note at its end stays the bullet it is, and an unclosed `<!--`
+    // takes the lines after it until one closes.
+    // A line that opens on `<!--`, or starts inside a comment that opened a line, is an
+    // HTML block in CommonMark: the whole line is the comment's, whatever follows its
+    // `-->`. A comment opened mid-line is inline HTML: the text after its `-->` is still
+    // the paragraph's, and stays in the promise.
+    const htmlBlock = (commented && commentBlock) || /^[ \t]*<!--/.test(raw)
+    let text = raw.replace(/<!--[\s\S]*?-->/g, ' ')
+    if (commented) {
+      const closes = text.indexOf('-->')
+      if (closes < 0) { lines.push({ i, raw, text: '', kind: 'comment' }); continue }
+      text = text.slice(closes + 3)
+      commented = false
+    }
+    const opens = text.indexOf('<!--')
+    if (opens >= 0) { text = text.slice(0, opens); commented = true; commentBlock = htmlBlock }
+    if (htmlBlock) { lines.push({ i, raw, text: '', kind: 'comment' }); continue }
+    if (!text.trim()) { lines.push({ i, raw, text: '', kind: raw.trim() ? 'comment' : 'blank' }); continue }
+    lines.push({ i, raw, text: text.trim(), kind: 'line', own: column(raw) <= edge })
+  }
+  return { edge, lines }
+}
+/**
+ * A list item of any kind. CommonMark starts a NEW list at `1.`, so a numbered line
+ * under a bullet is not that bullet's wrap — reading it as one folded it into the
+ * promise sentence, where it was counted against the word ratchet at a criterion the
+ * vocabulary rule had said nothing about.
+ */
+const item = l => BULLET_RE.test(l) || ORDERED_RE.test(l)
+/**
+ * The promise slots that state an *outcome*, as opposed to the ones that set the
+ * scene. Only these are asked whether they carry more than one promise: a
+ * `**Given**` legitimately sets two things up at once — one request approved and
+ * another declined — while a `**Then**` stating two outcomes has a second promise
+ * inside it, and this format already owns the slot that holds one.
+ */
+const OUTCOME_SLOTS = new Set(['Then', 'And'])
+/**
+ * Where a promise sentence stops being one sentence. 25 words is ASD-STE100's cap
+ * for a descriptive sentence (its procedural cap is 20, and a promise is neither an
+ * instruction nor prose). The figure is not adjustable, on purpose: a repository
+ * that may set its own cap has a cap nobody has to meet, and this one is counted
+ * rather than enforced anyway.
+ */
+const PROMISE_WORDS = 25
+/**
+ * Whether a promise joins two clauses into one. Deliberately narrow — a semicolon,
+ * or a comma before "and", both of which join sentences rather than list nouns. A
+ * parser would catch more; it would also have to be right about "the budget and the
+ * buyer's limit", which is one noun phrase and one promise. What this misses stays
+ * missed, and nothing correct is ever reported.
+ *
+ * Inline code is blanked first, because a semicolon inside `a; b` is a payload's
+ * punctuation and not the sentence's — the same exemption, for the same reason, that
+ * the words sweep gives a code span.
+ *
+ * What it still reports and should not is an Oxford list of nouns — "the amount, the
+ * date, and the state" is one promise however many things it names. That was measured
+ * rather than argued, against a 9-spec corpus: the only discriminator available at
+ * this altitude is whether a comma stands earlier in the sentence, and applying it
+ * dropped 20 of 59 findings, of which roughly four were noun lists and the rest were
+ * genuine — "the request is declined, keeps the reason it was declined with, and no
+ * order is placed" carries an earlier comma and is three clauses. Telling those two
+ * apart needs a finite verb, which needs a parser, which is the line this rule does
+ * not cross.
+ *
+ * So it stays as it is, and the asymmetry of the costs is the argument: this is a
+ * ratchet, where a false positive costs one promise split into the `**And**` the
+ * format wanted anyway, and a false negative costs the rule. A noun list reported is
+ * a nuisance; a compound missed is the thing the rule exists for.
+ */
+const isCompound = (text) => /;|,\s+and\s+/.test(text.replace(/`[^`]*`/g, ' '))
+/**
  * The suites the config declares, plus the two levels that name no suite. Derived
  * rather than listed, so a repository that runs a third suite does not have to
  * edit the gate to say so.
@@ -183,6 +557,47 @@ const TIERS = new Map(Object.entries(SUITES).map(([id, suite]) => [
 /** `e2e|unit|manual|todo` — for the error messages. */
 const LEVELS_SHOWN = [...VERIFY_LEVELS].join('|')
 /**
+ * The capability register (`register` in the config), or `null` where nothing reads
+ * this corpus as one. Opt-in by whether a register consumes the repository, not by
+ * what kind of repository it is: an app's specs feed the register, a library's do not
+ * yet, and asking the second for a `since:` would be a rule with no reader.
+ *
+ * With it on, every spec states `since:` and `visibility:`, a public one a `summary:`,
+ * and the corpus is written to `file` as the register reads it. `manifest` is where the
+ * version and the name are read from, `floor` the first version that had specs at all.
+ */
+const REGISTER = config.register ? {
+  manifest: 'manifest.json',
+  file: 'features.json',
+  retiredSection: 'Retired features',
+  ...config.register,
+} : null
+/**
+ * `register.pinned`: a `since:` set by hand where history gives the wrong answer — a
+ * version on the main line that never went live, a spec file older than its promise.
+ * `{ "<feature>": { "since": "x.y.z", "reason": "…" } }`. The backfill writes the pin
+ * instead of history, and the gate holds the spec to it, so a later run cannot quietly
+ * put the script's value back.
+ */
+const PINNED = REGISTER?.pinned && typeof REGISTER.pinned === 'object' && !Array.isArray(REGISTER.pinned) ? REGISTER.pinned : {}
+const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
+/** Semver order for the plain `x.y.z` the register takes: negative, zero or positive. */
+const semverCmp = (a, b) => {
+  const [x, y] = [SEMVER_RE.exec(a).slice(1).map(Number), SEMVER_RE.exec(b).slice(1).map(Number)]
+  return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]
+}
+/** A git answer, or `null` when git has none — an unknown ref, a file the ref lacks. */
+const gitRead = args => {
+  try { return execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }) }
+  catch { return null }
+}
+if (emitting && !REGISTER) {
+  console.error('spec-check: --emit writes the register file, and `register` in spec.config.json is not set — nothing reads this corpus as a register')
+  process.exit(2)
+}
+/** The register's own word for the two audiences, and nothing in between. */
+const VISIBILITIES = ['public', 'internal']
+/**
  * A ticket id in this project's tracker (`ticketPattern` in the config, optional).
  * Whether the ticket is still open cannot be known offline — its *shape* can, and
  * that is what catches a `- ticket: TODO` or a `## Tickets` line naming none.
@@ -193,6 +608,30 @@ const MD_LINK_RE = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g
 
 /** A literal, made safe to embed in a RegExp source. */
 const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
+ * The lines of `lines` inside a fenced code block, and the line of a fence that never
+ * closes (or `null`). A backtick fence's info string holds no backtick, so ```x``` is
+ * inline code; a fence closes only on its own marker, at least as long, with nothing
+ * after it, as in CommonMark.
+ */
+const FENCE_MARK_RE = /^[ \t]*(?:(`{3,})(?!.*`)|(~{3,}))/
+function fencedLines(lines) {
+  const fenced = new Set()
+  let fence = null
+  let unclosed = null
+  for (let i = 0; i < lines.length; i++) {
+    const found = FENCE_MARK_RE.exec(lines[i])
+    const mark = found && (found[1] ?? found[2])
+    if (fence) {
+      fenced.add(i)
+      if (mark && mark[0] === fence[0] && mark.length >= fence.length && !lines[i].trim().slice(mark.length).trim()) fence = null
+    }
+    else if (mark) { fenced.add(i); fence = mark; unclosed = i }
+    if (!fence) unclosed = null
+  }
+  return { fenced, unclosed }
+}
 
 /**
  * One `##` section of a markdown file, and the same file without it — or `null`
@@ -213,21 +652,40 @@ const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
  * the whole of a review finding: `measureForm` had its own idea of where a `## `
  * section ends, purely because this returned text and it needed line numbers.
  *
- * It is derived from the text actually consumed rather than from the heading's line,
- * because the `\s*$` closing the heading pattern is greedy under `m` and eats the
- * newline and any blank lines after it — so `body` does not begin a fixed number of
- * lines below the heading, and an offset assumed to be constant is off by however
- * many blank lines the author left.
+ * `body` starts on the heading's own line break, so `bodyLine` is the heading's line
+ * and line `n` of `body` is line `bodyLine + n` of the file, however many blank lines
+ * the author left below the heading.
  */
 const splitSection = (text, heading) => {
-  const opens = new RegExp(`^(#+)\\s+${escapeRe(heading)}\\s*$`, 'm').exec(text)
-  if (!opens) return null
-  const after = text.slice(opens.index + opens[0].length)
-  const ends = after.search(new RegExp(`^#{1,${opens[1].length}}\\s`, 'm'))
+  // Headings are looked for outside fenced blocks only, at both ends: a `##` line in a
+  // markdown sample or a `#` shell comment is neither the section's heading nor its end.
+  // A fence that never closes fences nothing here, so the section still ends at the
+  // next heading; `retiredRowsOf` reports that fence on its own section.
+  const lines = text.split('\n')
+  const { fenced, unclosed } = fencedLines(lines)
+  const isFenced = i => fenced.has(i) && (unclosed === null || i < unclosed)
+  const opener = new RegExp(`^ {0,3}(#{1,6})[ \\t]+${escapeRe(heading)}[ \\t]*\\r?$`)
+  let head = -1
+  let level = 0
+  for (let i = 0; i < lines.length; i++) {
+    const found = !isFenced(i) && opener.exec(lines[i])
+    if (found) { head = i; level = found[1].length; break }
+  }
+  if (head < 0) return null
+  // The same heading rule as the retired rows: up to three spaces of indent (a tab makes
+  // it indented code, as in CommonMark), and an empty `##` is a heading too.
+  const closer = new RegExp(`^ {0,3}#{1,${level}}(?:[ \\t]|\\r?$)`)
+  let end = lines.length
+  for (let i = head + 1; i < lines.length; i++) {
+    if (!isFenced(i) && closer.test(lines[i])) { end = i; break }
+  }
+  const before = lines.slice(0, head).join('\n')
+  const after = lines.slice(end).join('\n')
   return {
-    body: ends < 0 ? after : after.slice(0, ends),
-    without: text.slice(0, opens.index) + (ends < 0 ? '' : after.slice(ends)),
-    bodyLine: text.slice(0, opens.index + opens[0].length).split(/\r?\n/).length,
+    // Starts on the heading's line break, so `bodyLine` is the heading's line.
+    body: '\n' + lines.slice(head + 1, end).join('\n') + (end < lines.length ? '\n' : ''),
+    without: (head ? before + '\n' : '') + after,
+    bodyLine: head + 1,
   }
 }
 
@@ -299,6 +757,31 @@ function parseSpec(file) {
 }
 
 /**
+ * A YAML list in the frontmatter, as its entries — `where:`, `docs:`, `formerly:`.
+ *
+ * The indentation is optional because YAML's is: a sequence may sit at the key's own
+ * column, and rejecting that form would be the gate wrong about a correct file — the
+ * failure mode this whole parser was fixed for. The block form is what every spec uses
+ * and what the skill shows; the inline form is valid YAML too, and reporting it as
+ * missing would be the gate being wrong about a file that is right. Reached only when
+ * the block form did not match — which is why the caller strips comments first: a
+ * `where:` whose entries were deleted but whose comment stayed would otherwise be
+ * "named" by the comment text, and that is the new-spec case the `where:` check exists
+ * for. One reader for every list field, because `formerly:` arrived as the third and a
+ * third copy of these two patterns is how two of them come to disagree.
+ */
+function listField(fm, key) {
+  const block = new RegExp(`^${key}:\\s*\\r?\\n((?:[ \\t]*[-*].*\\r?\\n?)+)`, 'm').exec(fm)?.[1] ?? ''
+  const inline = new RegExp(`^${key}:[ \\t]*(\\S.*?)\\s*$`, 'm').exec(fm)?.[1] ?? ''
+  // A bracketed flow sequence is split on its commas; a bare inline value is one entry,
+  // because a place in the product is a phrase and may carry a comma of its own.
+  const flow = /^\[.*\]$/.test(inline)
+  return (block ? block.split(/\r?\n/) : flow ? inline.slice(1, -1).split(',') : [inline])
+    .map(l => l.replace(/^[ \t]*[-*]\s*/, '').trim().replace(/^(['"])(.*)\1$/, '$2'))
+    .filter(Boolean)
+}
+
+/**
  * The same parse, given the text rather than a path — because `--since` reads a
  * spec out of a git object and there must be exactly one reading of the format.
  * A second parser written for the report would agree with this one on the day it
@@ -324,26 +807,24 @@ function parseSpecText(file, text) {
   // precedes it, so a `where: Editor#1` keeps its hash.
   const fm = (/^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? '')
     .replace(/(?<=^|\s)#.*$/gm, '')
-  const feature = /^feature:\s*(\S+)\s*$/m.exec(fm)?.[1] ?? null
-  const updated = /^updated:\s*(\S+)\s*$/m.exec(fm)?.[1] ?? null
+  // `[ \t]` rather than `\s` around the value: `\s` crosses the newline, so an empty
+  // `since:` above a bare `where:` read `where:` as its value and was reported as
+  // wrong rather than missing.
+  const feature = /^feature:[ \t]*(\S+)[ \t]*$/m.exec(fm)?.[1] ?? null
+  const updated = /^updated:[ \t]*(\S+)[ \t]*$/m.exec(fm)?.[1] ?? null
   // Read as the whole rest of the line rather than a token: a title is a sentence,
   // and quotes around it are YAML's rather than part of the name.
   const title = /^title:[ \t]*(\S.*?)\s*$/m.exec(fm)?.[1].replace(/^(['"])(.*)\1$/, '$2') ?? null
   // `where:` is a YAML list; what matters is that it names at least one place.
-  // The indentation is optional because YAML's is: a sequence may sit at the key's
-  // own column, and rejecting that form would be the gate wrong about a correct
-  // file — the failure mode this whole parser was fixed for.
-  const whereBlock = /^where:\s*\r?\n((?:[ \t]*[-*].*\r?\n?)+)/m.exec(fm)?.[1] ?? ''
-  // The block form is what every spec uses and what the skill shows; the inline
-  // form is valid YAML too, and reporting it as missing would be the gate being
-  // wrong about a file that is right. Reached only when the block form did not
-  // match — which is why the comment strip above matters here too: a `where:` whose
-  // entries were deleted but whose comment stayed would otherwise be "named" by the
-  // comment text, and that is the new-spec case this check exists for.
-  const whereInline = /^where:[ \t]*(\S.*?)\s*$/m.exec(fm)?.[1] ?? ''
-  const where = (whereBlock ? whereBlock.split(/\r?\n/) : [whereInline])
-    .map(l => l.replace(/^[ \t]*[-*]\s*/, '').replace(/^\[|\]$/g, '').trim())
-    .filter(Boolean)
+  const where = listField(fm, 'where')
+  // The register's fields (`register` in the config). Read whether or not the key is
+  // set, because reading is not judging: the checks that need them sit behind the key,
+  // and a corpus read out of history must parse the same with it on or off.
+  const since = /^since:[ \t]*(\S+)[ \t]*$/m.exec(fm)?.[1].replace(/^(['"])(.*)\1$/, '$2') ?? null
+  const visibility = /^visibility:[ \t]*(\S+)[ \t]*$/m.exec(fm)?.[1].replace(/^(['"])(.*)\1$/, '$2') ?? null
+  const summary = /^summary:[ \t]*(\S.*?)\s*$/m.exec(fm)?.[1].replace(/^(['"])(.*)\1$/, '$2') ?? null
+  const formerly = listField(fm, 'formerly')
+  const docs = listField(fm, 'docs')
   const acs = []
   const sections = []
   // Prose between the `# Title` and the first `##` — the unheadinged intro that
@@ -359,6 +840,12 @@ function parseSpecText(file, text) {
   // this corpus, and a comparison that read only the first would call two different
   // promises identical.
   let open = null
+  // Whether the line before this one was blank. A blank line does not end a bullet —
+  // what follows it does — which is the same three-state reading `measureForm`'s
+  // vocabulary rule uses, and it has to be, because that rule allows a bullet to
+  // carry an indented second paragraph after a gap. Read as an ending, the parser
+  // dropped exactly that paragraph from the promise while the gate accepted it.
+  let prevBlank = false
 
   // Start after the frontmatter's closing `---`. A full-line YAML comment matches
   // `^#\s` just as a heading does, so scanning from line 0 let the frontmatter's
@@ -368,44 +855,156 @@ function parseSpecText(file, text) {
   // nothing read `intro` closely; the opening-subject rule does.
   const fmEnd = lines[0] === '---' ? lines.indexOf('---', 1) : -1
 
-  for (const [i, line] of lines.entries()) {
+  for (const [i, raw] of lines.entries()) {
     if (i <= fmEnd) continue
-    if (/^#\s/.test(line)) { afterTitle = true; heading1 = line.replace(/^#\s+/, '').trim(); continue }
-    if (/^##\s/.test(line)) { afterTitle = false; sections.push(line.replace(/^##\s+/, '').trim()) }
-    else if (afterTitle && line.trim() && !line.startsWith('---')) intro += `${line.trim()} `
+    if (/^#\s/.test(raw)) { afterTitle = true; heading1 = raw.replace(/^#\s+/, '').trim(); continue }
+    if (/^##\s/.test(raw)) { afterTitle = false; sections.push(raw.replace(/^##\s+/, '').trim()) }
+    else if (afterTitle && raw.trim() && !raw.startsWith('---')) intro += `${raw.trim()} `
 
-    const heading = AC_HEADING_RE.exec(line)
+    const heading = AC_HEADING_RE.exec(raw)
     if (heading) {
-      current = { id: heading[1], title: heading[2], verify: null, levels: [], shown: '', reason: null, ticket: null, slots: [], line: i + 1 }
+      // The body's left edge, read once for the whole criterion, because every
+      // question below is "is this line the criterion's own, or part of the bullet
+      // above it" and column 0 is the wrong answer to it for a body written at an
+      // indent. Bounded by the criterion's own end — the next heading of any level,
+      // which is the same line that sets `current` back to null further down.
+      const end = lines.findIndex((l, j) => j > i && /^#{1,3}\s/.test(l))
+      // Read as the block it is, once, and then consulted line by line below — the
+      // same reading `measureForm`'s rules get. Keyed by the line's place in the
+      // FILE, because the loop this sits in walks the file rather than the block.
+      const body = readBody(lines.slice(i + 1, end === -1 ? lines.length : end))
+      current = { id: heading[1], title: heading[2], verify: null, levels: [], shown: '', reason: null, ticket: null, slots: [], line: i + 1,
+        edge: body.edge, body: new Map(body.lines.map(e => [i + 1 + e.i, e])) }
       acs.push(current)
       open = null
+      prevBlank = false
       continue
     }
     // A non-AC `##`/`###` heading ends the current AC block (e.g. `## Gaps`).
-    if (/^#{1,3}\s/.test(line)) { current = null; open = null; continue }
+    if (/^#{1,3}\s/.test(raw)) { current = null; open = null; continue }
     if (!current) continue
+    // Past the criterion's own end: a retirement notice, and whatever follows it,
+    // sits in the gap between two criteria and is nobody's promise.
+    const on = current.body.get(i)
+    if (!on) { open = null; prevBlank = false; continue }
+    if (on.kind === 'blank') { prevBlank = true; continue }
+    // A comment is not the body's text, here for the reason the words sweep exempts
+    // one: it says something to whoever edits the file and nothing to whoever reads
+    // the promise, so folding it into the fingerprint made editing a note a promise
+    // change. Invisible rather than skipped-with-a-reset — what is above and below it
+    // are as adjacent as they would be if nobody had written it.
+    if (on.kind === 'comment') continue
+    const afterGap = prevBlank
+    prevBlank = false
+    // Read off the body rather than off the raw line: an inline comment is already
+    // gone, so a `- verify: unit <!-- until the runner lands -->` states one level
+    // and not two.
+    const line = on.text
+    // A fenced block is content: nothing inside one opens a slot or states a level,
+    // whichever column it is written at. Where it belongs is the other question, and
+    // the fence's own column answers it — indented under a bullet the block is that
+    // bullet's, and changing it changes what was promised; at the criterion's edge it
+    // is the criterion's own and ends the bullet above, exactly as a paragraph there
+    // does. Read at the edge and folded in regardless, a sample containing
+    // `- **Then** …` put its own lines in the promise, so editing a code block was
+    // reported as a changed promise.
+    if (on.kind !== 'line') {
+      if (on.own) open = null
+      else if (open) { open.text += ` ${on.text}`; open.wrapping = false }
+      continue
+    }
+    // Is this line the criterion's own, or part of the bullet above it? Everything
+    // below hangs on that, and it is `bodyEdge`'s answer rather than column 0's —
+    // the same reading `measureForm`'s vocabulary rule uses, so the two agree on
+    // what nesting means. They did not: `SLOT_RE` is anchored `^\s*` and matched an
+    // indented bullet, so a nested one opening on a bold word closed the slot above
+    // it and its text never reached the fingerprint, while a nested PLAIN bullet was
+    // appended to that slot by the branch below. Two readings of "nested" in one
+    // parser, and the shape the reference doc calls legal was the one that lost text:
+    // changing such a sub-bullet was a promise change the `--since` report called
+    // untouched, which is the failure the whole rule exists to close.
+    const mine = on.own
     // A labelled bullet opens a slot and closes the one before it; a bullet with no
     // label — or one this format does not know — closes without opening, so its text
     // cannot be appended to the promise above it.
-    const slot = SLOT_RE.exec(line)
+    const slot = mine ? SLOT_RE.exec(line) : null
     if (slot) {
-      open = PROMISE_SLOTS.has(slot[1]) ? { label: slot[1], text: slot[2].trim() } : null
+      // `wrapping` is true while the lines that follow are still the promise SENTENCE
+      // — a hard wrap — and false from the first blank line on, after which whatever
+      // the bullet still carries is its detail. The branch below is where it turns.
+      open = PROMISE_SLOTS.has(slot[1]) ? { label: slot[1], text: slot[2].trim(), prose: slot[2].trim(), wrapping: true } : null
       if (open) current.slots.push(open)
       continue
     }
-    const meta = /^\s*[-*]\s*(verify|reason|ticket):\s*(.+?)\s*$/.exec(line)
-    if (meta) { current[meta[1]] = meta[2].replace(/^`|`$/g, '').trim(); open = null }
-    // A slot is continued by anything that is not a bullet at column 0, and ended by a
-    // blank line. Both halves matter, and both were wrong in a way the report could not
-    // admit to: `/^\s*[-*]\s/` also matched an *indented* bullet, so a sub-bullet under
-    // a `**Then**` closed the slot and its text never reached the fingerprint — a
-    // changed promise read as untouched. And with no blank-line branch, a paragraph
-    // written between the promise and its `**Because**` was glued onto the promise, so
-    // prose moving read as the promise moving. A confident wrong answer either way,
-    // which is the one thing this report may never give.
-    else if (open && line.trim() && !/^[-*]\s/.test(line)) { open.text += ` ${line.trim()}`; continue }
-    else if (/^[-*]\s/.test(line)) open = null
-    else if (open && !line.trim()) open = null
+    // Only the criterion's own `verify:` is the criterion's. One nested under a
+    // bullet says something about that bullet, and reading it here gave the criterion
+    // a level nothing in the body declared — the same mistake as the slot above, one
+    // field along. No criterion in any corpus measured writes one.
+    //
+    // `reason:` and `ticket:` are the other way round, and gating all three alike was
+    // wrong for two of them. They say something about the `verify:` LINE — the format
+    // tells their author they "belong under" it — so an author who indents them is
+    // agreeing with the format rather than escaping it, and two live criteria in
+    // `console` are written that way. Unread, the checks below then said `verify:
+    // todo` "must name the `- ticket:` that closes the gap" to somebody looking at
+    // one, which is the bold-phrase lesson one field along again.
+    const written = /^\s*[-*]\s*(verify|reason|ticket):\s*(.+?)\s*$/.exec(line)
+    const meta = written && (mine || written[1] !== 'verify') ? written : null
+    if (meta) current[meta[1]] = meta[2].replace(/^`|`$/g, '').trim()
+    // Only the criterion's OWN bullet closes the promise above it. A nested one is a
+    // bullet inside that promise like any other, so it falls through to the branch
+    // below and stays in the fingerprint — taking it out would be this rule's own
+    // fault, one field along for the third time.
+    if (meta && mine) { open = null }
+    // A slot is continued by anything that is not a bullet of the criterion's own and
+    // is not a paragraph at its edge after a gap. Every clause of that was once wrong
+    // in a way the report could not admit to: `/^\s*[-*]\s/` also matched a bullet
+    // nested under the slot, so a sub-bullet under a `**Then**` closed it and its text
+    // never reached the fingerprint; with no gap branch at all, a paragraph written
+    // between the promise and its `**Because**` was glued onto the promise, so prose
+    // moving read as the promise moving; and with the gap alone deciding, a bullet's
+    // own indented second paragraph — a shape the vocabulary rule allows and the gate
+    // accepts — was dropped from the promise instead. A confident wrong answer every
+    // way round, which is the one thing this report may never give.
+    //
+    // `text` and `prose` part company here, and the split is the whole point. The
+    // fingerprint wants the fold — a nested bullet is part of the bullet above it, so
+    // changing one changes the promise and `--since` has to see it. A word count wants
+    // the sentence — the promise is the `**Then**` line, and the list beneath it is the
+    // detail of one outcome, not more of the sentence. Measuring the fold counted each
+    // sub-bullet's `-` as a word and reported a nine-word promise as thirty-three: a
+    // criterion written in the shape `references/spec-anatomy.md` blesses, failed by the
+    // gate, which is the one outcome that file rules out by name.
+    //
+    // A wrapped continuation joins both, because a promise hard-wrapped over three lines
+    // is one sentence and is measured as one. A bullet's own INDENTED second paragraph
+    // joins `text` alone, and `wrapping` is what says so: the sentence ended at the blank
+    // line above it, so every line from there on is that bullet's detail, exactly as a
+    // nested bullet is. One flag rather than a per-line test, because after the gap the
+    // paragraph's second line is no more of the sentence than its first, and asking the
+    // question line by line answered it two ways inside one paragraph.
+    else if (open && !(mine && item(line)) && !(afterGap && mine)) {
+      open.text += ` ${line.trim()}`
+      // Where the SENTENCE stops, which is not where the bullet stops: at the gap
+      // above this line, at a nested bullet, at a numbered list — and at a fenced
+      // block, in the branch above. Everything from there on is that bullet's detail
+      // and none of it is more of the promise. Turned off once rather than tested per
+      // line, because the nested bullet itself was kept out of the count and its WRAP
+      // was not: a six-word promise carrying a detail bullet that ran over three
+      // lines was reported as thirty-two words — the ratchet failing a document this
+      // format's own reference doc calls correct, in a second shape of the case the
+      // line below was written for.
+      if (afterGap || item(line)) open.wrapping = false
+      if (open.wrapping) open.prose += ` ${line.trim()}`
+      continue
+    }
+    else if (mine && item(line)) open = null
+    // A paragraph at the criterion's own edge after a gap is inside nothing, and that
+    // is what this branch was written for: glued onto the promise, a sentence moving
+    // between the promise and its `**Because**` read as the promise moving. An
+    // INDENTED paragraph after a gap is the bullet's own second paragraph, which the
+    // vocabulary rule allows and the branch above therefore reads.
+    else if (open && afterGap && mine) open = null
     // `verify:` may name more than one level: an AC proved at the logic seam AND
     // through the UI is proved twice, and before PO-213 it had to pick one — which
     // made the honest second test a claim the gate rejected. Kept as a list, plus the
@@ -417,7 +1016,7 @@ function parseSpecText(file, text) {
       current.shown = current.levels.join(', ')
     }
   }
-  return { file, feature, title, updated, where, acs, sections, heading: heading1, intro: intro.trim(), text }
+  return { file, feature, title, updated, where, since, visibility, summary, formerly, docs, acs, sections, heading: heading1, intro: intro.trim(), text }
 }
 
 // Flat on purpose: a feature id equals its filename, and a spec tucked into a
@@ -440,6 +1039,303 @@ const specFiles = specEntries
   .filter(e => e.isFile() && e.name.endsWith('.md') && e.name !== 'README.md' && !companions.includes(e.name))
   .map(e => e.name)
   .sort()
+
+// ------------------------------------------------------------- backfill ------
+
+/**
+ * One scan of JSON text for both readers below: from `from`, inside `depth` levels of
+ * `{`/`[`, it yields every string as `{ start, end, depth }` and, when a close takes the
+ * depth to 0, `{ close }` and stops. Strings are skipped whole, so a bracket inside one
+ * counts for nothing.
+ */
+function* jsonScan(text, from, depth) {
+  for (let i = from; i < text.length; i++) {
+    const c = text[i]
+    if (c === '"') {
+      const start = i
+      for (i++; i < text.length && text[i] !== '"'; i++) if (text[i] === '\\') i++
+      yield { start, end: i + 1, depth }
+      continue
+    }
+    if (c === '{' || c === '[') depth++
+    else if ((c === '}' || c === ']') && --depth === 0) { yield { close: i }; return }
+  }
+}
+
+/**
+ * The text of a JSON object from just after its `{` to just before its `}`, or `null`
+ * when it does not close.
+ */
+function objectBody(text, from) {
+  for (const token of jsonScan(text, from, 1)) if (token.close !== undefined) return text.slice(from, token.close)
+  return null
+}
+
+/**
+ * Where `pattern` matches at `"key"` among the top-level keys of an object body (as
+ * `objectBody` returns it), not inside a nested object, an array or a string value —
+ * an `exec`-like result with `index` relative to `body`, or `null`. A key written
+ * twice is read where `JSON.parse` reads it: at its last occurrence.
+ */
+function topLevelKey(body, key, pattern) {
+  let last = null
+  for (const { start, end, depth } of jsonScan(body, 0, 1)) {
+    if (depth !== 1 || body.slice(start, end) !== `"${key}"` || !/^\s*:/.test(body.slice(end))) continue
+    const found = pattern.exec(body.slice(start))
+    last = found ? Object.assign(found, { index: start }) : null
+  }
+  return last
+}
+
+/**
+ * `--backfill-since`: the version each spec first shipped in, read off git history.
+ *
+ * Releases are read off the deployed line: `origin/main`'s first parents, the
+ * sequence of states that were each deployed, or HEAD's where there is no
+ * `origin/main`. A spec shipped with the first commit on that line that contains it
+ * and raised the manifest's version over its first parent — the commit where the spec
+ * landed, or the next release after it. A version a branch carried and the line never
+ * had does not count: dated by its add commit, a spec once claimed a release that
+ * never existed (orders#64, `since: 2.3.0` on an app that went 2.2.0 → 3.0.0). Read
+ * off HEAD on a feature branch that merged `main` in, a spec from `main` would be
+ * dated by that merge. A merge raises only what its first parent did not already
+ * carry. A spec in `register.pinned` is not read from history at all: it takes the
+ * pin.
+ *
+ * The add commit is found with `--follow`, so a renamed spec keeps the date of its
+ * first file; a copy is not followed, because a spec that starts as a copy of another
+ * promises something new. The floor is the lowest `since:` found: the first version
+ * that shipped specs at all.
+ *
+ * What history cannot settle is listed and left alone rather than guessed. A spec
+ * history cannot date — added twice, brought in by a merge, behind a first parent on
+ * the line without a readable version, carrying a pin with no x.y.z `since`, or met
+ * by a git failure — may be older than every settled one, so while one is listed the
+ * floor is only ever lowered, never raised. A spec not committed, or not shipped yet
+ * (it carries the version the change ships, which only the author knows), ships above
+ * HEAD's version and does not hold the floor back. Whether a version was ever
+ * deployed is not in git at all; that is for the reader of the list to judge, and a
+ * pin to record. Exits 1 while anything is listed, so a script cannot take a partial
+ * backfill for a complete one.
+ *
+ * A shallow clone is refused: its oldest commit looks like every spec's root.
+ */
+if (backfilling) {
+  if (!REGISTER) {
+    console.error('spec-check: --backfill-since writes `since:` and `register.floor`, and `register` in spec.config.json is not set')
+    process.exit(2)
+  }
+  // A shallow clone ends its history at the oldest commit it fetched, which then looks
+  // like every spec's add commit and like a root that raised the version: plausible,
+  // wrong dates and an exit 0. History has to be whole before it is read as fact.
+  if (gitRead(['rev-parse', '--is-shallow-repository'])?.trim() === 'true') {
+    console.error('spec-check: --backfill-since reads the whole history, and this clone is shallow — run `git fetch --unshallow` (CI: `fetch-depth: 0` / `GIT_DEPTH: 0`) and try again')
+    process.exit(2)
+  }
+  const versions = new Map()
+  /** The manifest's x.y.z version at a commit, or `null`. */
+  const versionAt = commit => {
+    if (!versions.has(commit)) {
+      let version = null
+      try { version = JSON.parse(gitRead(['show', `${commit}:./${REGISTER.manifest}`]) ?? 'null')?.version ?? null }
+      catch { /* not JSON at that commit: no version */ }
+      versions.set(commit, SEMVER_RE.test(version ?? '') ? version : null)
+    }
+    return versions.get(commit)
+  }
+  const parents = new Map()
+  /** A commit's parents (none for a root), or `null` when git cannot say. */
+  const parentsOf = commit => {
+    if (!parents.has(commit)) parents.set(commit, gitRead(['rev-list', '--parents', '-n', '1', commit])?.trim().split(' ').slice(1).filter(Boolean) ?? null)
+    return parents.get(commit)
+  }
+  // The deployed line is `origin/main`'s first parents, not HEAD's: run on a feature
+  // branch that merged `main` in, HEAD's first parents are the branch and its update
+  // merges, and a spec from `main` would be dated by the merge, not by its release.
+  // Without `origin/main` the run reads HEAD's line, which is right on `main`'s tip.
+  const lineRef = gitRead(['rev-parse', '--verify', '--quiet', 'origin/main^{commit}']) ? 'origin/main' : 'HEAD'
+  // A git failure here is no fact about history: read as one, an empty line would list
+  // every spec as not shipped, and none of them would hold the floor back.
+  const lineLog = gitRead(['rev-list', '--first-parent', '--reverse', lineRef])
+  // Only a commit that changes the manifest against its first parent can raise the
+  // version, so those are read once and the rest of the line is never `git show`n.
+  const releaseLog = gitRead(['log', '--first-parent', '--diff-merges=first-parent', '--format=%H', lineRef, '--', REGISTER.manifest])
+  if (lineLog === null || releaseLog === null) {
+    console.error(`spec-check: --backfill-since could not read ${lineRef}'s first-parent history — nothing written`)
+    process.exit(2)
+  }
+  /** The deployed line, oldest first: the commits that were each a deployed state. */
+  const mainLine = lineLog.split('\n').filter(Boolean)
+  const onLine = new Map(mainLine.map((c, i) => [c, i]))
+  /** The line's indexes of the commits that change the manifest, ascending. */
+  const releaseAt = releaseLog.split('\n').filter(Boolean).map(c => onLine.get(c)).filter(i => i !== undefined).sort((a, b) => a - b)
+  /** `git merge-base --is-ancestor`: true, false, or `null` when git failed rather than answered. */
+  const isAncestor = (a, b) => {
+    try { execFileSync('git', ['merge-base', '--is-ancestor', a, b], { cwd: root, stdio: 'ignore' }); return true }
+    catch (e) { return e.status === 1 ? false : null }
+  }
+  /**
+   * The index of the first main-line commit that contains `commit`, -1 when none does,
+   * or `null` when git failed. Containment is monotone along the line, so a binary
+   * search finds it.
+   */
+  const landing = commit => {
+    if (onLine.has(commit)) return onLine.get(commit)
+    let lo = 0, hi = mainLine.length - 1, hit = -1
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1
+      const reached = isAncestor(commit, mainLine[mid])
+      if (reached === null) return null
+      if (reached) { hit = mid; hi = mid - 1 }
+      else lo = mid + 1
+    }
+    return hit
+  }
+  const found = []
+  const open = []
+  const notes = []
+  if (lineRef === 'HEAD') notes.push('no origin/main — dated along HEAD\'s first-parent line, which is the deployed line only on main\'s tip')
+  // A spec history cannot date may be older than every settled one. One that is new in
+  // this change, or added but not shipped yet, ships above HEAD's version, so it never
+  // is: it is listed, but does not hold the floor back.
+  let undatedAny = false
+  const undated = line => { open.push(line); undatedAny = true }
+  // A malformed pin must stop the run, not fall back to history: the date it was written
+  // to protect would be overwritten by the value it exists to keep out.
+  if (REGISTER.pinned !== undefined && PINNED !== REGISTER.pinned) {
+    console.error('spec-check: `register.pinned` is not an object — `{ "<feature>": { "since": "x.y.z", "reason": "…" } }`; nothing written')
+    process.exit(2)
+  }
+  for (const file of specFiles) {
+    const path = `${config.specDir}/${file}`
+    const pin = PINNED[file.replace(/\.md$/, '')]
+    if (pin && !SEMVER_RE.test(pin.since ?? '')) { undated(`${path} — its pin in register.pinned has no x.y.z \`since\`, so history is not written over it`); continue }
+    if (pin) {
+      found.push({ file, path, since: pin.since })
+      notes.push(`${path} — pinned at ${pin.since} in register.pinned, not read from history${pin.reason ? ` (${pin.reason})` : ''}`)
+      continue
+    }
+    // `--follow` finds copies as well as renames, and a new spec is often half a copy
+    // of an old one by shape alone — so only a rename is followed, and a copy is the
+    // commit the file came into being, like an add. git 2.56 walks on past the copy
+    // into its source's history, so the walk is topological: the copy, a child, always
+    // comes before the source's add, even when both carry the same commit time.
+    const log = gitRead(['log', '--follow', '--topo-order', '--format=%x00%H', '--name-status', '--', path])
+    if (log === null) { undated(`${path} — git could not read its history, so where it first shipped is not known`); continue }
+    const history = log
+      .split('\0').map(entry => entry.trim().split(/\n+/)).filter(([sha]) => sha)
+      .map(([sha, status = '']) => { const [kind, ...paths] = status.split('\t'); return { sha, kind: kind[0], path: paths.at(-1), from: paths[0] } })
+    // Only renames are followed, by name: an entry counts only for the name the spec had
+    // at that point, and a rename hands the walk its old name. git 2.56 also walks into a
+    // copy's source — even when the copying commit is a merge it prints nothing for — and
+    // an add of that other file is not this spec's birth.
+    let name = path
+    let born = -1
+    for (const [k, h] of history.entries()) {
+      if (h.path !== name) continue
+      if (h.kind === 'R') { name = h.from; continue }
+      if (h.kind === 'A' || h.kind === 'C') { born = k; break }
+    }
+    // Only a spec HEAD does not hold yet is new in this change. One HEAD holds whose
+    // history shows no add — a file that came into the tree in a merge, which `log`
+    // prints no status for, or none at all — shipped somewhere history does not say. It
+    // may be older than every settled one, so it holds the floor back like any undated spec.
+    if (born < 0) {
+      const held = gitRead(['ls-tree', '--name-only', 'HEAD', '--', path])
+      if (held === null) undated(`${path} — git could not say whether HEAD holds it, so where it first shipped is not known`)
+      else if (!held.trim()) open.push(`${path} — not in git history; a spec new in this change carries the version the change ships`)
+      else undated(`${path} — its history shows no commit that added it (a merge brought it in?), so where it first shipped is not in history`)
+      continue
+    }
+    const readds = history[born].kind === 'A' ? history.slice(born + 1).filter(h => h.kind === 'A' && h.path === history[born].path) : []
+    if (readds.length) { undated(`${path} — added ${readds.length + 1} times (${[history[born], ...readds].map(h => h.sha.slice(0, 7)).join(', ')}), so which one shipped first is a reading of history, not a fact in it`); continue }
+    const { sha, path: firstPath } = history[born]
+    const short = sha.slice(0, 7)
+    if (firstPath && firstPath !== path) notes.push(`${path} — followed from ${firstPath}, added at ${short}`)
+    // The release that shipped a spec is read off the line HEAD was built along — the
+    // first-parent history, which is what deployed. The add commit itself may sit on a
+    // branch whose version never reached that line: dated by it, a spec claims a release
+    // that never existed (orders#64: `since: 2.3.0` on an app that went 2.2.0 → 3.0.0).
+    // So the spec is dated from the commit where it landed on that line, onward.
+    const landed = landing(sha)
+    if (landed === null) { undated(`${path} — added at ${short}, and git could not say where it reached ${lineRef}'s first-parent line`); continue }
+    if (landed < 0) { open.push(`${path} — added at ${short}, which ${lineRef}'s first-parent line does not reach yet: it has not shipped in a release`); continue }
+    let since = null
+    let blocked = null
+    for (const i of releaseAt) {
+      if (i < landed) continue
+      const commit = mainLine[i]
+      const v = versionAt(commit)
+      // A commit with no readable version raises nothing; the next one is read against it.
+      if (!v) continue
+      const before = parentsOf(commit)
+      if (!before) { blocked = `git could not name the parents of ${commit.slice(0, 7)}`; break }
+      if (!before.length) { since = v; break }
+      if (!versionAt(before[0])) {
+        blocked = commit === sha
+          ? `whose parent ${before[0].slice(0, 7)} has no readable x.y.z version in ${REGISTER.manifest}`
+          : `${commit.slice(0, 7)} (${v}) has a parent without a readable x.y.z version in ${REGISTER.manifest}, so whether it raised the version is not in history`
+        break
+      }
+      if (semverCmp(v, versionAt(before[0])) > 0) { since = v; break }
+    }
+    const under = versionAt(sha) ? ` under ${versionAt(sha)}` : ''
+    if (blocked) { undated(`${path} — added at ${short}${blocked.startsWith('whose') ? ', ' : `${under}; `}${blocked}`); continue }
+    if (!since) { open.push(`${path} — added at ${short}${under}, and no later commit raised the version: it has not shipped in a release yet`); continue }
+    found.push({ file, path, since })
+  }
+
+  const changed = []
+  for (const { file, path, since } of found) {
+    const at = join(root, config.specDir, file)
+    const text = readFileSync(at, 'utf8')
+    const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)
+    if (!fm) { open.push(`${path} — has no frontmatter to write \`since: ${since}\` into`); continue }
+    const had = /^since:[ \t]*(.*?)[ \t]*$/m.exec(fm[1])?.[1].replace(/\s+#.*$/, '').replace(/^(['"])(.*)\1$/, '$2') ?? null
+    if (had === since) continue
+    const body = had !== null
+      ? fm[1].replace(/^since:.*$/m, `since: ${since}`)
+      : /^(visibility|summary|updated):/m.test(fm[1])
+        ? fm[1].replace(/^(visibility|summary|updated):/m, `since: ${since}\n$1:`)
+        : `${fm[1]}\nsince: ${since}`
+    writeFileSync(at, text.slice(0, fm.index) + text.slice(fm.index).replace(fm[1], () => body))
+    changed.push(`${path} — since: ${had ?? '(none)'} → ${since}`)
+  }
+
+  const floor = found.map(f => f.since).sort(semverCmp)[0] ?? null
+  // A spec history cannot date can be older than every settled one, so a floor that
+  // would rise waits for all of them: a floor written too high fails every older
+  // `since:` until someone reverts it. Lowering it is safe, and the `since:` just
+  // written below it needs it.
+  const lowers = floor && SEMVER_RE.test(REGISTER.floor ?? '') && semverCmp(floor, REGISTER.floor) < 0
+  const heldBack = Boolean(floor && floor !== REGISTER.floor && undatedAny && !lowers)
+  if (heldBack) notes.push(`spec.config.json — register.floor not written while specs are open; the settled ones say ${floor}`)
+  else if (floor && floor !== REGISTER.floor) {
+    const configPath = join(root, 'spec.config.json')
+    const text = readFileSync(configPath, 'utf8')
+    const opens = /"register"\s*:\s*\{/.exec(text)
+    const body = opens && objectBody(text, opens.index + opens[0].length)
+    const floorAt = body === null ? null : topLevelKey(body, 'floor', /^("floor"\s*:\s*)(?:"[^"]*"|null)/)
+    if (!floorAt) open.push(`spec.config.json — \`register\` has no \`floor\` to write ${floor} into; add \`"floor": "${floor}"\``)
+    else {
+      const at = opens.index + opens[0].length + floorAt.index
+      writeFileSync(configPath, `${text.slice(0, at)}${floorAt[1]}"${floor}"${text.slice(at + floorAt[0].length)}`)
+      changed.push(`spec.config.json — register.floor: ${REGISTER.floor ?? '(none)'} → ${floor}`)
+    }
+  }
+
+  console.log(`spec-check --backfill-since · ${found.length} of ${specFiles.length} spec${specFiles.length === 1 ? '' : 's'} dated from history, floor ${floor ?? 'unknown'}`)
+  for (const line of changed) console.log(`  wrote ${line}`)
+  if (!changed.length) console.log(open.length
+    ? '  nothing written — what history settles is already there; the rest is listed below'
+    : '  nothing to write — every since: and the floor already say what history says')
+  for (const line of notes) console.log(`  · ${line}`)
+  if (open.length) {
+    console.error(`\n${open.length} spec${open.length === 1 ? '' : 's'} left for a person — history does not settle ${open.length === 1 ? 'it' : 'them'}:`)
+    for (const line of open) console.error(`  ? ${line}`)
+  }
+  process.exit(open.length ? 1 : 0)
+}
 
 // ------------------------------------------------------------- promises ------
 
@@ -719,7 +1615,10 @@ const readme = existsSync(readmePath) ? readFileSync(readmePath, 'utf8') : null
 const register = readme !== null && config.indexRegister
   ? splitSection(readme, config.indexRegister)
   : null
-const inventory = (config.indexAsides ?? []).reduce(
+// The register's section of retired feature ids is an aside like the others: its rows
+// name specs that are gone and the specs that took their promises over, and neither is
+// an inventory entry.
+const inventory = [...(config.indexAsides ?? []), ...(REGISTER ? [REGISTER.retiredSection] : [])].reduce(
   (text, heading) => {
     if (text === null) return null
     const aside = splitSection(text, heading)
@@ -769,6 +1668,25 @@ if (readme !== null) {
   checkTicketLinks(`${config.specDir}/README.md`, readme)
 }
 
+/**
+ * The manifest the register reads its version and name from, or `null` when the
+ * register is off or the file cannot be read — the second reported once, here, so
+ * every rule below that needs a version can stay silent instead of each saying so.
+ */
+const manifest = (() => {
+  if (!REGISTER) return null
+  const at = REGISTER.manifest
+  let read
+  try { read = JSON.parse(readFileSync(join(root, at), 'utf8')) }
+  catch (e) { err('spec.config.json', `\`register.manifest\` names \`${at}\`, which could not be read — ${e.message}`); return null }
+  if (!SEMVER_RE.test(read.version ?? '')) { err(at, `\`version: ${read.version}\` is not a plain x.y.z version, so no \`since:\` can be measured against it`); return null }
+  if (!read.vendor || !read.name) { err(at, 'names no `vendor` and `name`, and the register files every feature under `<vendor>/<name>`'); return null }
+  return read
+})()
+if (REGISTER && !SEMVER_RE.test(REGISTER.floor ?? '')) {
+  err('spec.config.json', `\`register.floor\` is \`${REGISTER.floor}\` — set it to the first version that had specs, as x.y.z`)
+}
+
 /** feature id -> spec */
 const specs = new Map()
 
@@ -803,6 +1721,49 @@ for (const file of specFiles) {
   }
   if (!spec.title) err(where, 'frontmatter is missing `title:` — the name a reader is given, and what the opening sentence has to agree with. The key is case-sensitive')
   if (!spec.where.length) err(where, 'frontmatter is missing `where:` — name the place in the PRODUCT these promises are kept, one entry per surface (never a file path)')
+
+  // What the register shows, held where it is written. Only with the register on: a
+  // repository nothing reads as one is asked for none of it, and passes as it did.
+  if (REGISTER) {
+    if (!spec.since) err(where, 'frontmatter is missing `since:` — the first version that shipped these promises, as x.y.z')
+    else if (!SEMVER_RE.test(spec.since)) err(where, `frontmatter \`since: ${spec.since}\` is not a version — write it as x.y.z`)
+    else if (SEMVER_RE.test(REGISTER.floor ?? '') && semverCmp(spec.since, REGISTER.floor) < 0) {
+      err(where, `\`since: ${spec.since}\` is older than the first version that had specs (${REGISTER.floor}) — nothing before it was recorded, so nothing can claim it`)
+    }
+    else if (manifest && semverCmp(spec.since, manifest.version) > 0) {
+      err(where, `\`since: ${spec.since}\` is newer than the version this change ships (${manifest.version}) — a promise cannot have shipped in a version that does not exist yet`)
+    }
+    else if (PINNED[spec.feature] && SEMVER_RE.test(PINNED[spec.feature].since ?? '') && spec.since !== PINNED[spec.feature].since) {
+      err(where, `\`since: ${spec.since}\` differs from its pin in register.pinned (${PINNED[spec.feature].since}) — a backfill run wrote history over it; restore the pin's value, or change the pin with a reason`)
+    }
+    // Required with no default, because either default is a decision taken silently:
+    // `public` publishes what was written as internal, `internal` drops a feature from
+    // the help without anybody choosing to.
+    if (!spec.visibility) err(where, `frontmatter is missing \`visibility:\` — ${VISIBILITIES.join(' or ')}; there is no default, because either one would decide for you who reads this`)
+    else if (!VISIBILITIES.includes(spec.visibility)) err(where, `frontmatter \`visibility: ${spec.visibility}\` is not one of ${VISIBILITIES.join(' / ')}`)
+    // The summary is the only sentence the public register shows, so it is held to
+    // the promise sentence's cap and to being one sentence — a second one is where a
+    // summary turns back into the intro it was written to replace.
+    if (spec.visibility === 'public' && !spec.summary) {
+      err(where, 'is `visibility: public` and has no `summary:` — the one sentence the public register shows, for a reader outside the company')
+    }
+    // An internal spec's summary reaches no reader the register serves, yet it was emitted
+    // all the same: what is left behind when a spec turns internal, still promising in
+    // public words (sample-data-simulator carried eleven, one of them wrong).
+    if (spec.visibility === 'internal' && spec.summary) {
+      err(where, 'is `visibility: internal` and carries a `summary:` — only the public register shows one, so drop it')
+    }
+    if (spec.summary) {
+      const words = spec.summary.split(/\s+/).filter(Boolean).length
+      if (words > PROMISE_WORDS) err(where, `\`summary:\` runs to ${words} words — it is one sentence of at most ${PROMISE_WORDS}`)
+      // An abbreviation's full stop is not a sentence's: `e.g. ` mid-summary is one sentence.
+      if (/[.!?]\s+\S/.test(spec.summary.replace(/\b(?:e\.g|i\.e|vs|cf)\./gi, ''))) err(where, '`summary:` is more than one sentence — the intro carries the rest')
+    }
+    for (const old of spec.formerly) {
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(old)) err(where, `\`formerly:\` names \`${old}\`, which is not a feature id`)
+      else if (specFiles.includes(`${old}.md`)) err(where, `\`formerly:\` names \`${old}\`, which is a spec today — an alias may only name an id nobody holds`)
+    }
+  }
   // The same title in two places, so the two have to agree. A retitle touches both
   // lines in one file and it is easy to move one — and the halves are read by
   // different things: the H1 is what a reader sees and what the opening-subject rule
@@ -936,6 +1897,14 @@ for (const file of specFiles) {
   // the first. The line start is the anchor because a note often runs over several
   // lines, and a pattern wanting the closing `*` on the same line would match none
   // of them and be silently green.
+  //
+  // Not `RETIRED_LINE`, and not by oversight: this asks a narrower question than "is
+  // this line a retirement notice". It reads the leading id of an italic line at
+  // column 0 and ignores whatever the notice goes on to say, while `RETIRED_LINE`
+  // accepts an indent because a notice inside an indented body still has to end that
+  // body. An indented notice is therefore outside this sequence, which is the right
+  // answer for a check about where a reader looks: a line the document indents is
+  // not one they scan the margin for.
   const placed = spec.text.split(/\r?\n/).flatMap((line) => {
     const heading = AC_HEADING_RE.exec(line)
     if (heading) return [heading[1]]
@@ -1019,6 +1988,183 @@ if (readme !== null && config.indexRegister && ticketRe) {
         err(`${config.specDir}/README.md`, `records a surface as unpromised and names ${ticket}, but ${promised.file} already lists ${ticket} in its \`## Tickets\` — that work landed, so the promise exists and its row in \`## ${config.indexRegister}\` has to go`)
       }
     }
+  }
+}
+
+// ─────────────────────────────── words this corpus settled ───────────────────
+//
+// One word, one meaning — ASD-STE100's first rule, and the only one of its lexical
+// rules that can be checked without ASD's dictionary, because the register says
+// which word this corpus picked instead of a standard saying which word is
+// approved.
+//
+// The skill has said since the words section existed that settling a word obliges
+// a sweep of the corpus in the same change, and that "nothing checks this and
+// nothing can: a drifted term breaks no promise". The second half held only while
+// the register recorded the word that *won*. Recording the words that lost beside
+// it closes the hole: a word somebody retired is a hard error wherever it still
+// stands, in a spec or in the index.
+//
+// Hard rather than a ratchet, unlike the two promise-sentence counts above, and
+// the asymmetry is the register's doing: a row is written by the same change that
+// sweeps the corpus, so the count it could ratchet is zero on the day it arrives.
+// A repository adopting the convention over an existing corpus adds rows one at a
+// time and pays for each one where it is written.
+//
+// A missing section is silence, not an error — the other difference from
+// `indexRegister`, whose section is structural. The words section waits for a
+// disagreement, and a repo that has had none has nothing to declare.
+const wordRegister = readme !== null && config.wordRegister
+  ? splitSection(readme, config.wordRegister)
+  : null
+
+/**
+ * A filename, a path, a URL or a link target — the spellings of a word that are not
+ * the word. `\b` treats a hyphen as a boundary, so a spec called
+ * `reviewer-assignment.md` writes a retired *reviewer* in its own `feature:` line,
+ * in every sibling's link to it and in the index's inventory row, none of which
+ * anybody wrote as vocabulary. Reported, the one repair is a file rename that
+ * cascades through every `@spec:<feature>:AC-n` tag in the tests — so a register row
+ * could force a repo-wide rename nobody saw coming when they wrote it.
+ *
+ * Exempt for the reason a code span already is: an identifier is not this corpus's
+ * vocabulary. The `feature:` value is named too, because the gate elsewhere requires
+ * it to equal the filename, which makes it a filename and not a sentence.
+ */
+const NOT_PROSE = [
+  /\]\([^)]*\)/g,
+  /<[^>\s]+>/g,
+  /\S*\/\S*/g,
+  /[\w.-]+\.(?:md|markdown|json|ya?ml|mjs|cjs|jsx?|tsx?|vue|py|go|php|rb|rs|java|css|scss|html?|txt|csv|xml|sql|sh)\b/gi,
+]
+
+/**
+ * The lines of a markdown file a settled word can be read in: prose, with fenced
+ * blocks dropped, inline code, HTML comments, paths and link targets blanked. Line
+ * numbers are kept, because the sweep's whole product is sending somebody to the
+ * word.
+ *
+ * Code is exempt because an identifier is not the corpus's vocabulary — a spec
+ * quoting `costCenterId` from a payload is naming a field, not writing a word.
+ * A comment is exempt because the index's own comments explain the conventions
+ * and would report the template that teaches them.
+ *
+ * Read in both directions — the register is parsed through this too, not only swept
+ * with it. An exemption applied on one side only is the bug it was written to
+ * prevent, wearing the other face: the installer seeds the register with a comment
+ * whose job is to teach the convention by example, and a parse that could not see
+ * comments read that example as a live row and retired *cost center* across a
+ * repository on the day it was installed.
+ */
+const sweepable = (text) => {
+  const out = []
+  let fenced = false
+  let commented = false
+  let frontmatter = text.startsWith('---')
+  for (const [i, raw] of text.split(/\r?\n/).entries()) {
+    if (frontmatter && i > 0 && /^---\s*$/.test(raw)) { frontmatter = false; out.push([i + 1, '']); continue }
+    if (/^\s*(```|~~~)/.test(raw)) { fenced = !fenced; continue }
+    if (fenced) continue
+    let line = raw.replace(/<!--.*?-->/g, ' ').replace(/`[^`]*`/g, ' ')
+    if (commented) {
+      const closes = line.indexOf('-->')
+      if (closes < 0) continue
+      line = line.slice(closes + 3)
+      commented = false
+    }
+    const opens = line.indexOf('<!--')
+    if (opens >= 0) { line = line.slice(0, opens); commented = true }
+    if (frontmatter && /^feature:/.test(line)) line = 'feature:'
+    for (const re of NOT_PROSE) line = line.replace(re, ' ')
+    out.push([i + 1, line])
+  }
+  return out
+}
+
+/**
+ * The words the register retired, each with the word that replaced it.
+ *
+ * The entry shape is the convention the index template prints: the word that won
+ * opens the entry in bold, and the words it replaced follow the literal marker
+ * `Not:` to the end of the entry's first sentence — `- **cost centre** — … .
+ * Not: *cost center*, *costcentre*.`
+ *
+ * An entry that settles a word without retiring a synonym — a spelling, a plural,
+ * a word this corpus simply uses — carries no `Not:` and is skipped rather than
+ * reported. The check acts only on what the register explicitly says is gone,
+ * which is what keeps it from ever failing a correct document.
+ */
+const retiredWords = []
+if (wordRegister) {
+  // Read through `sweepable`, so the exemptions hold in the direction that CREATES a
+  // row as well as the one that enforces it. A comment and a fenced block are where
+  // the convention is taught by example — the installer's own template retires
+  // *cost center* in a comment — and an example that becomes a rule is a gate failing
+  // a document nobody wrote.
+  const regLines = sweepable(wordRegister.body)
+  for (const [n, [i, line]] of regLines.entries()) {
+    if (!/^[-*|]\s/.test(line)) continue
+    // The entry opens on a TOP-LEVEL bullet and runs to the next one or to the next
+    // blank line — the reading `## Elsewhere` takes at `elsewhereWithoutLink`, and
+    // for the same reason: a wrapped entry is one entry. Both halves have to say
+    // top-level. Allowing an indent opened an entry on the indented example inside a
+    // comment; allowing a bullet character with no space after it ENDED the entry on
+    // its own indented continuation `*costcentre*.`, so the first retired word was
+    // read and the second silently was not. Half a row parsed is worse than either
+    // whole outcome, because nothing in the output says which half arrived.
+    const rest = regLines.slice(n)
+    const end = rest.findIndex(([, l], k) => k > 0 && (/^[-*|]\s/.test(l) || !l.trim()))
+    const entry = (end < 0 ? rest : rest.slice(0, end)).map(([, l]) => l).join(' ')
+    const kept = /\*\*([^*]+)\*\*/.exec(entry)?.[1]?.trim()
+    const not = /\bNot:\s*([^.]+)/.exec(entry)?.[1]
+    if (!kept || !not) continue
+    for (const word of not.split(',').map(w => w.trim().replace(/^[*_`]+|[*_`]+$/g, '')).filter(Boolean)) {
+      retiredWords.push({ word, kept, line: wordRegister.bodyLine + i - 1 })
+    }
+  }
+}
+
+if (retiredWords.length) {
+  /**
+   * A retired word, wherever it stands as a word. The suffix tolerance is the one
+   * a settled term actually drifts by — a plural, a past tense, a gerund — and it
+   * is skipped for a multi-word term, where the shape is the term itself.
+   */
+  const wordRe = ({ word }) => new RegExp(
+    `\\b${escapeRe(word)}${/\s/.test(word) ? '' : '(?:s|es|ed|d|ing)?'}\\b`, 'i')
+  const patterns = retiredWords.map(r => [r, wordRe(r)])
+
+  const sweep = (where, text, skip = () => false) => {
+    for (const [n, line] of sweepable(text)) {
+      if (skip(n)) continue
+      for (const [r, re] of patterns) {
+        const hit = re.exec(line)
+        if (!hit) continue
+        err(`${where}:${n}`, `writes "${hit[0]}", which \`## ${config.wordRegister}\` retired in favour of "${r.kept}"`
+          + ` — settling a word obliges a sweep of the corpus in the same change, and this is what the sweep missed.`
+          + ` Either replace it, or take the row out of the register (README.md:${r.line}) because the decision changed`)
+      }
+    }
+  }
+
+  for (const spec of specs.values()) sweep(`${config.specDir}/${spec.file}`, spec.text)
+  // The index is swept too — the rule says specs and index alike — except the
+  // register itself, which is the one place a retired word is written down on
+  // purpose. Skipped by line range rather than by cutting the section out, so the
+  // lines the sweep does report still carry the numbers the file has.
+  if (readme !== null) {
+    // The heading line through the section's last line that carries anything.
+    // `bodyLine` is the heading's own number and `body` opens on the remainder of
+    // that line, so element `i` is line `bodyLine + i` — but a section ended by the
+    // next heading carries two trailing empties, the blank line before that heading
+    // and the heading's own start. Counting them exempted two lines of the FOLLOWING
+    // section from the sweep, one of them its heading. Trailing blanks need no
+    // exemption anyway: there is nothing on them to find.
+    const regLines = wordRegister.body.split(/\r?\n/)
+    while (regLines.length && !regLines.at(-1).trim()) regLines.pop()
+    const from = wordRegister.bodyLine
+    const to = from + regLines.length - 1
+    sweep(`${config.specDir}/README.md`, readme, n => n >= from && n <= to)
   }
 }
 
@@ -1270,7 +2416,10 @@ const suiteFailures = []
 /** Suites whose listing failed — their coverage is unknown, not absent. */
 const unlistable = new Set()
 
-for (const [suiteId, suite] of Object.entries(SUITES)) {
+// `--emit` lists no suite: the register file is the specs' business, and writing it
+// must not wait on — or fail with — a test run. The forward pass below reads every
+// suite as unlisted in that mode, so silence about coverage is not read as absence.
+for (const [suiteId, suite] of emitting ? [] : Object.entries(SUITES)) {
   if (!adapters[suite.adapter]) {
     suiteFailures.push(`${suiteId}: \`adapter: "${suite.adapter}"\` is not one of ${Object.keys(adapters).join(' / ')} — any runner that can print \`[{ name, file }]\` is declared as \`vitest\``)
     unlistable.add(suiteId)
@@ -1361,7 +2510,7 @@ for (const spec of specs.values()) {
       if (!(level in SUITES)) continue
       // The suite never reported its tests, so "nothing claims this" would be a
       // guess. The listing failure is already reported and fails the run.
-      if (unlistable.has(level)) continue
+      if (unlistable.has(level) || emitting) continue
       const hits = (claimed.get(`${spec.feature}:${ac.id}`) ?? []).filter(c => c.suite === level)
       // A skipped test is a claim without a proof. Reported apart from "nothing
       // claims this", because the fix is a different one: run it again, or be
@@ -1417,7 +2566,7 @@ const GAP_LABELS = ['Undecided', 'Known', 'Unreachable']
 
 function measureForm(spec) {
   const lines = spec.text.split(/\r?\n/)
-  const out = { verifyNotLast: [], unlabelledGaps: [], badGapHeading: [], gapsIntro: [], elsewhereWithoutLink: [], pairRefs: [] }
+  const out = { verifyNotLast: [], strayBody: [], unlabelledGaps: [], badGapHeading: [], gapsIntro: [], elsewhereWithoutLink: [], pairRefs: [], longPromises: [], compoundPromises: [] }
 
   // Per criterion: `verify:` is the last bullet. How long a `**Because**` may run
   // is deliberately NOT measured here — it was, at three lines, and any figure was
@@ -1443,6 +2592,28 @@ function measureForm(spec) {
       ? spec.acs[n + 1].line - 1
       : (criteriaEnd === -1 ? lines.length : criteriaEnd)
     const block = lines.slice(from, to)
+
+    // Two rules of the promise sentence, counted rather than enforced: at most
+    // one promise per sentence, and at most `PROMISE_WORDS` words in it. Counted
+    // for the same reason the gap labels are — the rules arrived after the corpus,
+    // and enforcing them outright fails every spec at once and forces one
+    // unreviewable commit that rewrites every criterion in flight.
+    //
+    // Read off `slot.prose`, not `slot.text`: the parser joins a wrapped promise
+    // back into one line in both, so a sentence written over three lines is measured
+    // as the sentence it is — but only `text` also folds in the nested bullets under
+    // the promise, which belong to the fingerprint and not to the sentence. Measured
+    // with the fold, a nine-word `**Then**` carrying a three-item list read as
+    // thirty-three words, each sub-bullet's `-` among them, and both ratchets failed
+    // a criterion written exactly as the format asks.
+    for (const slot of ac.slots) {
+      const words = slot.prose.split(/\s+/).filter(Boolean).length
+      if (words > PROMISE_WORDS) out.longPromises.push(`${ac.id} **${slot.label}** (${words} words)`)
+      if (OUTCOME_SLOTS.has(slot.label) && isCompound(slot.prose)) {
+        out.compoundPromises.push(`${ac.id} **${slot.label}**`)
+      }
+    }
+
     // `verify:` closes the block, and `- reason:` / `- ticket:` belong to it, so
     // they are the only bullets allowed to follow — and they follow it, rather than
     // sitting above it. Both halves are checked: enforcing only the first left
@@ -1453,10 +2624,25 @@ function measureForm(spec) {
     // beneath it — a `- reason:` that carries its own sub-list — is part of that
     // bullet, and reading it as a sibling reported a criterion that was written
     // correctly and named moving `verify:` as the fix.
-    const bullets = block.map((l, i) => [i, l]).filter(([, l]) => /^\s*[-*]\s/.test(l))
-    const indent = ([, l]) => /^(\s*)/.exec(l)[1].length
+    // One reading of the body for every rule below, `readBody`'s. A fenced sample's
+    // `- verify: e2e` line was a bullet to the filter that used to stand here, so the
+    // count below called it a second level and named deleting the criterion's real
+    // one as the fix.
+    const { edge, lines: body } = readBody(block)
+    const bullets = body.filter(e => e.kind === 'line' && BULLET_RE.test(e.text)).map(e => [e.i, e.raw])
+    const indent = ([, l]) => column(l)
     const own = ([, l]) => /^\s*[-*]\s*(reason|ticket):/.test(l)
-    const verifies = bullets.filter(([, l]) => /^\s*[-*]\s*verify:/.test(l))
+    // What "nested" means here is `bodyEdge`'s, which is also what `parseSpecText`
+    // reads the promise by — so a bullet these rules call part of the one above it is
+    // one the report reads that way too. They disagreed until PO-322, in three
+    // places: the parser dropped a labelled sub-bullet's text while appending a plain
+    // one's, the vocabulary rule below called every line of a body written at an
+    // indent nested, and the count here read a `verify:` nested under a promise as a
+    // second one the criterion had declared — three answers to one question.
+    // At the criterion's own edge: a `- verify:` nested under a promise says something
+    // about that bullet, and `parseSpecText` does not read it as the criterion's level.
+    // Counting it here reported two `verify:` lines at a criterion that declares one.
+    const verifies = bullets.filter(b => indent(b) === edge && VERIFY_BULLET_RE.test(b[1]))
     // Derived from `verifies` rather than run as a second search: the two answer
     // the same question, and a change to one predicate would otherwise have to be
     // remembered in the other.
@@ -1480,6 +2666,153 @@ function measureForm(spec) {
         out.verifyNotLast.push({ id: ac.id, line: from + i + 1,
           message: `writes \`${key}:\` above its own \`verify:\` line — it says something about that line and belongs under it` })
       }
+    }
+
+    // A criterion body carries the labelled bullets, its meta bullets, and nothing
+    // else (PO-322). Until this rule the parser read the four promise slots and
+    // silently ignored every other line, so a criterion written some other way
+    // produced a fingerprint missing whatever it could not see — and the `--since`
+    // report then said a changed promise was untouched. The corpus passed by luck:
+    // measured over 45 specs and 330 criteria, the only body content that was not a
+    // known bullet was the retirement notices and one paragraph in `templates.md`.
+    //
+    // It also closes the hole in `verifyNotLast` above, which filters to bullets
+    // before it compares anything and therefore cannot see prose written below
+    // `verify:` — that paragraph sat under one and the gate was green on it.
+    //
+    // What ends a body is stated rather than assumed, because the block reaches to
+    // the next criterion and a retirement notice sits in the gap between two. It is
+    // the format's own line, not the criterion's, so it is allowed rather than
+    // reported at the author who did nothing.
+
+    // Whether a line is inside a bullet, and what separates a bullet's own second
+    // paragraph from prose that has escaped it. Three states, because two are not
+    // enough: a blank line does NOT end a bullet — a bullet may carry an indented
+    // block after a gap, a shape several `## Gaps` entries already use and that no
+    // criterion has needed yet. Refusing it would be a rule failing a correct
+    // document the first time somebody writes one, which is the one thing this gate
+    // is built not to do.
+    let inBullet = false
+    let prevBlank = false
+    // Consecutive stray lines are one paragraph and get one finding. Reported per
+    // line, the corpus's single violation arrived as four errors naming four line
+    // numbers for one thing to move, which reads as four problems.
+    let straying = false
+    // The criterion's promise bullets, for the rule after the loop.
+    const promises = []
+    for (const e of body) {
+      const i = e.i
+      const l = e.text
+      // A fenced block is content, not structure: a `- foo` line inside one is not a
+      // bullet, and reporting the fence as a paragraph would advise moving a code
+      // sample into `## Elsewhere`.
+      if (e.kind === 'fence') { if (e.own) inBullet = false; prevBlank = false; straying = false; continue }
+      if (e.kind === 'fenced') continue
+      // A comment says something to whoever edits the file and nothing to whoever
+      // reads the promise, and every other sweep in this gate exempts one by name —
+      // the annotated spec in `references/spec-anatomy.md` is largely built out of
+      // them, so an author has every reason to think they are free. Skipped without
+      // touching a flag: what stands above and below it is as adjacent as it would be
+      // if nobody had written the note.
+      if (e.kind === 'comment') continue
+      if (e.kind === 'blank') { prevBlank = true; straying = false; continue }
+
+      // Indentation is what says "part of the bullet above", for a bullet and for a
+      // paragraph alike. Applied to BOTH report branches: a nested sub-bullet opening
+      // on a bold word — `  - **Reading** found it broken` — matches the slot pattern
+      // and was refused for carrying a label this format does not know. Only a
+      // single-word one, since `SLOT_RE` reads `[A-Za-z]+`, which is why the corpus
+      // never tripped it and why a reader could not have found this by running it.
+      //
+      // Read against the body's own left edge, not against column 0. A body written
+      // wholly at an indent — legal CommonMark under a `###` heading, which the
+      // author has no reason to think otherwise — made every line "nested": both
+      // branches then reported nothing and `verify:` closed nothing, so the rule
+      // silently switched itself off on the one document shape it could not see. A
+      // gate that goes quiet is this rule's own subject. `verifyNotLast` above never
+      // had the fault, because it reads its level off the `verify:` bullet it found
+      // rather than off the margin.
+      const indented = !e.own
+      const bullet = BULLET_RE.test(l)
+      if (bullet) {
+        straying = false
+        prevBlank = false
+        const slot = SLOT_RE.exec(l)
+        if (slot && PROMISE_SLOTS.has(slot[1])) promises.push(e)
+        if (slot && !BODY_SLOTS.has(slot[1]) && !indented) {
+          out.strayBody.push({ id: ac.id, line: from + i + 1,
+            message: `carries a \`**${slot[1]}**\` bullet, which this format does not know — a criterion body is written as ${[...BODY_SLOTS].map(x => `\`**${x}**\``).join(', ')} and its \`verify:\` line. The report reads the promise off those labels, so a bullet under any other name is not read at all` })
+        }
+        // A bold run that is a phrase gets its own message. It has a label as far as
+        // its author is concerned, and being told to add one while looking at one
+        // says the gate cannot read rather than that the line is wrong. The style is
+        // all over `## Gaps` and `## Elsewhere`, which is why no criterion has
+        // tripped it yet and why the first one to will be somebody writing normally.
+        else if (!slot && !META_BULLET_RE.test(l) && !indented && BOLD_OPENING_RE.test(l)) {
+          out.strayBody.push({ id: ac.id, line: from + i + 1,
+            message: `opens on \`**${BOLD_OPENING_RE.exec(l)[1].trim().slice(0, 40)}**\`, which is a phrase where a label goes — a label is one word and the sentence follows it (\`- **Given** a cost centre with a budget\`). The report reads the promise off the label, so a bold run it cannot read as one is not read at all` })
+        }
+        else if (!slot && !META_BULLET_RE.test(l) && !indented) {
+          out.strayBody.push({ id: ac.id, line: from + i + 1,
+            message: `carries an unlabelled bullet ("${l.trim().slice(0, 40)}") — every bullet in a criterion says which part of the promise it is. Give it a label, or move it out of the criterion` })
+        }
+        // `verify:` closes the body: it cannot wrap, so prose under it continues
+        // nothing, blank line or no blank line — which is this corpus's own violation
+        // minus its blank line, and the first reading of this rule let it through.
+        // `reason:` and `ticket:` are prose and wrap like any other bullet; assuming
+        // otherwise here rejected three criteria that were written correctly.
+        //
+        // Only the criterion's OWN `verify:` closes it. An indented one is part of the
+        // bullet above it like any other nested line, and treating it as the closer
+        // ended the body early and reported that bullet's own wrap as loose prose —
+        // the same nesting mistake this rule already had to be taught twice.
+        inBullet = !(VERIFY_BULLET_RE.test(l) && !indented)
+        continue
+      }
+
+      // Not a bullet. A wrap of the line above is legitimate and is the norm here; so
+      // is an indented block after a gap. A paragraph at column 0 after a gap is
+      // inside nothing, whatever came before it.
+      //
+      // A numbered item at the criterion's own edge continues nothing, gap or no gap:
+      // CommonMark starts a new list at `1.`, so the gate and the rendered document
+      // would otherwise disagree about where the bullet ends. Read as a wrap, it was
+      // reported by nothing and folded into the promise sentence, where the word
+      // ratchet failed the criterion for a length its `**Then**` does not have — the
+      // message below exists for this shape and was unreachable in it.
+      const numbered = !indented && ORDERED_RE.test(l)
+      const continues = inBullet && (!prevBlank || indented) && !numbered
+      prevBlank = false
+      if (continues || straying) continue
+      straying = true
+      // A numbered item is refused like any other line the format has no place for,
+      // but it is not a paragraph and calling it one names the wrong fix.
+      out.strayBody.push({ id: ac.id, line: from + i + 1,
+        message: ORDERED_RE.test(l)
+          ? `carries a numbered item ("${l.trim().slice(0, 40)}") where the format has only labelled bullets — a criterion's parts are named rather than counted, so give it a label or move it out of the criterion`
+          : `carries a paragraph ("${l.trim().slice(0, 40)}…") where the format has only bullets — a sentence about a neighbouring spec belongs in \`## Elsewhere\`, and one about the promise belongs in its \`**Because**\`. Loose prose here is read by nobody: the promise report sees only the labelled bullets` })
+    }
+
+    // The rules above ask what each line IS. This one asks whether the criterion says
+    // anything at all that the report can carry, and it is the backstop under every
+    // one of them: `parseSpecText` fills `slots` from the bullets at the body's edge,
+    // and NOTHING read whether that list came out empty — a criterion whose promise
+    // bullets are all read as detail of something else passed the gate in silence and
+    // then failed to appear in the `--since` report when its `**Then**` was rewritten,
+    // which is the failure PO-322 exists to refuse at the moment of writing.
+    //
+    // The shape that gets there is one bullet indented and another not: a body whose
+    // `- verify:` sits at the margin while its promise bullets sit at column 2 has its
+    // edge at the margin, so every promise bullet is nested and none is the
+    // criterion's own. Reported as the mismatch it is rather than as an absence, at
+    // the first promise bullet, because "carries no promise" said while the author is
+    // looking at three of them is the gate saying it cannot read rather than that the
+    // criterion is wrong — the same lesson as the bold-phrase message above.
+    if (!promises.some(e => e.own)) {
+      out.strayBody.push({ id: ac.id, line: promises.length ? from + promises[0].i + 1 : ac.line,
+        message: promises.length
+          ? `indents its promise bullets deeper than the rest of its body ("${promises[0].text.slice(0, 40)}") — a criterion's own bullets all stand at one indentation, and everything deeper than the shallowest of them is read as detail of the bullet above it. Written this way the promise is read by nobody: line them up with the \`verify:\` line`
+          : `states no promise — a criterion is written as ${[...PROMISE_SLOTS].map(x => `\`**${x}**\``).join(' / ')}, and the report reads the promise off those bullets, so a criterion carrying none promises nothing that can be reported when it changes` })
     }
 
     // The `**Pair**` bullet, with its continuation lines, so the criteria it names
@@ -1620,7 +2953,6 @@ const forms = new Map([...specs.values()].map(spec => [spec, measureForm(spec)])
  */
 const CROSS_REF = /\[[^\]]*\]\((?:\.\/)?([\w-]+)\.md[^)]*\)\s+((?:AC-\d+)(?:(?:\s*(?:,|and|to|through))+\s*AC-\d+)*)/g
 const OWN_REF = /\bAC-\d+\b/g
-const RETIRED_LINE = /^\*AC-(\d+) retired\b/
 
 /**
  * The two ways of writing a cross-spec reference backwards: `AC-1 of [x.md](x.md)`
@@ -1867,6 +3199,11 @@ for (const [spec, m] of forms) {
   for (const v of m.verifyNotLast) {
     err(`${config.specDir}/${spec.file}:${v.line}`, `${v.id} ${v.message}`)
   }
+  // Same shape and the same absence of a ratchet: the corpus was measured before
+  // the rule was written, and the one violation it had was fixed in that commit.
+  for (const v of m.strayBody) {
+    err(`${config.specDir}/${spec.file}:${v.line}`, `${v.id} ${v.message}`)
+  }
 }
 
 // Neither of these depends on the label scheme, so neither sits behind its key.
@@ -1896,8 +3233,8 @@ if (config.formDebt) {
       err(`${config.specDir}/${spec.file}:${h.line}`, `\`## Gaps\` has a label line "${h.heading}", which is not one of ${GAP_LABELS.join(' / ')} — the set is closed, so its entries would go uncounted under a name nobody reads`)
     }
   }
-  const found = { unlabelledGaps: 0 }
-  const worst = { unlabelledGaps: [] }
+  const found = { unlabelledGaps: 0, longPromises: 0, compoundPromises: 0 }
+  const worst = { unlabelledGaps: [], longPromises: [], compoundPromises: [] }
   for (const [spec, m] of forms) {
     for (const key of Object.keys(found)) {
       found[key] += m[key].length
@@ -1906,6 +3243,8 @@ if (config.formDebt) {
   }
   const RULE = {
     unlabelledGaps: `a \`## Gaps\` entry sits under one of the labels ${GAP_LABELS.join(' / ')}`,
+    longPromises: `a promise sentence runs to at most ${PROMISE_WORDS} words`,
+    compoundPromises: `a \`**Then**\` or \`**And**\` states one outcome — a second one is its own \`**And**\``,
   }
   for (const [key, baseline] of Object.entries(config.formDebt)) {
     if (key.startsWith('$')) continue
@@ -1928,6 +3267,315 @@ if (config.formDebt) {
   }
 }
 
+// -------------------------------------------------------------- register ----
+
+/**
+ * What the report says about the register beyond its errors — that a comparison did
+ * not run, or what `--emit` wrote. Lines, not errors: neither is something to fix.
+ */
+const registerNotes = []
+
+/**
+ * The ids a reference names, with a range spelled out: `AC-3 to AC-5` is three
+ * criteria, and a successor list that kept only its two ends would send a reader to
+ * the edges of the promise and not to its middle.
+ */
+function criterionIds(list) {
+  const ids = []
+  for (const m of list.matchAll(/(to|through)?\s*AC-(\d+)/g)) {
+    const n = Number(m[2])
+    const last = ids.length ? Number(ids.at(-1).slice(3)) : null
+    if (m[1] && last !== null) for (let k = last + 1; k < n; k++) ids.push(`AC-${k}`)
+    ids.push(`AC-${n}`)
+  }
+  return ids
+}
+
+/**
+ * Where a retired criterion's promise went, read off its retirement line with the
+ * readings the reference check above already uses — `CROSS_REF` for a sibling's ids,
+ * `OWN_REF` for this spec's — so the register cannot name a successor the gate would
+ * not have resolved. The leading id is the one retired, and never its own successor.
+ */
+function successorsOf(spec, id, note) {
+  const out = []
+  const claimed = []
+  for (const hit of note.matchAll(CROSS_REF)) {
+    claimed.push([hit.index, hit[0].length])
+    for (const ac of criterionIds(hit[2])) out.push({ feature: hit[1], criterion: ac })
+  }
+  for (const own of note.matchAll(OWN_REF)) {
+    if (own[0] === id || claimed.some(([at, len]) => own.index >= at && own.index < at + len)) continue
+    out.push({ feature: spec.feature, criterion: own[0] })
+  }
+  return out
+}
+
+/**
+ * The corpus as the register reads it (`features.schema.json` on schemas.revenexx.com).
+ *
+ * It carries exactly what the register shows and nothing else, and that is what makes
+ * it the bump rule's measure: the date a spec was touched, its intro, its gaps and the
+ * `**Because**` under a promise never reach it, so editing them changes nothing here
+ * and asks for no release. What does reach it is what a reader of the register would
+ * see change. No timestamp, for the same reason — the file is a function of the
+ * corpus, and `--emit` on an unchanged corpus has to write the same bytes. No `docs:`
+ * either (RAD-359): they are paths in this repository, so renaming a doc page would
+ * read as a register change and ask for a release, and the register would publish
+ * paths nobody outside the repository can open. They stay in the spec, where the
+ * docs link check reads them.
+ */
+function registerOf() {
+  const norm = s => s.replace(/\s+/g, ' ').trim()
+  const features = [...specs.values()].sort((a, b) => a.feature.localeCompare(b.feature)).map(spec => {
+    const live = spec.acs.map(ac => ({
+      n: Number(ac.id.slice(3)),
+      entry: {
+        id: ac.id,
+        promise: norm(ac.title),
+        steps: ac.slots.map(s => ({ keyword: s.label.toLowerCase(), text: norm(s.text) })),
+        layers: ac.levels,
+      },
+    }))
+    const retired = [...retirements(spec)].map(([id, gone]) => {
+      const successors = successorsOf(spec, id, gone.text)
+      return { n: Number(id.slice(3)), entry: { id, retired: true, note: norm(gone.text), ...(successors.length && { successors }) } }
+    })
+    return {
+      feature: spec.feature,
+      title: spec.title,
+      ...(spec.summary && { summary: spec.summary }),
+      where: spec.where,
+      since: spec.since,
+      visibility: spec.visibility,
+      ...(spec.formerly.length && { formerly: spec.formerly }),
+      criteria: [...live, ...retired].sort((a, b) => a.n - b.n).map(c => c.entry),
+    }
+  })
+  return {
+    $schema: 'https://schemas.revenexx.com/features.schema.json',
+    format: '1',
+    app: `${manifest.vendor}/${manifest.name}`,
+    version: manifest.version,
+    features,
+  }
+}
+
+/**
+ * The rows under the index's `## Retired features`, as `id → { line, reason }`, or
+ * `null` where there is no index or no section. A row is a list item that opens on
+ * the id in code, then a dash and the reason; its indented continuation lines belong
+ * to it, so a row may wrap. An id anywhere else in the section — in a sentence, in a
+ * row about another id — is not a row (RAD-359): the first reading accepted any
+ * mention, so a removed spec passed on a sentence that happened to name it.
+ *
+ * A list item that opens on an id in code is a row its author meant to write, so one
+ * with no reason is reported as such rather than skipped, which would leave its author
+ * reading "is gone" about a feature they did record. Links and a bracketed ticket are
+ * where its promises went and who decided; they are not the reason — a ticket id is
+ * stripped bracketed or bare, by the config's `ticketPattern`.
+ */
+const ticketIdsRe = new RegExp(`(?<![\\w-])(?:${config.ticketPattern ?? '[A-Z][A-Z0-9]*-\\d+'})(?![\\w-])`, 'g')
+function retiredRowsOf() {
+  const section = readme === null ? null : splitSection(readme, REGISTER.retiredSection)
+  if (!section) return null
+  const rows = new Map()
+  const lines = section.body.split(/\r?\n/)
+  const where = n => `${config.specDir}/README.md:${section.bodyLine + n}`
+  // A fenced block is an example, not a row, and an item nested in a row belongs to
+  // that row. An item nested under a plain bullet (a year, a group) is still a row.
+  // A fence closes only on its own marker with nothing after it, as in CommonMark.
+  const LIST_RE = /^([ \t]*)[-*+][ \t]/
+  const { fenced, unclosed } = fencedLines(lines)
+  if (unclosed !== null) err(where(unclosed), `a fenced block under \`## ${REGISTER.retiredSection}\` is never closed — every line after it is read as part of the example, so no row below it counts`)
+  let rowColumn = null
+  for (let i = 0, blank = false; i < lines.length; i++) {
+    // A lazy continuation line of a row is less indented than its items and does not
+    // end the row. A paragraph or heading after a blank line does, as in CommonMark.
+    if (!lines[i].trim()) { blank = true; continue }
+    const afterBlank = blank
+    blank = false
+    if (fenced.has(i)) continue
+    if (!LIST_RE.test(lines[i])) {
+      if (rowColumn !== null && (/^ {0,3}#{1,6}(?:[ \t]|$)/.test(lines[i]) || (afterBlank && lines[i].search(/\S/) < rowColumn))) rowColumn = null
+      continue
+    }
+    const nested = rowColumn !== null && lines[i].search(/\S/) >= rowColumn
+    if (!nested) rowColumn = null
+    const item = /^([ \t]*)[-*+][ \t]+`([^`]+)`(.*)$/.exec(lines[i])
+    if (!item || nested) continue
+    rowColumn = lines[i].indexOf('`')
+    let text = item[3]
+    for (let j = i + 1; j < lines.length; j++) {
+      const next = lines[j]
+      if (!next.trim() || fenced.has(j) || LIST_RE.test(next) || next.search(/\S/) <= item[1].length) break
+      text += ` ${next.trim()}`
+    }
+    const id = item[2].trim()
+    const reason = /^\s*[—–-]\s*(.*)$/.exec(text)?.[1]
+      .replace(/\[[^\]]*\]\([^)]*\)/g, '')
+      .replace(/<?https?:\/\/\S+/g, '')
+      .replace(ticketIdsRe, '')
+      .replace(/[\s,;.:()—–-]+/g, ' ')
+      .trim()
+    if (!reason || !/\p{L}/u.test(reason)) {
+      err(where(i), `\`${id}\` under \`## ${REGISTER.retiredSection}\` gives no reason — after the id comes a dash and why it was retired, then the spec that carries its promises now, if any`)
+    }
+    if (rows.has(id)) {
+      err(where(i), `\`${id}\` has a second row under \`## ${REGISTER.retiredSection}\` (the first is line ${section.bodyLine + rows.get(id).line}) — one row per id, so a reader finds one answer`)
+      continue
+    }
+    if (specs.has(id)) {
+      err(where(i), `\`${id}\` is retired under \`## ${REGISTER.retiredSection}\`, but ${config.specDir}/${specs.get(id).file} still exists — drop the row, or the spec`)
+    }
+    rows.set(id, { line: i, reason })
+  }
+  return rows
+}
+const retiredRows = REGISTER ? retiredRowsOf() : null
+
+if (REGISTER && manifest) {
+  // An alias names one feature, or a link to the old id lands on whichever spec the
+  // register happened to read first.
+  const aliasOf = new Map()
+  for (const spec of specs.values()) {
+    for (const old of spec.formerly) {
+      if (aliasOf.has(old)) err(`${config.specDir}/${spec.file}`, `\`formerly: ${old}\` is also claimed by ${aliasOf.get(old).file} — an old id can lead to one feature only`)
+      else aliasOf.set(old, spec)
+    }
+  }
+
+  if (REGISTER.pinned !== undefined && PINNED !== REGISTER.pinned) err('spec.config.json', '`register.pinned` is not an object — `{ "<feature>": { "since": "x.y.z", "reason": "…" } }`')
+  for (const [id, pin] of Object.entries(PINNED)) {
+    if (!specFiles.includes(`${id}.md`)) err('spec.config.json', `\`register.pinned\` names \`${id}\`, which is no spec — drop the pin, or rename it with the spec`)
+    if (!SEMVER_RE.test(pin?.since ?? '')) err('spec.config.json', `\`register.pinned.${id}.since\` is not a version — write it as x.y.z`)
+    if (typeof pin?.reason !== 'string' || !pin.reason.trim()) err('spec.config.json', `\`register.pinned.${id}\` has no \`reason\` — a pin overrides history, so it says why`)
+  }
+
+  const emitted = registerOf()
+  const written = `${JSON.stringify(emitted, null, 2)}\n`
+  const target = join(root, REGISTER.file)
+
+  if (emitting) {
+    // Written only from a corpus the gate accepts: the register must never carry what
+    // the format refuses, and the errors are reported below as in any run.
+    if (!errors.length) {
+      writeFileSync(target, written)
+      registerNotes.push(`wrote ${REGISTER.file} — ${emitted.features.length} features at ${emitted.version}`)
+    }
+    else registerNotes.push(`${REGISTER.file} not written — the corpus has problems the register must not carry`)
+  }
+  else {
+    const committed = existsSync(target) ? readFileSync(target, 'utf8') : null
+    if (committed !== written) {
+      // A raised version with no spec change is the common case, and Console refuses a
+      // file whose version is not the manifest's, so the version stays in the compare
+      // (RAD-359). Said as itself, because "not what the specs say" sends the author
+      // looking through specs nobody touched.
+      let onlyVersion = null
+      try {
+        const was = JSON.parse(committed ?? 'null')
+        if (was?.version !== emitted.version && `${JSON.stringify({ ...was, version: emitted.version }, null, 2)}\n` === written) onlyVersion = was.version
+      }
+      catch { /* not JSON: stale like any other difference */ }
+      if (onlyVersion !== null) {
+        err(REGISTER.file, `is stale, but only in \`version\`: it says ${onlyVersion}, the manifest ${emitted.version}. Every version bump re-emits it — run \`spec-check --emit\` (\`npm run features\`) and commit the result with the bump`)
+      }
+      else err(REGISTER.file, `${committed === null ? 'is missing' : 'is stale — it is not what the specs say'}; run \`spec-check --emit\` (\`npm run features\`) and commit the result with the spec change`)
+    }
+
+    /**
+     * The bump rule. A change to what the register shows has to ship as a version,
+     * because the register is the versions that are live and a change that rode along
+     * with no version of its own would never reach it — on every deploy it would be
+     * the old text the register kept.
+     *
+     * Measured against the base's committed file rather than by re-reading the base's
+     * specs: the base file is what the register was last given, which is the only
+     * thing a change can be a change to. The version itself is left out of the
+     * comparison, because raising it is the remedy and not the change.
+     */
+    const base = givenBase ?? (gitRead(['rev-parse', '--verify', '--quiet', 'origin/main^{commit}']) ? 'origin/main' : null)
+    const sha = base && gitRead(['rev-parse', '--verify', '--quiet', `${base}^{commit}`])?.trim()
+    // A base CI named and git cannot find fails, because in CI a skipped rule is a
+    // green check proving nothing; only the local `origin/main` fallback may be absent.
+    if (!sha && givenBase) {
+      err('--base', `no such commit — ${givenBase}; the version-bump rule cannot run. Fetch the full history (\`fetch-depth: 0\` / \`GIT_DEPTH: 0\`), or drop \`--base\` to compare against \`origin/main\``)
+    }
+    else if (!sha) {
+      registerNotes.push('no base to compare against (pass `--base <ref>`, or fetch `origin/main`) — the version-bump rule did not run')
+    }
+    else {
+      const before = gitRead(['show', `${sha}:./${REGISTER.file}`])
+      const shown = base === sha ? sha.slice(0, 7) : `${base} (${sha.slice(0, 7)})`
+      // A base that IS the checked-out commit compares the working tree with itself: what
+      // CI meets after a force-push, where `before` names nothing and the fallback lands
+      // on HEAD. Locally it still sees uncommitted edits; in CI it can see nothing, and a
+      // rule that checked nothing must not read as one that passed.
+      if (sha === gitRead(['rev-parse', 'HEAD'])?.trim()) {
+        registerNotes.push(`the base ${shown} is HEAD itself — the version-bump rule compares only uncommitted changes, and on a clean checkout it did not run`)
+      }
+      // Said aloud like a missing base: a rule skipped in silence reads as a pass.
+      let baseVersion = null
+      try { baseVersion = JSON.parse(gitRead(['show', `${sha}:./${REGISTER.manifest}`]) ?? '{}').version ?? null }
+      catch { /* reported below, with the missing version */ }
+      const noBaseVersion = `${shown}'s ${REGISTER.manifest} has no x.y.z \`version\` — the version-bump rule did not run`
+      if (before === null) {
+        // The first file is a register change like any other, and the one most easily
+        // shipped without a release: nothing to compare reads as nothing changed. But a
+        // version Console has approved is never given another round — a re-push reuses
+        // the approved one and drops the file — so a first file under an old version
+        // never reaches the register (RAD-359; customers#63 merged so at 4.11.1).
+        if (!SEMVER_RE.test(baseVersion ?? '')) registerNotes.push(noBaseVersion)
+        else if (semverCmp(manifest.version, baseVersion) <= 0) {
+          err(REGISTER.manifest, `\`version: ${manifest.version}\` is not above ${shown}'s ${baseVersion}, and ${shown} has no ${REGISTER.file} — the first one starts the register, and it ships as a release like any register change: a version the platform already approved is never read again. Raise the version in this change`)
+        }
+        else registerNotes.push(`${shown} has no ${REGISTER.file} — the first one starts the register at ${manifest.version}`)
+      }
+      else {
+        let was = null
+        try { was = JSON.parse(before) }
+        catch { registerNotes.push(`${shown} carries a ${REGISTER.file} that is not JSON — the version-bump rule did not run`) }
+        if (was) {
+          const key = f => JSON.stringify(f)
+          const then = new Map((was.features ?? []).map(f => [f.feature, f]))
+          const now = new Map(emitted.features.map(f => [f.feature, f]))
+          const changed = [...now.keys()].filter(id => !then.has(id) || key(then.get(id)) !== key(now.get(id)))
+          const gone = [...then.keys()].filter(id => !now.has(id))
+          if (!SEMVER_RE.test(baseVersion ?? '')) registerNotes.push(noBaseVersion)
+          else if ((changed.length || gone.length) && semverCmp(manifest.version, baseVersion) <= 0) {
+            const what = [...changed, ...gone.map(id => `${id} (removed)`)]
+            err(REGISTER.manifest, `\`version: ${manifest.version}\` is not above ${shown}'s ${baseVersion}, but what the register shows changed — ${what.slice(0, 5).join(', ')}${what.length > 5 ? ', …' : ''}. Raise the version in this change; a register change ships as a release or it never reaches the register`)
+          }
+
+          // A feature new since the base was promised by this change, so it ships with
+          // the version this change carries — any other `since:` dates a promise to a
+          // release that did not hold it. A renamed one is not new: its old id is in
+          // the base, and its `since:` travels with it.
+          for (const id of changed) {
+            if (then.has(id)) continue
+            const spec = specs.get(id)
+            if (spec.formerly.some(old => then.has(old))) continue
+            if (spec.since !== manifest.version) {
+              err(`${config.specDir}/${spec.file}`, `is new since ${shown} and says \`since: ${spec.since}\` — a promise added in this change ships with ${manifest.version}`)
+            }
+          }
+
+          // A feature that is gone left the register, and whatever pointed at it — a
+          // help page, a learned mapping — needs to be told where it went. A rename
+          // says so with `formerly:`; anything else is recorded in the index.
+          for (const id of gone) {
+            if (aliasOf.has(id)) continue
+            if (!retiredRows?.has(id)) {
+              err(`${config.specDir}/README.md`, `\`${id}\` was a feature at ${shown} and is gone — list it under \`## ${REGISTER.retiredSection}\` with the reason and where its promises went, or name it in the new spec's \`formerly:\` if it was renamed`)
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 // ---------------------------------------------------------------- report ----
 
 const total = [...specs.values()].reduce((n, s) => n + s.acs.length, 0)
@@ -1942,6 +3590,8 @@ if (stats.manual || stats.todo) {
     }
   }
 }
+
+for (const note of registerNotes) console.log(`  · register: ${note}`)
 
 if (suiteFailures.length) {
   console.error('\nCould not list a test suite — fix that first, coverage is unknown until then:')
