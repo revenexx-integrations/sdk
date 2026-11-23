@@ -63,8 +63,8 @@ although it is private; nothing else changes, and nothing a node does can add to
   its own
 - **When** it is judged — through `safeFetch`, through `assertPublicUrl`, or as a bare
   address through `isBlockedAddress`
-- **Then** it passes every one of them, and the `safeFetch` route goes on to make the
-  request and return its response
+- **Then** the target passes every one of them
+- **And** the `safeFetch` route goes on to make the request and return its response
 - **Because** a guard nobody can pass is a guard nobody keeps — and each way in needs a
   positive control of its own, or a refusal proved through one of them could as easily
   be that whole path being dead
@@ -100,8 +100,8 @@ although it is private; nothing else changes, and nothing a node does can add to
   address
 - **When** a node calls `safeFetch`
 - **Then** the redirect is not followed and the call throws `BLOCKED_ADDRESS`
-- **And** a redirect to a public target *is* followed, and the final response
-  returned
+- **And** a redirect to a public target *is* followed
+- **And** the final response of a followed redirect is returned
 - **Because** judging only the first hop makes the guard trivially bypassable by
   anyone who controls a public host: one 302 and the request lands wherever they
   point it
@@ -123,10 +123,12 @@ although it is private; nothing else changes, and nothing a node does can add to
   `Cookie`, `Proxy-Authorization`, or a header of the caller's own naming such as
   `X-API-Key`
 - **When** it is redirected to a different origin
-- **Then** only the headers that carry no secret — what the request accepts, the
-  conditions, range and idempotency key it is asked
-  under, its SOAP action and who is asking — go on to the next hop, and every other header the caller set is dropped
-  before it is made
+- **Then** only the headers that carry no secret go on to the next hop
+  - what the request accepts
+  - the conditions, range and idempotency key it is asked under
+  - its SOAP action
+  - who is asking
+- **And** every other header the caller set is dropped before the next hop is made
 - **And** a redirect to the *same* origin keeps every header, so an ordinary redirect
   within one host does not silently lose the caller's credentials
 - **Because** otherwise any host that can answer with a redirect can harvest the
@@ -173,21 +175,24 @@ although it is private; nothing else changes, and nothing a node does can add to
 
 ### AC-11 — The refused set covers every shape a non-public address comes in
 
-- **Given** an address that is loopback, private, carrier-grade NAT, link-local,
-  unique-local, multicast, broadcast, one of the transitional forms that carry one IP
-  version inside the other, or the unspecified address
+- **Given** an address of any of these kinds
+  - loopback, private, carrier-grade NAT, link-local or unique-local
+  - multicast or broadcast
+  - one of the transitional forms that carry one IP version inside the other
+  - the unspecified address
 - **When** it is judged
 - **Then** it is refused, in either IP version and in the forms that embed one version
   inside the other
 - **And** an address just outside one of those ranges is allowed
 - **And** where an IPv4-mapped form or the NAT64 well-known prefix carries an address of
-  the other version, it is that carried address that decides — so the same form holding
-  a public address is allowed, and a target does not become unreachable for the notation
-  it arrived in
+  the other version, it is that carried address that decides
+- **And** an IPv4-mapped form or the NAT64 well-known prefix holding a public address is
+  allowed
 - **And** a 6to4 or Teredo address is refused whole, whatever address it carries
 - **Because** the ranges are contiguous and the boundaries are where a range check goes
   wrong — one octet out and the cloud metadata address reads as public, or a customer's
-  real host becomes unreachable. Which forms are unwrapped rather than refused whole is a
+  real host becomes unreachable. A target must not become unreachable for the notation it
+  arrived in. Which forms are unwrapped rather than refused whole is a
   reachability question, not a safety one: a private address is refused either way. The
   NAT64 well-known prefix is unwrapped because on an IPv6-only network with DNS64 it is
   what every IPv4-only host resolves to; 6to4 and Teredo are legacy transition rather
@@ -234,12 +239,15 @@ although it is private; nothing else changes, and nothing a node does can add to
 - **Given** the environment variable that relaxes the address rules
 - **When** it is unset, or set to something that does not read as on
 - **Then** the guard applies in full
-- **And** it applies again as soon as the variable is removed, within the same process
-- **And** when it *is* deliberately on, the relaxation reaches the address a connection
-  lands on as well, so a developer's own service answers instead of losing its socket
+- **And** the guard applies again as soon as the variable is removed, within the same
+  process
+- **And** when the variable *is* deliberately on, the relaxation reaches the address a
+  connection lands on as well
 - **Because** this is the one switch that turns the guard off, so the failure that
   matters is it being on when nobody meant it — a stale value in an environment, a
-  default copied out of the development stack
+  default copied out of the development stack. When it is meant, the relaxation has to
+  reach the address a connection lands on, so a developer's own service answers instead
+  of losing its socket
 - **Pair** AC-1, the same refusal with the switch absent
 - verify: unit
 
@@ -255,11 +263,13 @@ although it is private; nothing else changes, and nothing a node does can add to
 
 ### AC-17 — A call the guard approved reaches only an address the guard would approve
 
-- **Given** a name that answers with a public address while the target is being judged,
-  and with a private or reserved one when the connection for that hop is opened
+- **Given** a name that answers with two different addresses
+  - a public one while the target is being judged
+  - a private or reserved one when the connection for that hop is opened
 - **When** a node calls `safeFetch`
-- **Then** the connection is dropped before any of the request is written, the call
-  throws `BLOCKED_ADDRESS`, and whatever was listening on that address receives nothing
+- **Then** the connection is dropped before any of the request is written
+- **And** the call throws `BLOCKED_ADDRESS`
+- **And** whatever was listening on that address receives nothing
 - **Because** the name is resolved twice — once to judge the target and again to open
   the connection — and here the person who supplies the URL also controls the DNS
   behind it, so answering differently the second time is not an exotic attack but the
@@ -284,21 +294,22 @@ although it is private; nothing else changes, and nothing a node does can add to
 
 ### AC-19 — Only public unicast is allowed, so a range no promise names is still refused
 
-- **Given** an address in a reserved range that no criterion here names — a
-  documentation range, a future-use range, a range the address registry set aside after
-  this was written, or address space nobody has been allocated at all
+- **Given** an address in a reserved range that no criterion here names
+  - a documentation range, a future-use range, a range the address registry set aside
+    after this was written, or address space nobody has been allocated at all
 - **When** it is judged
 - **Then** it is refused
+- **And** being public unicast is *determined*, not defaulted to
+- **And** for IPv6, an address is public unicast only inside the block the registry has
+  actually handed out
 - **Because** the refused set is stated the other way round: what is allowed is the
   address space that is public unicast, and everything else is refused without anyone
   having enumerated it. A list of refused ranges is only ever as complete as the last
   person who remembered to extend it, and the ranges that were missing from this one
-  were missing for months
-- **And** being public unicast is *determined*, not defaulted to. A classification
-  asked "which special range is this in" answers "none" for space it has no range for,
-  and unallocated space answers that way — so for IPv6, where most of the space is
-  unallocated, the criterion is that the address sits inside the block the registry has
-  actually handed out. Without that, every unallocated band would read as public
+  were missing for months. A classification asked "which special range is this in"
+  answers "none" for space it has no range for, and unallocated space answers that way —
+  so for IPv6, where most of the space is unallocated, the criterion is the registry's
+  block. Without that, every unallocated band would read as public
 - **Pair** AC-2, the same ruling on an address that *is* public unicast — the rule
   refuses a range nobody named without refusing the ordinary internet
 - verify: unit
@@ -307,9 +318,10 @@ although it is private; nothing else changes, and nothing a node does can add to
 
 - **Given** a credential whose header name the author chooses
 - **When** it checks that name with `headerCrossesOrigin`
-- **Then** the answer is `true` for exactly the names AC-7 keeps on a redirect to
-  another origin — whatever their case or surrounding spaces — and `false` for every
-  other name, a key header like `X-API-Key` among them
+- **Then** `headerCrossesOrigin` answers `true` for exactly the names AC-7 keeps on a
+  redirect to another origin, whatever their case or surrounding spaces
+- **And** `headerCrossesOrigin` answers `false` for every other name, a key header like
+  `X-API-Key` among them
 - **Because** AC-7 keeps headers by name and cannot tell a harmless `User-Agent` from a
   key an author decided to send under that name. The credential is the one place that
   knows its header carries a secret, so it has to refuse a name that crosses — and it
@@ -320,26 +332,34 @@ although it is private; nothing else changes, and nothing a node does can add to
 
 ### AC-21 — A header value that cannot be sent is refused without being quoted
 
-- **Given** a header value with a character the runtime will not send inside it — a
-  line break, a carriage return, any other C0 control character but the tab, DEL, or one
-  beyond Latin-1 — such as a key pasted from a wrapped e-mail
+- **Given** a header value with a character the runtime will not send inside it, such as
+  a key pasted from a wrapped e-mail
+  - a line break or a carriage return
+  - any other C0 control character but the tab
+  - DEL
+  - a character beyond Latin-1
 - **When** a node calls `safeFetch` with it
-- **Then** the call throws `INVALID_HEADER` naming the header and no part of its value,
-  makes no request, and is not tried again however many attempts the call allows
-- **And** a header name the runtime will not send — anything but a token, a trailing
-  space included — is refused as `INVALID_HEADER` the same way, before any request
-- **And** a value the runtime would send anyway — a line break only at either end, a tab
-  inside — is sent as before
-- **And** headers handed over in a shape that is neither an object nor a list of pairs
-  (`null` among them), with an entry that is not a pair, or under a symbol key, are refused the same way, without being quoted —
-  and headers that can be read only once still reach the request whole
+- **Then** the call throws `INVALID_HEADER` naming the header and no part of its value
+- **And** the call makes no request
+- **And** the call is not tried again, however many attempts it allows
+- **And** a header name the runtime will not send is refused as `INVALID_HEADER` the same
+  way, before any request
+  - anything but a token, a trailing space included
+- **And** a value the runtime would send anyway is sent as before
+  - a line break only at either end, a tab inside
+- **And** headers handed over in a shape `safeFetch` cannot read are refused the same way,
+  without being quoted
+  - a shape that is neither an object nor a list of pairs, `null` among them
+  - an entry that is not a pair
+  - an entry under a symbol key
+- **And** headers that can be read only once still reach the request whole
+- **And** what is refused is held against the `fetch` the request is sent through, on
+  every Node version the package is tested on
+- **And** the characters `safeFetch` refuses are exactly the ones `fetch` would refuse
 - **Because** the runtime refuses such a value with a message that quotes all of it, and
   a node routes that message to its error output, which nothing redacts. The value is
   usually a key, so the refusal would put it in clear text in the run history and in
   whatever a workflow does with its errors
-- **And** what is refused is held against the `fetch` the request is sent through on
-  every Node version the package is tested on: a character this refuses is one that
-  `fetch` would refuse, and the other way round
 - **Pair** AC-8, the other refusal that may not tell the caller more than they need
 - verify: unit
 
@@ -348,11 +368,12 @@ although it is private; nothing else changes, and nothing a node does can add to
 - **Given** a `safeFetch` call that carries a credential and binds it to that
   credential's origin with the `credential` option
 - **When** the address it is asked to reach lies on another origin
-- **Then** the call fails with `CREDENTIAL_ORIGIN` before anything is looked up or sent,
-  and is not asked again; the message names the two origins and nothing else of the
-  address — no user, password, path or query
-- **And** a call to the bound origin goes through with whatever path and query it has,
-  and a binding that is not an http or https address is itself refused with
+- **Then** the call fails with `CREDENTIAL_ORIGIN` before anything is looked up or sent
+- **And** the call is not asked again
+- **And** the message names the two origins and nothing else of the address — no user,
+  password, path or query
+- **And** a call to the bound origin goes through with whatever path and query it has
+- **And** a binding that is not an http or https address is itself refused with
   `CREDENTIAL_ORIGIN`
 - **Because** a node that takes its target from a setting or from incoming data sends its
   key wherever that value points, and the header rules of AC-7 only act on a redirect.
@@ -365,8 +386,9 @@ although it is private; nothing else changes, and nothing a node does can add to
 - **Given** a request bound to its credential's origin
 - **When** a server answers with a redirect to another origin, after any number of hops
   within its own
-- **Then** the call fails with `CREDENTIAL_ORIGIN`, naming the status and both origins,
-  before the other origin is looked up or sent anything, and is not asked again
+- **Then** the call fails with `CREDENTIAL_ORIGIN`, naming the status and both origins
+- **And** the call fails before the other origin is looked up or sent anything
+- **And** the call is not asked again
 - **Because** every hop is judged against the binding, not against the hop before it, a
   detour through the bound origin does not carry the request out of it; and stripping
   the secret headers, as AC-7 does for an unbound request, would still send a secret in
@@ -380,11 +402,13 @@ although it is private; nothing else changes, and nothing a node does can add to
   server sends on to a content network or a signed storage link
 - **When** it is redirected to another origin
 - **Then** the hop is followed without any header the caller set — not even the ones
-  AC-7 lets cross, because a bound request declared all of itself secret and a key can
-  sit under any name — and a body that would be resent is still refused
+  AC-7 lets cross
+- **And** a body that would be resent on that hop is still refused
 - **Because** some services hand a file out from another host, and refusing every such
   hop would make the binding unusable for them. The caller chooses it per call, knowing
-  that a secret in the query or the path is not protected on that hop
+  that a secret in the query or the path is not protected on that hop. Not even the
+  headers AC-7 lets cross go along, because a bound request declared all of itself
+  secret and a key can sit under any name
 - **Pair** AC-23, where refusing is the default
 - verify: unit
 
@@ -393,9 +417,10 @@ although it is private; nothing else changes, and nothing a node does can add to
 - **Given** an address with a user name or a password in it, such as
   `https://user:secret@host/path`, typed into a node's settings or named by a redirect
 - **When** a node calls `safeFetch` with it, or a hop leads to it
-- **Then** the call fails with `INVALID_URL` before anything is sent to that address,
-  and is not asked again; the message names the problem and no part of the address —
-  no user, password, host, path or query
+- **Then** the call fails with `INVALID_URL` before anything is sent to that address
+- **And** the call is not asked again
+- **And** the message names the problem and no part of the address — no user, password,
+  host, path or query
 - **And** an address that cannot be read as a URL at all is refused the same way, as
   `INVALID_URL`, quoting nothing and asked only once
 - **And** with a binding to another origin (AC-22) as well, the address is refused as
@@ -412,44 +437,48 @@ although it is private; nothing else changes, and nothing a node does can add to
 
 - **Given** the host has installed the run's allow-list with `installAllowedTargets`,
   naming `"<ip>:<port>"` pairs such as `10.31.0.7:8080`
-- **When** a target whose address and port are exactly such a pair is judged — by
-  `assertPublicUrl` with the URL's port or its scheme's default, by `safeFetch` before
-  sending and again on the address and port the connection lands on, or by
-  `isAllowedTarget` for a caller with a socket of its own
-- **Then** it passes, whichever form the address is written in — an IPv6 address
-  compressed or not, in brackets or not, an IPv4 address as the mapped IPv6 form a
-  socket may report it in — and `allowedTargets` reads back the list as installed
-- **And** a name that resolves to a listed pair passes too — except `localhost` and the
-  names beneath it, which are refused whatever the list says, because loopback is never
-  a place a VPN route is served (AC-31) and those names are refused without asking DNS
-  (AC-12)
+- **When** a target whose address and port are exactly such a pair is judged, by any of
+  these
+  - `assertPublicUrl`, with the URL's port or its scheme's default
+  - `safeFetch` before sending, and again on the address and port the connection lands on
+  - `isAllowedTarget`, for a caller with a socket of its own
+- **Then** the target passes, whichever form the address is written in
+  - an IPv6 address compressed or not, in brackets or not
+  - an IPv4 address as the mapped IPv6 form a socket may report it in
+- **And** `allowedTargets` reads back the list as installed
+- **And** a name that resolves to a listed pair passes too
+- **And** `localhost` and the names beneath it are refused whatever the list says
 - **Because** a tenant's VPN routes are served at private addresses by design, and a
   guard that refused them would make a route chosen in the studio unreachable from the
-  run it was chosen for
+  run it was chosen for. `localhost` and the names beneath it stay refused because
+  loopback is never a place a VPN route is served (AC-31), and those names are refused
+  without asking DNS (AC-12)
 - **Pair** AC-27, the same address on a port the list does not name
 - verify: unit
 
 ### AC-27 — The port is part of the target
 
 - **Given** an address on the allow-list with one port
-- **When** the same address is reached on another port — written in the URL, implied by
-  the scheme, or landed on by a connection whose name resolved publicly when it was
-  judged
+- **When** the same address is reached on another port, in any of these ways
+  - written in the URL
+  - implied by the scheme
+  - landed on by a connection whose name resolved publicly when it was judged
 - **Then** it is refused with `BLOCKED_ADDRESS` and nothing reaches that port
-- **And** a connection to a private address whose port cannot be read is refused too,
-  with a message saying the port could not be read rather than that the address is
-  private — the list cannot be asked without the port, and failing open would allow
-  every port of a listed address
+- **And** a connection to a private address whose port cannot be read is refused too
+- **And** the refusal of a port that cannot be read says the port could not be read,
+  rather than that the address is private
 - **Because** the relay that serves the routes is one host with many services on it,
-  and a grant for its proxy port is not a grant for its other ports
+  and a grant for its proxy port is not a grant for its other ports. The list cannot be
+  asked without the port, and failing open would allow every port of a listed address
 - verify: unit
 
 ### AC-28 — Every address not on the list is judged as before
 
 - **Given** an allow-list is installed
-- **When** a private address that is not on it is judged — another address in the same
-  range, the metadata service, or a name that resolves to a listed address *and* an
-  unlisted private one
+- **When** a private address that is not on the list is judged, in any of these forms
+  - another address in the same range
+  - the metadata service
+  - a name that resolves to a listed address *and* an unlisted private one
 - **Then** it is refused, exactly as it would be with no list
 - **Because** the list narrows the rule for the pairs it names and for nothing else; one
   listed answer among several does not carry the others, for the reason AC-3 gives
@@ -510,11 +539,13 @@ although it is private; nothing else changes, and nothing a node does can add to
 ### AC-32 — A refused address is never connected to
 
 - **Given** a name that answers with a private or reserved address when the connection
-  for a hop is opened — whether or not it answered publicly when the target was judged
+  for a hop is opened
+  - whether or not it answered publicly when the target was judged
 - **When** a node calls `safeFetch`
 - **Then** no socket is opened to that address: no TCP handshake and no TLS handshake
-  reaches it, and the call throws `BLOCKED_ADDRESS` with the same message whether a
-  service listens on that port or not
+  reaches it
+- **And** the call throws `BLOCKED_ADDRESS` with the same message whether a service
+  listens on that port or not
 - **Because** a connection that is refused only once it stands has already told the
   caller something: an open port completes the handshake and a closed one does not, and
   the two came back as different errors. Whoever controls the DNS behind a URL could map
@@ -534,11 +565,14 @@ although it is private; nothing else changes, and nothing a node does can add to
   and passes `guardedLookup(port)` as that socket's lookup
 - **When** the socket resolves a name
 - **Then** the name is refused when any address it resolves to is private or reserved
-  and not on the run's allow-list for that port, with `BLOCKED_ADDRESS` in the words the
-  caller chose (or `safeFetch`'s), never naming the address, and with an operator log
-  line that does; a client a VPN route cannot carry refuses a listed address too; an
-  approved name answers every address when asked for all, so the socket can fall back
-  from one to the next; a name that does not resolve fails as the resolver said
+  and not on the run's allow-list for that port
+- **And** the refusal is `BLOCKED_ADDRESS` in the words the caller chose (or
+  `safeFetch`'s), never naming the address
+- **And** an operator log line names the refused address
+- **And** a client a VPN route cannot carry refuses a listed address too
+- **And** an approved name answers every address when asked for all, so the socket can
+  fall back from one to the next
+- **And** a name that does not resolve fails as the resolver said
 - **Because** a rule kept in two places is two rules: the copy in a node package had
   already stopped announcing its relaxation and logging its refusals before anybody
   noticed, and a change to the rule here would never have reached it. A host written as
@@ -552,8 +586,9 @@ although it is private; nothing else changes, and nothing a node does can add to
 - **Given** the local development stack sets `RVNXX_SSRF_ALLOW_PRIVATE`
 - **When** `safeFetch` judges a target, or a socket judges a name through
   `guardedLookup`, or a caller asks `guardRelaxedForLocalDev`
-- **Then** all three relax together, apply in full again together once it is off, and
-  the process announces the relaxation once, whichever asks first
+- **Then** all three relax together
+- **And** all three apply in full again together once the switch is off
+- **And** the process announces the relaxation once, whichever asks first
 - **Because** a switch that a raw socket reads by its own copy can be on for one and
   off for the other, and the warning is the only sign it was left on somewhere it
   should not be

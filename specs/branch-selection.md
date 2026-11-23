@@ -37,8 +37,10 @@ stops when they cannot; the rest is a check the node's own tests run.
 - **Then** the check throws, naming the node
 - **Because** a result that names no output fires them all, and the fault shows only in
   a run, on the data of one record
-- **And** a fixed output's name is always accepted; a generated output accepts the names
-  it can produce (its fallback, the setting's value when the test passes the setting)
+- **And** a fixed output's name is always accepted
+- **And** a generated output accepts the names it can produce
+  - its fallback
+  - the setting's value, when the test passes the setting
 - **Pair** AC-2, the node with one output
 - verify: unit
 
@@ -57,19 +59,23 @@ stops when they cannot; the rest is a check the node's own tests run.
 - **Given** a node declaring an `error` output beside another, or an output resolved
   while the author edits
 - **When** `isMultiPort` is asked
-- **Then** it answers yes; for a single output of any other kind it answers no
+- **Then** `isMultiPort` answers yes
+- **And** for a single output of any other kind, `isMultiPort` answers no
 - **Because** the error output is a way out like the others, and a resolved set is not
   known when the package is built, so only naming the branch is safe
 - verify: unit
 
 ### AC-4 — Several outputs that cannot be told apart stop the build
 
-- **Given** a node declaring several outputs, a fixed one without a name or two with the
-  same name, a generated one whose fallback repeats a fixed name or another generated
-  one's, or two named from the same setting
+- **Given** a node declaring several outputs that cannot be told apart, in any of these
+  ways
+  - a fixed one without a name, or two with the same name
+  - a generated one whose fallback repeats a fixed name or another generated one's
+  - two named from the same setting
 - **When** the manifest is built with `rvnxx-nodes manifest`
-- **Then** the build fails naming the node and the output, every such output at once,
-  and writes no manifest; `buildManifest` itself does not refuse it
+- **Then** the build fails, naming the node and the output for every such output at once
+- **And** the build writes no manifest
+- **And** `buildManifest` itself does not refuse such a node
 - **Because** a branch names an output; one that has no name or shares it cannot be
   chosen, and a package that builds anyway fires the wrong output in a run. It was a
   warning in 1.x and 2.x, so that no package stopped building on an upgrade within a

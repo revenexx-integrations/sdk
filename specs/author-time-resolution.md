@@ -31,8 +31,11 @@ reader of the manifest can tell.**
 
 ### AC-1 — What a node marks as resolved survives into the manifest
 
-- **Given** a node marking settings as resolved, naming what each depends on, declaring
-  a whole set of settings to be resolved together, and an output set to be resolved
+- **Given** a node using each of these markers
+  - settings marked as resolved
+  - what each of them depends on
+  - a whole set of settings declared to be resolved together
+  - an output set to be resolved
 - **When** the manifest is built
 - **Then** every one of those markers is carried through as declared
 - **Because** the manifest is the only thing an editor reads before anything runs; a
@@ -44,7 +47,8 @@ reader of the manifest can tell.**
 
 - **Given** a node whose settings and outputs are all fixed
 - **When** it is written
-- **Then** it carries none of the three resolvers, and is a complete node without them
+- **Then** the node carries none of the three resolvers
+- **And** the node is complete without them
 - **Because** most nodes are static, and a mechanism that obliged every one of them to
   supply three empty functions would be paid for by the majority to serve the few
 - **Pair** AC-1

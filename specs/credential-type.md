@@ -53,8 +53,9 @@ kinds silently offers one.
 
 - **Given** a declaration with padded names, blank entries, or the same kind twice
 - **When** it is read
-- **Then** names arrive trimmed, blanks are dropped, and each kind appears once — the
-  first time it was named
+- **Then** names arrive trimmed
+- **And** blank entries are dropped
+- **And** each kind appears once — the first time it was named
 - **Because** the list is drawn as a choice: a repeated entry is a choice between two
   identical options, and a padded name matches nothing when it is looked up
 - **Pair** AC-2, the same read where every entry is already tidy

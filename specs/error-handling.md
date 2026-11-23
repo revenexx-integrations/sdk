@@ -41,26 +41,33 @@ node.**
 - **Given** any value a node caught — a `NodeError`, an abort, another `Error`, or
   something that is not an error at all
 - **When** it is normalised for the `error` output
-- **Then** it carries `code`, `message` and `status`: a `NodeError` keeps its own code
-  and takes `status` from its `meta` where that is a finite number, and anything else
-  becomes `REQUEST_FAILED`; `status` is `0` wherever no status was read
-- **And** a bare abort that reaches this point becomes `TIMEOUT` — a last resort for an
-  abort nobody recognised, not the way a cancellation is meant to arrive: `safeFetch`
-  raises its own budget as `NodeError('TIMEOUT')` and re-throws the engine's abort
-  reason untouched, so a node that checks its signal before routing never brings one
-  here (see the gap below)
-- **And** a `REQUEST_FAILED` says why where the error knows it, by the system's own
-  code: a failure whose cause carries one appends it — `fetch failed (ECONNRESET)`,
-  `fetch failed (UND_ERR_SOCKET)`, and where several addresses were tried each distinct
-  code once — an error raised while looking a name up or connecting is reported as its
-  call and code alone, `getaddrinfo ENOTFOUND`, and one that tried several addresses
-  itself names each distinct code, `Connection failed (ECONNREFUSED)`. What is added is only codes, never
-  the wording of a cause, and the host, address or port a lookup or connect error named
-  is left out; `code` and `status` are the same as without it
+- **Then** the normalised value carries `code`, `message` and `status`
+- **And** a `NodeError` keeps its own code
+- **And** a `NodeError` takes `status` from its `meta` where that is a finite number
+- **And** a value that is neither a `NodeError` nor a bare abort becomes `REQUEST_FAILED`
+- **And** `status` is `0` wherever no status was read
+- **And** a bare abort that reaches this point becomes `TIMEOUT`
+- **And** a `REQUEST_FAILED` says why where the error knows it, by the system's own code,
+  in each of these ways
+  - a failure whose cause carries one appends it — `fetch failed (ECONNRESET)`,
+    `fetch failed (UND_ERR_SOCKET)`, and where several addresses were tried each distinct
+    code once
+  - an error raised while looking a name up or connecting is reported as its call and
+    code alone, `getaddrinfo ENOTFOUND`
+  - one that tried several addresses itself names each distinct code,
+    `Connection failed (ECONNREFUSED)`
+- **And** what a `REQUEST_FAILED` adds is only codes, never the wording of a cause
+- **And** the host, address or port a lookup or connect error named is left out of a
+  `REQUEST_FAILED`
+- **And** a `REQUEST_FAILED`'s `code` and `status` are the same as without the added codes
 - **Because** the editor offers the author fields to branch on before any run exists, so
   the three have to mean the same thing behind every node in every package — and a
   failure every node reports in the same two words cannot tell a firewall from a dead
-  host from a wrong address without the platform's logs
+  host from a wrong address without the platform's logs. The bare abort becoming
+  `TIMEOUT` is a last resort for an abort nobody recognised, not the way a cancellation
+  is meant to arrive: `safeFetch` raises its own budget as `NodeError('TIMEOUT')` and
+  re-throws the engine's abort reason untouched, so a node that checks its signal before
+  routing never brings one here (see the gap below)
 - **Pair** [request-budget.md](request-budget.md) AC-4 and AC-5 are the other side: a
   cancellation is not a timeout, and outranks one when both land together
 - verify: unit
@@ -79,9 +86,10 @@ node.**
 
 - **Given** a node declaring the shared error output
 - **When** the manifest is built
-- **Then** the output is named `error`, is of kind `error`, and declares `code`,
-  `message` and `status` — and `body` as well where the node asked for it
-- **And** its description states the rule above, so an author reading the port in the
+- **Then** the output is named `error` and is of kind `error`
+- **And** the output declares `code`, `message` and `status` — and `body` as well where
+  the node asked for it
+- **And** the output's description states the rule above, so an author reading the port in the
   editor is told what will and will not reach it
 - **Because** this is the only place the rule reaches the person it constrains most, and
   a port that arrived without it would leave every author to find out by running a

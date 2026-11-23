@@ -63,8 +63,9 @@ failing a build over.**
 
 - **Given** a declaration naming a file the package does not contain
 - **When** the build copies
-- **Then** nothing is written for it, a warning names the path, and the build does not
-  fail
+- **Then** nothing is written for the missing file
+- **And** a warning names the path
+- **And** the build does not fail
 - **Because** the cost of the mistake is one missing picture; failing the build makes a
   typo in a screenshot path as expensive as a broken node
 - **Pair** AC-3, the same copy where the file exists
@@ -74,7 +75,8 @@ failing a build over.**
 
 - **Given** a declaration whose path is absolute, or climbs out of the package
 - **When** the build copies
-- **Then** nothing is written, and a warning names the path as unsafe
+- **Then** nothing is written
+- **And** a warning names the path as unsafe
 - **Because** this reads a file and writes it into an artefact that gets published — a
   path that escapes turns a picture declaration into a way to ship whatever the build
   machine can read

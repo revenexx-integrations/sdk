@@ -31,7 +31,8 @@ signal the engine passes in, which ends the call wherever it has got to.
 
 - **Given** a node calls `safeFetch` with a budget
 - **When** the host has not answered by the time it runs out
-- **Then** the call throws `TIMEOUT`, and the message names the budget it exceeded
+- **Then** the call throws `TIMEOUT`
+- **And** the message names the budget the call exceeded
 - **Because** the caller has to be able to tell "this host is slow" from "this host
   said no" — they lead to different retries and different error ports
 - **Pair** AC-2, the same call against a host that answers in time
@@ -78,8 +79,8 @@ signal the engine passes in, which ends the call wherever it has got to.
 
 - **Given** a node allows a number of retries
 - **When** every attempt fails
-- **Then** the call makes exactly the attempts it was allowed, and raises the failure
-  rather than swallowing it
+- **Then** the call makes exactly the attempts it was allowed
+- **And** the call raises the failure rather than swallowing it
 - **Because** a caller has to see the reason the host could not be reached; a retry
   budget decides how often to ask, never whether to report
 - **Pair** AC-7, the same configuration where an attempt succeeds
@@ -110,8 +111,10 @@ signal the engine passes in, which ends the call wherever it has got to.
 
 - **Given** a node offers the request budget as one of its settings
 - **When** the setting is declared
-- **Then** it arrives as a number with the package default, a lower bound, and an
-  upper bound that is the ceiling unless the node names a smaller one
+- **Then** the setting arrives as a number with each of these
+  - the package default
+  - a lower bound
+  - an upper bound that is the ceiling unless the node names a smaller one
 - **Because** a node author should not have to restate the bounds, and a workflow
   author should not be able to type a number that defeats them
 - verify: unit
@@ -129,8 +132,8 @@ signal the engine passes in, which ends the call wherever it has got to.
 ### AC-11 — A refusal that cannot change is not asked again
 
 - **Given** a call with retries allowed, whose target is refused for a reason that will
-  be the same every time — a blocked address, a chain that never ends, a header value
-  that cannot be sent
+  be the same every time
+  - a blocked address, a chain that never ends, a header value that cannot be sent
 - **When** it fails
 - **Then** it fails once, without using any of the retry budget
 - **Because** a retry can only change the outcome of something transient; asking again
@@ -144,9 +147,11 @@ signal the engine passes in, which ends the call wherever it has got to.
 - **Given** a node calls `safeFetch` with a budget, and the host sends its headers and
   the start of its answer
 - **When** the rest of the answer stops arriving for as long as the budget
-- **Then** reading it fails as `TIMEOUT` — through the read helpers of this package or
-  through the response's own `text()` and `json()`, with nothing more passed than the
-  budget — and not before that silence has lasted the budget
+- **Then** reading the answer fails as `TIMEOUT` once that silence has lasted the budget
+  and not before
+- **And** reading fails that way by either route, with nothing more passed than the budget
+  - through the read helpers of this package
+  - through the response's own `text()` and `json()`
 - **Because** a host that has started to answer is not a host that will finish, and a
   step left waiting on it holds a worker until somebody cancels the run
 - **Pair** AC-13's answer that arrives slowly and keeps arriving
@@ -157,10 +162,11 @@ signal the engine passes in, which ends the call wherever it has got to.
 - **Given** a node calls `safeFetch` with a budget
 - **When** the attempt spends time on the lookup, any redirects and the headers, and
   then on the body
-- **Then** up to the headers it fails once the budget is spent in total, not when a
-  single hop has spent it; over the body it fails only once the answer has sent nothing
-  for the whole budget, so an answer that keeps arriving is returned whole however long
-  it takes
+- **Then** up to the headers, the attempt fails once the budget is spent in total, not
+  when a single hop has spent it
+- **And** over the body, the attempt fails only once the answer has sent nothing for the
+  whole budget
+- **And** an answer that keeps arriving is returned whole however long it takes
 - **Because** a host that has not answered yet is measured by how long it takes, and a
   host that is answering by whether it is still answering: a budget that starts again
   at every hop is a multiple of the figure the author typed, and one that also covers
@@ -191,8 +197,9 @@ signal the engine passes in, which ends the call wherever it has got to.
 - **Given** a host that answers, on any Node version the package's `engines` admits
 - **When** a node calls `safeFetch` — with a body or without, a form among them, and
   through a redirect
-- **Then** the request arrives as sent, and the answer comes back as the runtime's own
-  `Response`, whether or not it carries a body
+- **Then** the request arrives as sent
+- **And** the answer comes back as the runtime's own `Response`, whether or not it
+  carries a body
 - **Because** `safeFetch` sends through a `fetch` of its own and not the runtime's: the
   runtime's is built on whichever undici that Node bundles, and the dispatcher that
   guards the connection only fits the `fetch` of its own undici release. Paired with the
@@ -206,12 +213,15 @@ signal the engine passes in, which ends the call wherever it has got to.
 
 - **Given** a node calls `safeFetch`, with retries allowed or not
 - **When** the call fails without any hop of any attempt having put a byte of the
-  request on the wire — the target refused before its lookup or while its connection
-  was opened, the lookup out of time, a header or URL that cannot be sent, a credential
-  bound to another origin, or a connection that was refused, could not be resolved or
-  reached, or timed out while connecting
-- **Then** the error carries `meta.sent = false`, and `mayHaveBeenSent` answers `false`
-  for it
+  request on the wire, in any of these ways
+  - the target refused before its lookup or while its connection was opened
+  - the lookup out of time
+  - a header or URL that cannot be sent
+  - a credential bound to another origin
+  - a connection that was refused, could not be resolved or reached, or timed out while
+    connecting
+- **Then** the error carries `meta.sent = false`
+- **And** `mayHaveBeenSent` answers `false` for the error
 - **And** an error the runtime raised is still the runtime's error, its `cause`
   unchanged, with the marker added
 - **Because** a node that writes has to know whether a create may be repeated: one that
@@ -224,14 +234,17 @@ signal the engine passes in, which ends the call wherever it has got to.
 
 ### AC-18 — A failure after something may have gone out does not claim otherwise
 
-- **Given** a call in which some hop of some attempt may have reached the host — a
-  connection that broke once it was made (refused or unreachable included, when the
-  socket was already open rather than connecting), a budget that ran out while the
-  request was under way, a redirect refused after the first hop was answered, an earlier attempt that
-  may have sent before a later one never connected
+- **Given** a call in which some hop of some attempt may have reached the host, in any of
+  these ways
+  - a connection that broke once it was made (refused or unreachable included, when the
+    socket was already open rather than connecting)
+  - a budget that ran out while the request was under way
+  - a redirect refused after the first hop was answered
+  - an earlier attempt that may have sent before a later one never connected
 - **When** the call fails
-- **Then** the error carries no `sent: false`, and `mayHaveBeenSent` answers `true`, as
-  it does for any error it does not recognise
+- **Then** the error carries no `sent: false`
+- **And** `mayHaveBeenSent` answers `true` for the error, as it does for any error it does
+  not recognise
 - **And** a cancellation is thrown as the caller's own reason, untouched
 - **Because** the marker is only worth anything if it is never wrong in the dangerous
   direction: a write reported as unsent is repeated, and a write that had landed is then

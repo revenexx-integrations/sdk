@@ -73,8 +73,9 @@ way whichever host answered would prefer.
 - **Given** a request carrying a body, answered by a redirect of the kind that turns a
   submission into a retrieval
 - **When** the hop is followed
-- **Then** the next request asks to retrieve, carries no body, and the first one is
-  unchanged
+- **Then** the next request asks to retrieve
+- **And** the next request carries no body
+- **And** the first request is unchanged
 - **Because** resending a submission to a new address is how one action becomes two; the
   rules for which redirects do this are not ours, and following them halfway is worse
   than not following them
@@ -83,15 +84,20 @@ way whichever host answered would prefer.
 ### AC-6 — A body goes nowhere but where the caller sent it
 
 - **Given** a request carrying a body, answered by a redirect to another origin that keeps
-  the method — a 307 or 308, or a 301 or 302 on anything but a submission that turns
-  into a retrieval
+  the method, in either of these ways
+  - a 307 or 308
+  - a 301 or 302 on anything but a submission that turns into a retrieval
 - **When** the hop would be followed
-- **Then** the call fails with `BLOCKED_REDIRECT`, naming the status and the other origin,
-  before that origin is looked up or sent anything, and it is not retried. The same
-  redirect on the same origin is followed with the body; one whose body is empty, or
-  that has none, is followed to any origin
-- **And** in a chain each hop is judged against the one before it, so a body that
-  stayed on its origin for one hop is refused at the hop that would take it elsewhere
+- **Then** the call fails with `BLOCKED_REDIRECT`, naming the status and the other origin
+- **And** the call fails before that origin is looked up or sent anything
+- **And** the call is not retried
+- **And** a redirect that keeps the method is followed with the body when it stays on
+  the same origin
+- **And** the redirect of a request whose body is empty, or that has none, is followed to
+  any origin
+- **And** in a chain, each hop is judged against the hop before it
+  - a body that stayed on its origin for one hop is refused at the hop that would take it
+    elsewhere
 - **Because** the body can be customer data or an OAuth client secret, and the server
   that answers decides where a redirect points. Dropping the body and going on would
   turn a write into a read the caller believes was a write
