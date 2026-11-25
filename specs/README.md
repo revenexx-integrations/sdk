@@ -30,6 +30,9 @@ What stays out is the machinery behind the name — that is `docs/`, and
 - [`redirect-following.md`](redirect-following.md) — what a redirect does to the
   request: how many hops are allowed, what an unreadable target costs, and how the
   method and body change on the way
+- [`credential-use.md`](credential-use.md) — telling the host what a service answered:
+  every answered request reported with its address, headers and status, so a credential's
+  state can follow what the service says about it
 
 ### Doing work that may fail
 
@@ -296,6 +299,7 @@ name they are holding.
 | the `fields` an output declares | [output-fields.md](output-fields.md) |
 | the `network` a credential kind declares, and the `vpn-route` setting with its `routeKind` | [package-manifest.md](package-manifest.md) |
 | `allowedTargets` | [ssrf-guard.md](ssrf-guard.md) |
+| `CREDENTIAL_USE_REPORTER_SYMBOL` | [credential-use.md](credential-use.md) |
 | `ApiKeyCredential` | [credentials.md](credentials.md) |
 | `assertBranchNamed` | [branch-selection.md](branch-selection.md) |
 | `assertPublicUrl` | [ssrf-guard.md](ssrf-guard.md) |
