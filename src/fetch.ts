@@ -1,4 +1,5 @@
 import { FormData as UndiciFormData, fetch as undiciFetch } from 'undici';
+import { reportCredentialUse } from './credentialUse.js';
 import { NodeError } from './errors.js';
 import { assertPublicUrl, connectionRefusal, guardConnectionsTo, guardedDispatcher } from './ssrf.js';
 import type { IConfigField } from './types.js';
@@ -663,7 +664,12 @@ async function followHops(
     }
 
     const location = res.headers.get('location');
-    if (!REDIRECT_STATUSES.has(res.status) || !location) return res;
+    if (!REDIRECT_STATUSES.has(res.status) || !location) {
+      // The answer the caller receives, reported with what this hop carried, so the
+      // host can tell whether a credential it handed out was accepted (IN-146).
+      reportCredentialUse(currentUrl, currentInit.headers, res.status);
+      return res;
+    }
 
     // We act on this redirect (follow or reject) and never read its 3xx body, so
     // release the socket now — before any of the throw paths below — so a blocked

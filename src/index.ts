@@ -25,6 +25,10 @@ export type { GuardedLookupOptions, LookupAddress, LookupFn } from './ssrf.js';
 // The per-run allow-list (PO-828). The global symbol is the contract; these read
 // and install it, and none of them can widen a list once it is installed.
 export { allowedTargets, installAllowedTargets, isAllowedTarget } from './allowedTargets.js';
+// What a service answered, for the host that runs the node (IN-146). The global
+// symbol is the contract; `reportCredentialUse` stays internal to `safeFetch`.
+export { CREDENTIAL_USE_REPORTER_SYMBOL } from './credentialUse.js';
+export type { CredentialUse, CredentialUseReporter } from './credentialUse.js';
 export * from './retry.js';
 export * from './manifest.js';
 export * from './credentials.js';
