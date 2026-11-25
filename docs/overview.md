@@ -469,6 +469,8 @@ Describes a user-configurable input on the node. Rendered as a form field in the
 | `object` | Nested fields (requires `properties`) |
 | `array` | Repeatable field (requires `items`) |
 | `expression` | Expression editor |
+| `date` | Calendar — the value is a day as text, `YYYY-MM-DD` |
+| `datetime` | Calendar with a time of day — the value is an ISO 8601 date-time with its offset (`Z` or `±HH:MM`) |
 | `secret-ref` | Secret-key picker — value is an opaque tenant secret key, resolved via `ctx.secrets.get()` at runtime |
 | `credentials-ref` | Credential picker filtered by `credentialType` — value is a credential instance id, resolved via `ctx.credentials.get()` at runtime |
 | `state-ref` | State-namespace picker filtered by `stateRole` — one of `mapping`, `cursor`, `dedupe`, `digest`. The value is the namespace NAME, passed to `ctx.state.*` at runtime. `dedupe` is the role behind `ctx.state.claim()`, which is the operation's name rather than the role's |

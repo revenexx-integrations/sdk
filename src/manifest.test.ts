@@ -420,3 +420,28 @@ test('buildManifest writes iteration on every node, true only for one with extra
   );
   assert.equal(extractManifest(lookalike).iteration, false);
 });
+
+// AC-17 — A setting that asks for a date or a datetime is carried as declared
+test('buildManifest carries a date and a datetime setting with the type they were declared with [@spec:package-manifest:AC-17]', () => {
+  const dated: INode = {
+    ...fakeNode,
+    description: {
+      ...fakeNode.description,
+      slug: 'test:dated',
+      config: [
+        { key: 'paymentDate', label: 'Payment date', type: 'date', expressionAllowed: true },
+        { key: 'modifiedSince', label: 'Changed since', type: 'datetime' },
+      ],
+    },
+  };
+  const manifest = buildManifest([dated]);
+
+  assert.deepEqual(
+    manifest.nodes[0]?.config?.map((field) => [field.key, field.type]),
+    [
+      ['paymentDate', 'date'],
+      ['modifiedSince', 'datetime'],
+    ],
+  );
+  assert.equal(manifest.nodes[0]?.config?.[0]?.expressionAllowed, true);
+});
