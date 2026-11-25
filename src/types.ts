@@ -27,7 +27,18 @@ export type ConfigType =
   // `ResolvedVpnRoute` at run time. `routeKind` filters the picker.
   // Accepted by the registry only once integrations#406 is deployed: until then a
   // package declaring it is refused on upload.
-  | 'vpn-route';
+  | 'vpn-route'
+  // A calendar day, picked from a calendar (IN-155). Stored and handed to the
+  // node as text, `YYYY-MM-DD`. With `expressionAllowed` the author may map it
+  // instead, and the node receives whatever the expression yields.
+  // Refused by the registry on upload until it lists the type.
+  | 'date'
+  // A day and a time of day, picked from a calendar (IN-155). Stored and handed
+  // to the node as an ISO 8601 date-time with its offset (`Z` or `±HH:MM`).
+  // With `expressionAllowed` the author may map it instead, and the node
+  // receives whatever the expression yields.
+  // Refused by the registry on upload until it lists the type.
+  | 'datetime';
 
 /**
  * What a node receives at run time for a `vpn-route` setting (PO-831).

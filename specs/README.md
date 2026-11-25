@@ -298,6 +298,7 @@ name they are holding.
 | the `showIf` condition on a setting | [setting-conditions.md](setting-conditions.md) |
 | the `fields` an output declares | [output-fields.md](output-fields.md) |
 | the `network` a credential kind declares, and the `vpn-route` setting with its `routeKind` | [package-manifest.md](package-manifest.md) |
+| the `date` and `datetime` settings | [package-manifest.md](package-manifest.md) |
 | `allowedTargets` | [ssrf-guard.md](ssrf-guard.md) |
 | `CREDENTIAL_USE_REPORTER_SYMBOL` | [credential-use.md](credential-use.md) |
 | `ApiKeyCredential` | [credentials.md](credentials.md) |

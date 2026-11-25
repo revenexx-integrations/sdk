@@ -10,7 +10,7 @@ where:
   - SLUG_PATTERN, NAMESPACED_SLUG_PATTERN, SEMVER_PATTERN, CONFIG_KEY_PATTERN — the rules it judges them by
 docs:
   - docs/overview.md
-updated: 2026-11-17
+updated: 2026-11-25
 ---
 
 # What a package tells the registry
@@ -215,6 +215,17 @@ nothing to compare against, because there is no second source.
   a reader should still guess
 - verify: unit
 
+### AC-17 — A setting that asks for a date or a datetime is carried as declared
+
+- **Given** a node with a `date` setting and a `datetime` setting
+- **When** the manifest is built
+- **Then** both arrive with the type they were declared with
+- **And** neither is widened to `string`
+- **Because** the type is the only thing that tells the studio to draw a calendar
+  instead of a text field, and which of the two forms the node expects; a setting that
+  arrives as `string` puts the author back to typing `2026-10-16` by hand
+- verify: unit
+
 ## Elsewhere
 
 - **The image files themselves** — which are collected and how they reach the build —
@@ -272,3 +283,8 @@ nothing to compare against, because there is no second source.
     built on this is refused on upload until the registry accepts `iteration`.
 - [PO-744](https://linear.app/revenexx/issue/PO-744) — a name the registry would refuse
   stops the build: AC-15
+- [IN-155](https://linear.app/revenexx/issue/IN-155) — a setting may ask for a date or a
+  datetime, and the studio draws a calendar for it: AC-17
+  - The registry's own schema refuses a setting type it does not list, so a package
+    declaring either is refused on upload until the registry learns both. This spec
+    promises only that they travel.
